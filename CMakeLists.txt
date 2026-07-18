@@ -37,7 +37,10 @@ target_include_directories(axiam_cpp
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
   PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann
+    # Root is third_party/ so the vendored single header resolves as
+    # <nlohmann/json.hpp> (matching the includes in src/); it lives at
+    # third_party/nlohmann/json.hpp and is a private implementation detail.
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
 
 target_link_libraries(axiam_cpp
