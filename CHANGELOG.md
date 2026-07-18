@@ -4,6 +4,16 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha10] - 2026-07-18
+
+### Changed
+
+- Resolve org_id from access-token claim for the refresh body (D-14) (#2)
+- Publish API docs to gh-pages branch
+- Drop configure-pages step, mirror C SDK template
+- Auto-enable GitHub Pages (enablement: true)
+- Add docs publish workflow to GitHub Pages
+
 ## [Unreleased]
 
 ### Added
