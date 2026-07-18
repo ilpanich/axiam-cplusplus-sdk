@@ -1,5 +1,11 @@
 # AXIAM C++ SDK
 
+[![CI](https://github.com/ilpanich/axiam-cplusplus-sdk/actions/workflows/sdk-ci-cpp.yml/badge.svg?branch=main)](https://github.com/ilpanich/axiam-cplusplus-sdk/actions/workflows/sdk-ci-cpp.yml)
+[![Coverage Status](https://coveralls.io/repos/github/ilpanich/axiam-cplusplus-sdk/badge.svg?branch=main)](https://coveralls.io/github/ilpanich/axiam-cplusplus-sdk?branch=main)
+[![Docs](https://img.shields.io/badge/docs-Doxygen-blue.svg)](https://ilpanich.github.io/axiam-cplusplus-sdk/)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 Idiomatic C++17 client for [AXIAM](https://github.com/ilpanich/axiam) (Access
 eXtended Identity and Authorization Management) — authentication, authorization
 checks, JWKS verification, and framework-agnostic route guards.
@@ -69,7 +75,7 @@ int main() {
     axiam::Client client = axiam::Client::builder()
         .base_url("https://api.axiam.example")
         .tenant_slug("acme")
-        .org_slug("globex")
+        .org_slug("acme")   // §5.1: login/refresh need org context (a tenant slug is unique only within an org)
         .build();
 
     auto login = client.login("alice@acme.example", "correct horse battery staple");
@@ -132,6 +138,7 @@ escape hatch is adding a custom CA:
 auto client = axiam::Client::builder()
     .base_url("https://dev.axiam.local")
     .tenant_slug("acme")
+    .org_slug("acme")                                 // §5.1: org context alongside tenant
     .with_custom_ca(dev_ca_pem)                       // §6: PEM only
     .with_client_cert(device_cert_pem, device_key_pem) // §6.1: mTLS identity
     .build();

@@ -13,6 +13,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(AXIAM_BUILD_TESTS "Build the AXIAM C++ SDK test suite" OFF)
+option(AXIAM_BUILD_EXAMPLES "Build the AXIAM C++ SDK example programs" OFF)
 option(AXIAM_ENABLE_COVERAGE "Build with coverage instrumentation (gcov/llvm-cov)" OFF)
 
 include(GNUInstallDirs)
@@ -73,6 +74,13 @@ set_target_properties(axiam_cpp PROPERTIES
 if(AXIAM_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+# ---------------------------------------------------------------------------
+# Examples
+# ---------------------------------------------------------------------------
+if(AXIAM_BUILD_EXAMPLES)
+  add_subdirectory(examples)
 endif()
 
 # ---------------------------------------------------------------------------
