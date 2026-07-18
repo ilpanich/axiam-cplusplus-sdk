@@ -1,0 +1,53 @@
+name: coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  coverage:
+    name: llvm-cov coverage → Coveralls
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libcurl4-openssl-dev libssl-dev \
+                                  clang llvm libclang-rt-dev
+
+      - name: Configure with source-based coverage
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAXIAM_BUILD_TESTS=ON \
+            -DCMAKE_CXX_FLAGS="-fprofile-instr-generate -fcoverage-mapping" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate"
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Run tests with profiling
+        working-directory: build
+        run: LLVM_PROFILE_FILE=axiam.profraw ./tests/axiam_cpp_tests
+
+      - name: Produce lcov report (logic layer)
+        working-directory: build
+        run: |
+          llvm-profdata merge -sparse axiam.profraw -o axiam.profdata
+          llvm-cov export ./tests/axiam_cpp_tests -instr-profile=axiam.profdata \
+            -format=lcov \
+            ../src ../include/axiam > coverage.lcov
+          llvm-cov report ./tests/axiam_cpp_tests -instr-profile=axiam.profdata \
+            ../src ../include/axiam
+
+      - name: Upload to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          file: build/coverage.lcov
+          format: lcov
+        continue-on-error: true

@@ -67,3 +67,15 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Coverage / alt build dirs
+build-cov/
+build-llvm/
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+coverage.lcov
+
+# Doxygen output
+docs/

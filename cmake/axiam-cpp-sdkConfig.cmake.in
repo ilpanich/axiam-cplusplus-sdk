@@ -1,0 +1,9 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(CURL)
+find_dependency(OpenSSL)
+
+include("${CMAKE_CURRENT_LIST_DIR}/axiam-cpp-sdkTargets.cmake")
+
+check_required_components(axiam-cpp-sdk)

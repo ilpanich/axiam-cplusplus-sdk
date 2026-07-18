@@ -1,0 +1,129 @@
+name: sdk-ci-cpp
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build-test:
+    name: build + test (${{ matrix.cxx }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { cc: gcc,   cxx: g++ }
+          - { cc: clang, cxx: clang++ }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libcurl4-openssl-dev libssl-dev clang
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAXIAM_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  tls-bypass-gate:
+    name: TLS-bypass lint gate (§6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Grep for TLS-verification bypass patterns
+        run: |
+          set -e
+          if grep -rnE 'CURLOPT_SSL_VERIFYPEER[^\n]*0|CURLOPT_SSL_VERIFYHOST[^\n]*0' \
+               --include='*.cpp' --include='*.hpp' src include tests; then
+            echo "::error::TLS-verification bypass pattern found (violates CONTRACT §6)"
+            exit 1
+          fi
+          if grep -rniE 'skip_tls|allow_insecure|disable_tls|insecure_skip' \
+               --include='*.cpp' --include='*.hpp' src include; then
+            echo "::error::insecure TLS API surface found (violates CONTRACT §6)"
+            exit 1
+          fi
+          echo "No TLS-bypass patterns found."
+
+  secret-scan-gate:
+    name: no committed private keys
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Grep for private key material
+        run: |
+          if git grep -nE 'BEGIN (RSA |EC )?PRIVATE KEY' -- .; then
+            echo "::error::committed private key material found"
+            exit 1
+          fi
+          echo "No committed private keys."
+
+  validate-packaging:
+    name: validate vcpkg + conan recipes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate vcpkg manifests (JSON well-formed)
+        run: |
+          python3 -c "import json; json.load(open('vcpkg.json'))"
+          python3 -c "import json; json.load(open('ports/axiam-cpp-sdk/vcpkg.json'))"
+      - name: Validate conanfile imports
+        run: |
+          python3 -m pip install --quiet "conan>=2.0"
+          conan inspect . > /dev/null
+      - name: Portfile references the version
+        run: grep -q 'ilpanich/axiam-cplusplus-sdk' ports/axiam-cpp-sdk/portfile.cmake
+
+  verify-tag-on-main:
+    name: verify-tag-on-main
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Ensure the tag commit is contained in main
+        run: |
+          git fetch origin main --depth=100
+          if git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "Tag commit is on main."
+          else
+            echo "::error::tag ${GITHUB_REF_NAME} is not an ancestor of main"
+            exit 1
+          fi
+
+  release:
+    name: release (CPack tarball)
+    needs: [build-test, tls-bypass-gate, secret-scan-gate, validate-packaging, verify-tag-on-main]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libcurl4-openssl-dev libssl-dev
+      - name: Configure + build + package
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAXIAM_BUILD_TESTS=OFF
+          cmake --build build -j
+          cd build && cpack -G TGZ
+      - name: Attach tarball to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/*.tar.gz

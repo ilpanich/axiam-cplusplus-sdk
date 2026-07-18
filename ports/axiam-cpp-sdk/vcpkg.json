@@ -1,0 +1,19 @@
+{
+  "name": "axiam-cpp-sdk",
+  "version": "1.0.0-alpha8",
+  "description": "AXIAM C++ SDK — authentication, authorization checks, JWKS verification and route guards (REST + mTLS).",
+  "homepage": "https://github.com/ilpanich/axiam-cplusplus-sdk",
+  "license": "Apache-2.0",
+  "dependencies": [
+    "curl",
+    "openssl",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
+}
