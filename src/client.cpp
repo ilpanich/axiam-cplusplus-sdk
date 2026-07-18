@@ -7,10 +7,55 @@
 #include <nlohmann/json.hpp>
 
 #include "axiam/http_curl.hpp"
+#include "axiam/jwks.hpp"
 
 namespace axiam {
 
 using json = nlohmann::json;
+
+namespace {
+
+/// Extract a cookie's value from a `Set-Cookie` header value list (each entry
+/// is "name=value; attr; attr"). Returns nullopt if the cookie is absent.
+std::optional<std::string> cookie_value(const std::vector<std::string>& set_cookies,
+                                        const std::string& name) {
+    const std::string prefix = name + "=";
+    for (const auto& sc : set_cookies) {
+        if (sc.rfind(prefix, 0) == 0) {
+            std::string rest = sc.substr(prefix.size());
+            const auto semi = rest.find(';');
+            return semi == std::string::npos ? rest : rest.substr(0, semi);
+        }
+    }
+    return std::nullopt;
+}
+
+/// Decode a claim string out of a compact JWT WITHOUT verifying its signature.
+/// Used only to recover the tenant_id/org_id the client must echo in the
+/// refresh body (the server re-derives and re-validates the authoritative
+/// org_id, so this carries no trust weight). Returns nullopt when the token is
+/// malformed or the claim is absent/not a string.
+std::optional<std::string> jwt_claim(const std::string& jwt, const std::string& claim) {
+    const auto dot1 = jwt.find('.');
+    if (dot1 == std::string::npos) return std::nullopt;
+    const auto dot2 = jwt.find('.', dot1 + 1);
+    if (dot2 == std::string::npos) return std::nullopt;
+    const auto payload = base64url_decode(jwt.substr(dot1 + 1, dot2 - dot1 - 1));
+    if (!payload) return std::nullopt;
+    auto j = json::parse(*payload, nullptr, false);
+    if (j.is_discarded() || !j.contains(claim) || !j[claim].is_string()) return std::nullopt;
+    return j[claim].get<std::string>();
+}
+
+/// Resolve the org_id (UUID) from the access-token cookie set by a login
+/// response, if present. See jwt_claim for the trust rationale.
+std::optional<std::string> org_id_from_cookies(const std::vector<std::string>& set_cookies) {
+    const auto access = cookie_value(set_cookies, "axiam_access");
+    if (!access) return std::nullopt;
+    return jwt_claim(*access, "org_id");
+}
+
+}  // namespace
 
 struct Client::Impl {
     Transport transport;
@@ -27,6 +72,7 @@ struct Client::Impl {
     std::string csrf;
     bool session = false;
     std::optional<std::string> resolved_tenant_id;  // captured from login user info
+    std::optional<std::string> resolved_org_id;     // decoded from the access-token org_id claim (D-14)
 
     // §9 single-flight refresh.
     std::mutex refresh_mtx;
@@ -172,7 +218,10 @@ struct Client::Impl {
         {
             std::lock_guard<std::mutex> lock(state_mtx);
             body["tenant_id"] = resolved_tenant_id.value_or(tenant_id.value_or(""));
-            body["org_id"] = org_id.value_or("");
+            // Prefer the org_id decoded from the access token (§5, D-14) so a
+            // slug-only-configured client still sends a valid UUID; fall back
+            // to a UUID-form construction option.
+            body["org_id"] = resolved_org_id.value_or(org_id.value_or(""));
         }
         HttpResponse resp = send_raw(build_request("POST", "/api/v1/auth/refresh", body.dump()));
         if (resp.status < 200 || resp.status >= 300) {
@@ -336,6 +385,10 @@ LoginResult Client::login(const std::string& username_or_email, const std::strin
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
         if (result.user) p_->resolved_tenant_id = result.user->tenant_id;
+        // D-14: the login response body carries tenant_id/org_slug but NOT
+        // org_id — recover the org_id UUID from the access-token cookie so
+        // refresh() can supply it even when the client was built with a slug.
+        if (auto oid = org_id_from_cookies(resp.set_cookies)) p_->resolved_org_id = *oid;
     }
     return result;
 }
@@ -356,6 +409,10 @@ LoginResult Client::verify_mfa(const std::string& challenge_token, const std::st
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
         if (result.user) p_->resolved_tenant_id = result.user->tenant_id;
+        // D-14: the login response body carries tenant_id/org_slug but NOT
+        // org_id — recover the org_id UUID from the access-token cookie so
+        // refresh() can supply it even when the client was built with a slug.
+        if (auto oid = org_id_from_cookies(resp.set_cookies)) p_->resolved_org_id = *oid;
     }
     return result;
 }
