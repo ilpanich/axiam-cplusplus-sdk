@@ -21,7 +21,7 @@ size_t write_body_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
 }
 
 size_t header_cb(char* buffer, size_t size, size_t nitems, void* userdata) {
-    auto* headers = static_cast<HeaderMap*>(userdata);
+    auto* resp = static_cast<HttpResponse*>(userdata);
     const size_t len = size * nitems;
     std::string line(buffer, len);
     // Strip trailing CRLF.
@@ -33,7 +33,11 @@ size_t header_cb(char* buffer, size_t size, size_t nitems, void* userdata) {
         // Trim leading spaces on value.
         size_t start = value.find_first_not_of(" \t");
         value = (start == std::string::npos) ? std::string{} : value.substr(start);
-        (*headers)[name] = value;
+        // Set-Cookie repeats per response; keep every value (see HttpResponse).
+        if (CaseInsensitiveLess::lower(name) == "set-cookie") {
+            resp->set_cookies.push_back(value);
+        }
+        resp->headers[name] = value;
     }
     return len;
 }
@@ -89,7 +93,7 @@ HttpResponse CurlTransport::perform(const HttpRequest& req) {
     curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, write_body_cb);
     curl_easy_setopt(h, CURLOPT_WRITEDATA, &resp.body);
     curl_easy_setopt(h, CURLOPT_HEADERFUNCTION, header_cb);
-    curl_easy_setopt(h, CURLOPT_HEADERDATA, &resp.headers);
+    curl_easy_setopt(h, CURLOPT_HEADERDATA, &resp);
 
     // ---- §6 strict TLS: ALWAYS verify peer + host. Never disabled. ----
     curl_easy_setopt(h, CURLOPT_SSL_VERIFYPEER, 1L);

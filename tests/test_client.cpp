@@ -1,3 +1,4 @@
+#include <atomic>
 #include <memory>
 #include <string>
 
@@ -225,6 +226,51 @@ AXIAM_TEST("logout clears session and CSRF even if server errors") {
     c.logout();
     AXIAM_CHECK_FALSE(c.has_session());
     AXIAM_CHECK_FALSE(c.csrf_token().has_value());
+}
+
+AXIAM_TEST("refresh sends org_id decoded from the access-token cookie (D-14)") {
+    // A JWT whose payload carries {"tenant_id":"tenant-uuid-abc","org_id":"org-uuid-xyz"}.
+    const std::string access_jwt =
+        "eyJhbGciOiAiRWREU0EiLCAidHlwIjogIkpXVCJ9."
+        "eyJ0ZW5hbnRfaWQiOiAidGVuYW50LXV1aWQtYWJjIiwgIm9yZ19pZCI6ICJvcmctdXVpZC14eXoiLCAiZXhwIjogOTk5OTk5OTk5OX0."
+        "sig";
+    auto st = std::make_shared<FakeState>();
+    auto refreshed = std::make_shared<std::atomic<bool>>(false);
+    st->router = [access_jwt, refreshed](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) {
+            auto r = json_response(200,
+                                   R"({"session_id":"s","expires_in":900,)"
+                                   R"("user":{"id":"u","username":"a","email":"a@x","tenant_id":"tenant-uuid-abc"}})");
+            r.headers["X-CSRF-Token"] = "tok";
+            r.set_cookies.push_back("axiam_access=" + access_jwt + "; Path=/; HttpOnly");
+            return r;
+        }
+        if (req.url.find("/auth/refresh") != std::string::npos) {
+            refreshed->store(true);
+            return json_response(200, R"({"expires_in":900})");
+        }
+        // authz/check: 401 until the (single) refresh has completed, then allow.
+        if (!refreshed->load()) return json_response(401, "{}");
+        return json_response(200, R"({"allowed":true})");
+    };
+
+    // Client configured with org SLUG only — org_id must come from the token.
+    Client c = make_client(st);
+    c.login("a", "b");
+    AXIAM_CHECK(c.check_access("read", "res-1").allowed);
+
+    // Locate the refresh request and assert it echoed the decoded org_id UUID,
+    // not the configured slug.
+    std::string refresh_body;
+    {
+        std::lock_guard<std::mutex> lock(st->mtx);
+        for (const auto& r : st->requests) {
+            if (r.url.find("/auth/refresh") != std::string::npos) refresh_body = r.body;
+        }
+    }
+    AXIAM_CHECK(refresh_body.find("\"org_id\":\"org-uuid-xyz\"") != std::string::npos);
+    AXIAM_CHECK(refresh_body.find("\"tenant_id\":\"tenant-uuid-abc\"") != std::string::npos);
+    AXIAM_CHECK(refresh_body.find("globex") == std::string::npos);
 }
 
 AXIAM_TEST("authenticate_device parses response and wraps token in Sensitive") {

@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "axiam/sensitive.hpp"
 
@@ -41,6 +42,12 @@ struct HttpRequest {
 struct HttpResponse {
     long status = 0;
     HeaderMap headers;
+    /// Raw `Set-Cookie` header values, in arrival order. Kept separate from
+    /// `headers` because a response sets several cookies (axiam_access,
+    /// axiam_refresh, axiam_csrf) and the case-insensitive `HeaderMap` would
+    /// collapse the duplicates. Used to recover the access-token JWT so the
+    /// org_id/tenant_id claims can be resolved for the refresh body (D-14).
+    std::vector<std::string> set_cookies;
     std::string body;
     std::string transport_error;  // empty on a completed HTTP exchange
 };
