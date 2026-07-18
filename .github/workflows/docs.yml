@@ -27,6 +27,8 @@ jobs:
           sudo apt-get install -y doxygen graphviz
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - name: Generate docs
         run: doxygen Doxyfile
       - name: Upload Pages artifact
