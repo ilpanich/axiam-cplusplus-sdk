@@ -4,6 +4,12 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha15] - 2026-07-21
+
+### Changed
+
+- Maintenance release — no notable changes since v1.0.0-alpha12.
+
 ## [1.0.0-alpha12] - 2026-07-19
 
 ### Changed
