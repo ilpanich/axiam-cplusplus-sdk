@@ -12,9 +12,11 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **This SDK conforms to CONTRACT.md §1–§7, §9–§11 (including §6.1 mTLS).**
 
-> Scope note: this v1 covers the REST surface. **gRPC** and **§8 AMQP HMAC** are
+> Scope note: this v1 covers the REST surface. **gRPC** — including the gRPC-only
+> `get_user_info` operation (CONTRACT §1.1, contract 1.3) — and **§8 AMQP HMAC** are
 > intentionally out of scope for v1 (the cross-language contract does not require
-> AMQP of C++); see [Deferred / follow-ups](#deferred--follow-ups).
+> AMQP of C++); see [Deferred / follow-ups](#deferred--follow-ups). Per §1.1 the REST
+> `/oauth2/userinfo` endpoint is not substituted for the gRPC operation.
 
 - Namespace: `axiam` — library target `axiam_cpp` (CMake `axiam::axiam_cpp`).
 - Public headers under `include/axiam/`; umbrella header `#include <axiam/axiam.hpp>`.
