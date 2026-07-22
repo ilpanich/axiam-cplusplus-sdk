@@ -4,6 +4,12 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha16] - 2026-07-22
+
+### Changed
+
+- Adopt CONTRACT 1.3; defer gRPC get_user_info
+
 ## [Unreleased]
 
 ### Changed
