@@ -45,6 +45,23 @@ jobs:
           llvm-cov report ./tests/axiam_cpp_tests -instr-profile=axiam.profdata \
             ../src ../include/axiam
 
+      # Regression gate: fail if line coverage of the logic layer drops below the
+      # floor. Set well below the current ~99% so it never false-fails; ratchet
+      # upward as coverage rises. Line coverage is computed from the DA records in
+      # the lcov report (a[2] is the hit count for each instrumented line).
+      - name: Enforce coverage floor
+        working-directory: build
+        run: |
+          set -euo pipefail
+          total=$(awk -F: '
+            /^DA:/ { split($2, a, ","); t++; if (a[2]+0 > 0) c++ }
+            END { printf "%.2f", (t ? 100*c/t : 0) }
+          ' coverage.lcov)
+          echo "Line coverage: ${total}%"
+          awk -v t="$total" 'BEGIN { exit (t+0 >= 95) ? 0 : 1 }' || {
+            echo "::error::coverage ${total}% is below the 95% floor"; exit 1;
+          }
+
       - name: Upload to Coveralls
         uses: coverallsapp/github-action@v2
         with:
