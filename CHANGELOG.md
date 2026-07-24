@@ -4,6 +4,12 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha18] - 2026-07-24
+
+### Changed
+
+- Add line-coverage regression gate (floor 95%) (#5)
+
 ## [1.0.0-alpha16] - 2026-07-22
 
 ### Changed
