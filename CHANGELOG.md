@@ -18,6 +18,21 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Fixed
+
+- §9 single-flight refresh: two windows could produce a redundant second
+  `POST /api/v1/auth/refresh` — fatal against single-use, rotating refresh tokens
+  (`invalid_grant`). (1) A waiting caller cleared the in-flight slot on the failure
+  path even when it did not own it, so it could wipe a newer leader's live future
+  and let the next caller start a concurrent refresh. (2) The slot was only vacated
+  after the shared future had already been read, so a caller arriving in that window
+  joined an already-settled future and was handed the result of a refresh that had
+  completed before it started, instead of refreshing. The coalescing logic now lives
+  in `src/refresh_guard.hpp` with generation-tracked ownership (only the owner
+  vacates, and only its own generation) and liveness (not mere occupancy) deciding
+  whether a caller may join. Failures still reach every contending caller once, with
+  no automatic retry (§9.3), and no lock is held across the wire call.
+
 ### Changed
 
 - Adopt CONTRACT.md 1.3: the new gRPC-only `get_user_info` operation (CONTRACT §1.1) is

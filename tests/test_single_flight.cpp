@@ -68,6 +68,46 @@ AXIAM_TEST("single-flight refresh: 5 concurrent 401s -> exactly 1 refresh") {
     AXIAM_CHECK(st->count_path("/auth/refresh") == 1);
 }
 
+// §9 guards *concurrent* callers; it must not turn into a cache. A 401 arriving
+// after a previous refresh has finished is a new, uncontended refresh: the guard
+// must issue a second wire call rather than replay the first refresh's outcome
+// (whose single-use, rotating refresh token is already spent).
+AXIAM_TEST("single-flight refresh: a later 401 gets a fresh refresh, not the previous outcome") {
+    auto st = std::make_shared<FakeState>();
+    auto checks = std::make_shared<std::atomic<int>>(0);
+
+    st->router = [checks](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) {
+            auto r = json_response(200,
+                                   R"({"session_id":"s","expires_in":900,)"
+                                   R"("user":{"id":"u","username":"a","email":"a@x","tenant_id":"t"}})");
+            r.headers["X-CSRF-Token"] = "tok";
+            return r;
+        }
+        if (req.url.find("/auth/refresh") != std::string::npos) {
+            return json_response(200, R"({"expires_in":900})");
+        }
+        // Every odd-numbered check is a 401 (forcing a refresh), the retry after
+        // it succeeds.
+        return checks->fetch_add(1) % 2 == 0 ? json_response(401, "{}")
+                                             : json_response(200, R"({"allowed":true})");
+    };
+
+    Client c = Client::builder()
+                   .base_url("https://api.example.test")
+                   .tenant_slug("acme")
+                   .org_id("org-1")
+                   .transport(axtest::make_fake(st))
+                   .build();
+    c.login("a", "b");
+
+    AXIAM_CHECK(c.check_access("read", "r").allowed);
+    AXIAM_CHECK(c.refresh_call_count() == 1);
+    AXIAM_CHECK(c.check_access("read", "r").allowed);
+    AXIAM_CHECK(c.refresh_call_count() == 2);
+    AXIAM_CHECK(st->count_path("/auth/refresh") == 2);
+}
+
 AXIAM_TEST("failed refresh raises AuthError and does not retry-loop (§9.3)") {
     auto st = std::make_shared<FakeState>();
     st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
