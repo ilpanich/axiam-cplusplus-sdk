@@ -2,12 +2,12 @@
 
 #include <atomic>
 #include <mutex>
-#include <thread>
 
 #include <nlohmann/json.hpp>
 
 #include "axiam/http_curl.hpp"
 #include "axiam/jwks.hpp"
+#include "refresh_guard.hpp"
 
 namespace axiam {
 
@@ -74,9 +74,10 @@ struct Client::Impl {
     std::optional<std::string> resolved_tenant_id;  // captured from login user info
     std::optional<std::string> resolved_org_id;     // decoded from the access-token org_id claim (D-14)
 
-    // §9 single-flight refresh.
-    std::mutex refresh_mtx;
-    std::shared_future<TokenPair> refresh_inflight;
+    // §9 single-flight refresh. The guard owns all of the coalescing state and
+    // its invariants (see src/refresh_guard.hpp); this class only supplies the
+    // wire call.
+    detail::RefreshGuard refresh_guard;
     std::atomic<int> refresh_count{0};
 
     std::unique_ptr<JwksVerifier> jwks_verifier;
@@ -181,34 +182,11 @@ struct Client::Impl {
     }
 
     // §9: exactly one in-flight refresh; concurrent callers share its outcome.
+    // The owner runs perform_refresh() on its own thread with no lock held;
+    // waiters block on the shared future. See src/refresh_guard.hpp for the
+    // ownership/publication-ordering invariants.
     TokenPair do_single_flight_refresh() {
-        std::shared_future<TokenPair> fut;
-        bool owner = false;
-        {
-            std::lock_guard<std::mutex> lock(refresh_mtx);
-            if (!refresh_inflight.valid()) {
-                auto task = std::make_shared<std::packaged_task<TokenPair()>>(
-                    [this] { return perform_refresh(); });
-                refresh_inflight = task->get_future().share();
-                owner = true;
-                std::thread([task] { (*task)(); }).detach();
-            }
-            fut = refresh_inflight;
-        }
-        try {
-            TokenPair tp = fut.get();
-            if (owner) {
-                std::lock_guard<std::mutex> lock(refresh_mtx);
-                refresh_inflight = std::shared_future<TokenPair>();
-            }
-            return tp;
-        } catch (...) {
-            {
-                std::lock_guard<std::mutex> lock(refresh_mtx);
-                refresh_inflight = std::shared_future<TokenPair>();
-            }
-            throw;
-        }
+        return refresh_guard.run([this] { return perform_refresh(); });
     }
 
     // The actual refresh network call (invoked at most once per single-flight).

@@ -7,6 +7,7 @@ add_executable(axiam_cpp_tests
   test_builder.cpp
   test_client.cpp
   test_single_flight.cpp
+  test_refresh_guard.cpp
   test_guard.cpp
   test_jwks.cpp
   test_integration_curl.cpp
@@ -14,6 +15,9 @@ add_executable(axiam_cpp_tests
 
 target_include_directories(axiam_cpp_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
+  # src/ is on the path so the internal (non-installed) §9 refresh guard header
+  # can be unit-tested directly; see tests/test_refresh_guard.cpp.
+  ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/third_party/testing
   ${CMAKE_SOURCE_DIR}/third_party/nlohmann
 )
