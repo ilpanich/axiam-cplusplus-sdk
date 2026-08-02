@@ -4,6 +4,72 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [Unreleased]
+
+### Added
+
+- **Safe-by-default request authenticator (`axiam::TokenAuthenticator`, SEC-074).**
+  New header `<axiam/authenticator.hpp>`. It is now the documented §10 entry point for
+  turning an inbound credential into an `AxiamUser`: it verifies the Ed25519 signature
+  **and** `exp` (with a named `clock_skew`, default 30 s), **and** `nbf` when present,
+  **and** that the token's `tenant_id` claim equals the tenant the resource server was
+  configured with — the cross-tenant control the org-wide JWKS endpoint makes necessary.
+  Optional `iss`/`aud` pinning and a `now` injection seam live on `AuthenticatorOptions`.
+  Missing or unparseable `exp`, a malformed `nbf`, and a missing/empty/non-string
+  `tenant_id` all fail closed. `guard_authenticator<Request>()` plugs it straight into
+  `AxiamGuard`; `try_authenticate()` is the non-throwing twin; `make_authenticator(client, ...)`
+  binds one to a client's JWKS verifier.
+- **Webhook signature verification (`axiam::webhook::verify`, T-145 / CONTRACT §13).**
+  New header `<axiam/webhook.hpp>`. HMAC-SHA256 over `<t>.<raw_body>`, `t=`/`v1=` header
+  parsing with forward-compatible handling of unknown keys, constant-time comparison over
+  the **decoded** MAC bytes (`CRYPTO_memcmp`, no early return, all candidates evaluated),
+  a two-sided freshness window defaulting to 300 s, a `now` injection seam, and a typed
+  fail-closed error that never surfaces the expected signature. A header carrying no `v1`
+  is a failure, never a pass. `verify_or_throw()` is the exception-based twin.
+- CONTRACT.md §13 "Webhook Signature Verification" added to the vendored contract copy.
+- Regression tests pinning connection reuse: N sequential requests must open exactly one
+  TCP connection, a GET following a POST must keep both the connection and its own verb,
+  and a large POST body must not carry `Expect: 100-continue`.
+
+### Fixed
+
+- **Plaintext `http://` base URL is rejected at construction (SEC-073, §6).**
+  `Client::Builder::build()` previously validated only that `base_url` was non-empty, so a
+  misconfigured `http://` base sent login credentials, the httpOnly cookie jar, the CSRF
+  token and the tenant header in cleartext with no error — strict TLS never got a chance to
+  apply. The scheme is now checked and a non-`https` base throws `std::invalid_argument`,
+  with a loopback carve-out for development (`localhost`, `127.0.0.1`, `::1`). Userinfo
+  cannot smuggle a loopback host past the check, and lookalike hosts such as
+  `localhost.evil.example` are rejected.
+- **`CURLOPT_CUSTOMREQUEST` leaked across requests on the shared easy handle.** The handle
+  is reused for the client's lifetime, and `CURLOPT_CUSTOMREQUEST` is sticky: after any POST
+  every subsequent GET went out with the previous POST's verb, silently turning the JWKS
+  fetch into `POST /oauth2/jwks`. The method-shaped options are now reset on each request.
+- **Bimodal latency tail (I11).** libcurl defaults were periodically discarding the pooled
+  connection and making its re-establishment expensive. The transport now pins
+  `FORBID_REUSE`/`FRESH_CONNECT` off, disables age-based retirement of a healthy pooled
+  connection (`CURLOPT_MAXAGE_CONN`, whose 118 s default forced roughly one reconnect per
+  worker every two minutes), caps the dual-stack Happy-Eyeballs fallback stall at 50 ms
+  (default 200 ms), widens the DNS cache to 300 s (default 60 s), enables TCP keepalive so a
+  silently-dropped idle connection is not discovered by a 200 ms TCP retransmit timeout, and
+  raises the connection-cache size. `Expect: 100-continue` is also suppressed — measured
+  against libcurl 8.5 its threshold is 1 MiB rather than the widely-cited 1 KiB, so it is not
+  the cause of the observed tail, but it still matters for very large batch payloads and for
+  consumers linking an older libcurl.
+
+### Changed
+
+- **Source-breaking:** `LoginResult::challenge_token` is now `Sensitive<std::string>` rather
+  than `std::string` (SEC-076). CONTRACT §7 classes the MFA challenge token as secret
+  material, so it now gets the same redaction safety-net as every other secret in this SDK.
+  `verify_mfa()` gained a `Sensitive<std::string>` overload, so the common
+  `client.verify_mfa(login.challenge_token, code)` call site is unchanged; code that read the
+  token as a bare string must go through `axiam::detail::reveal()` or keep it wrapped.
+- **Source-breaking:** `JwksVerifier::verify()` is renamed
+  `JwksVerifier::verify_signature_only_unchecked()` (SEC-074). The behaviour is unchanged —
+  the name and the docs now say what it does. It validates the signature and no claims, so
+  it must not be wired into a request guard; use `TokenAuthenticator` instead.
+
 ## [1.0.0-alpha23] - 2026-08-02
 
 ### Changed

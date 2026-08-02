@@ -10,7 +10,10 @@ add_executable(axiam_cpp_tests
   test_refresh_guard.cpp
   test_guard.cpp
   test_jwks.cpp
+  test_authenticator.cpp
+  test_webhook.cpp
   test_integration_curl.cpp
+  test_transport_reuse.cpp
 )
 
 target_include_directories(axiam_cpp_tests PRIVATE

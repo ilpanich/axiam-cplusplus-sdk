@@ -1,10 +1,15 @@
 // §10 route-guard interface + §11 declarative authorization helpers.
 //
-// Framework-agnostic: the host adapter (Crow / Pistache / any HTTP server) is
-// responsible for producing an AxiamUser from an incoming request (the §10
-// verification path — cookie/Bearer extraction, JWKS check, tenant scope). The
-// helpers here run strictly AFTER that identity exists and compose on top of the
-// client's check_access surface; they never re-implement token verification.
+// Framework-agnostic: the host adapter (Crow / Pistache / any HTTP server) pulls
+// the raw credential out of the request; turning it into an AxiamUser is the job
+// of axiam::TokenAuthenticator in <axiam/authenticator.hpp>, which is the
+// supported §10 verification path (signature + exp + nbf + tenant binding, fail
+// closed). Do NOT build an AxiamUser straight from
+// JwksVerifier::verify_signature_only_unchecked — that primitive validates the
+// signature only, so a guard fed from it accepts expired and cross-tenant tokens.
+//
+// The helpers here run strictly AFTER that identity exists and compose on top of
+// the client's check_access surface; they never re-implement token verification.
 #pragma once
 
 #include <functional>

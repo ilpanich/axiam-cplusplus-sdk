@@ -23,6 +23,9 @@ class Client {
 public:
     class Builder {
     public:
+        /// Server base URL. MUST be `https://` (§6); a plaintext `http://` base
+        /// is rejected by build() unless the host is a loopback development host
+        /// (`localhost`, `127.0.0.1`, `::1`).
         Builder& base_url(std::string url);
         Builder& tenant_slug(std::string slug);
         Builder& tenant_id(std::string id);
@@ -45,7 +48,8 @@ public:
         Builder& transport(Transport t);
 
         /// Validates required fields and constructs the client.
-        /// @throws std::invalid_argument if base_url is empty.
+        /// @throws std::invalid_argument if base_url is empty or is not an
+        ///         https:// URL (loopback hosts excepted, §6).
         /// @throws AuthError if neither tenant_slug nor tenant_id was provided.
         Client build();
 
@@ -68,6 +72,12 @@ public:
 
     // ---- §1 canonical operations (snake_case) ----
     LoginResult login(const std::string& username_or_email, const std::string& password);
+    /// Complete an MFA challenge. Takes the wrapped token straight from
+    /// LoginResult::challenge_token (§7).
+    LoginResult verify_mfa(const Sensitive<std::string>& challenge_token,
+                           const std::string& totp_code);
+    /// Overload for a challenge token obtained out of band (e.g. relayed by a
+    /// front end). Prefer the Sensitive overload.
     LoginResult verify_mfa(const std::string& challenge_token, const std::string& totp_code);
     TokenPair refresh();
     void logout();

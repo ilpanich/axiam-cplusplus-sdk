@@ -73,6 +73,43 @@ AXIAM_TEST("with_client_cert accepts PEM cert + key and builds") {
                               .build());
 }
 
+// ---------------------------------------------------------------------------
+// SEC-073 — §6 requires rejecting a plaintext base URL at construction.
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("builder rejects a plaintext http:// base_url (SEC-073, §6)") {
+    auto build_with = [](const std::string& url) {
+        return Client::builder().base_url(url).tenant_slug("acme").build();
+    };
+    AXIAM_REQUIRE_THROWS_AS(build_with("http://api.axiam.example"), std::invalid_argument);
+    AXIAM_REQUIRE_THROWS_AS(build_with("http://api.axiam.example:8080/v1"),
+                            std::invalid_argument);
+    // A loopback-looking hostname is not loopback.
+    AXIAM_REQUIRE_THROWS_AS(build_with("http://localhost.evil.example"), std::invalid_argument);
+    AXIAM_REQUIRE_THROWS_AS(build_with("http://127.0.0.1.evil.example"), std::invalid_argument);
+    // Userinfo must not smuggle a loopback host past the check.
+    AXIAM_REQUIRE_THROWS_AS(build_with("http://localhost@api.axiam.example"),
+                            std::invalid_argument);
+    // Other plaintext schemes, and a scheme-less URL.
+    AXIAM_REQUIRE_THROWS_AS(build_with("ws://api.axiam.example"), std::invalid_argument);
+    AXIAM_REQUIRE_THROWS_AS(build_with("ftp://api.axiam.example"), std::invalid_argument);
+    AXIAM_REQUIRE_THROWS_AS(build_with("api.axiam.example"), std::invalid_argument);
+}
+
+AXIAM_TEST("builder allows http:// for loopback development hosts (SEC-073, §6)") {
+    auto build_with = [](const std::string& url) {
+        return Client::builder().base_url(url).tenant_slug("acme").build();
+    };
+    AXIAM_REQUIRE_NOTHROW(build_with("http://localhost"));
+    AXIAM_REQUIRE_NOTHROW(build_with("http://localhost:8080"));
+    AXIAM_REQUIRE_NOTHROW(build_with("http://LOCALHOST:8080/api"));
+    AXIAM_REQUIRE_NOTHROW(build_with("http://127.0.0.1:9443"));
+    AXIAM_REQUIRE_NOTHROW(build_with("http://[::1]:8080"));
+    // https is always fine, in any case spelling.
+    AXIAM_REQUIRE_NOTHROW(build_with("https://api.axiam.example"));
+    AXIAM_REQUIRE_NOTHROW(build_with("HTTPS://api.axiam.example"));
+}
+
 AXIAM_TEST("builder timeout setters are chainable and build succeeds") {
     auto st = std::make_shared<axtest::FakeState>();
     AXIAM_REQUIRE_NOTHROW(Client::builder()

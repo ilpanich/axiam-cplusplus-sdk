@@ -11,6 +11,13 @@ namespace axiam {
 
 /// Owns a single libcurl easy handle (serialized by an internal mutex) whose
 /// cookie engine persists the session across requests for one client instance.
+///
+/// The handle is deliberately long-lived so libcurl's connection cache keeps one
+/// TCP+TLS connection hot for the client's lifetime. Keep-alive is not optional:
+/// `CURLOPT_FORBID_REUSE` and `CURLOPT_FRESH_CONNECT` are pinned off, connection
+/// age-based retirement is disabled, and `Expect: 100-continue` is suppressed so
+/// a large POST body never waits on an interim response. See the comments in
+/// `src/http_curl.cpp` for why each of those defaults produced a latency tail.
 class CurlTransport {
 public:
     explicit CurlTransport(TlsConfig cfg);
