@@ -249,6 +249,120 @@ AXIAM_TEST("authenticator refuses an empty tenant expectation and a negative ske
     AXIAM_REQUIRE_THROWS_AS(TokenAuthenticator(v, kTenant, bad), std::invalid_argument);
 }
 
+// §10.1 rule 7: the leeway is a NAMED constant and is BOUNDED — an operator
+// cannot widen it to something that keeps expired tokens alive indefinitely.
+AXIAM_TEST("clock skew is a named constant and cannot be widened past the ceiling") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+
+    AXIAM_CHECK(AuthenticatorOptions{}.clock_skew == kDefaultClockSkew);
+    AXIAM_CHECK(kDefaultClockSkew <= kMaxClockSkew);
+
+    // Exactly at the ceiling is fine.
+    AuthenticatorOptions at_max = fixed_clock();
+    at_max.clock_skew = kMaxClockSkew;
+    TokenAuthenticator ok(v, kTenant, at_max);
+    AXIAM_CHECK(ok.expected_tenant_id() == kTenant);
+
+    // One second beyond it, and anything wildly beyond it, is refused.
+    AuthenticatorOptions over = fixed_clock();
+    over.clock_skew = kMaxClockSkew + std::chrono::seconds(1);
+    AXIAM_REQUIRE_THROWS_AS(TokenAuthenticator(v, kTenant, over), std::invalid_argument);
+    over.clock_skew = std::chrono::hours(24);
+    AXIAM_REQUIRE_THROWS_AS(TokenAuthenticator(v, kTenant, over), std::invalid_argument);
+}
+
+// §10.1 rule 1: `alg` is pinned to EdDSA BEFORE a key is looked up, so neither
+// confusion shape ever reaches the signature machinery — at the guard entry
+// point, not only on the raw primitive.
+AXIAM_TEST("authenticator rejects alg:none and an HS-signed token bearing the EdDSA kid") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    const std::string payload = claims("\"exp\":" + std::to_string(kNow + 900));
+
+    // alg:none, canonical shape (empty third part).
+    const std::string none_tok = key.make_alg_none_jwt(payload);
+    AXIAM_CHECK_FALSE(v.verify_signature_only_unchecked(none_tok).has_value());
+    AXIAM_REQUIRE_THROWS_AS(auth.authenticate(none_tok), AuthError);
+
+    // alg:none carrying a real Ed25519 signature, so only the header lies: the
+    // token would verify if the key were consulted, and must still be refused.
+    const std::string none_signed = key.make_jwt("none", payload);
+    AXIAM_CHECK_FALSE(v.verify_signature_only_unchecked(none_signed).has_value());
+    AXIAM_REQUIRE_THROWS_AS(auth.authenticate(none_signed), AuthError);
+
+    // HS256 MAC keyed with the published Ed25519 public key, same kid.
+    const std::string hs_tok = key.make_hs256_confused_jwt(payload);
+    AXIAM_CHECK_FALSE(v.verify_signature_only_unchecked(hs_tok).has_value());
+    AXIAM_REQUIRE_THROWS_AS(auth.authenticate(hs_tok), AuthError);
+
+    // And the same three through the §10 guard wiring.
+    struct Req {
+        std::string authorization;
+    };
+    auto guard = AxiamGuard<Req>(auth.guard_authenticator<Req>([](const Req& r) {
+        return TokenAuthenticator::bearer_from_authorization(r.authorization);
+    }));
+    AXIAM_REQUIRE_THROWS_AS(guard(Req{"Bearer " + none_tok}), AuthError);
+    AXIAM_REQUIRE_THROWS_AS(guard(Req{"Bearer " + none_signed}), AuthError);
+    AXIAM_REQUIRE_THROWS_AS(guard(Req{"Bearer " + hs_tok}), AuthError);
+}
+
+// §10.1 rules 5/6 are CONDITIONAL: with no expectation configured the claims
+// are not checked, and the SDK never assumes an issuer or audience.
+AXIAM_TEST("unconfigured issuer/audience are not checked") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    AuthenticatorOptions opts = fixed_clock();
+    AXIAM_REQUIRE_FALSE(opts.expected_issuer.has_value());
+    AXIAM_REQUIRE_FALSE(opts.expected_audience.has_value());
+    TokenAuthenticator auth(v, kTenant, opts);
+
+    // A foreign issuer and audience are irrelevant when nothing is expected.
+    AXIAM_CHECK(auth.try_authenticate(
+                        key.make_jwt("EdDSA", claims("\"exp\":" + std::to_string(kNow + 900) +
+                                                     ",\"iss\":\"https://other.example\","
+                                                     "\"aud\":[\"axiam:m2m\"]")))
+                    .has_value());
+}
+
+// A configured expectation makes the claim REQUIRED: absent or wrong-typed
+// fails closed, not "nothing to check, so pass".
+AXIAM_TEST("configured issuer/audience fail closed when the claim is absent or mistyped") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    const std::string exp = std::to_string(kNow + 900);
+
+    AuthenticatorOptions iss_only = fixed_clock();
+    iss_only.expected_issuer = "https://api.example.test";
+    TokenAuthenticator by_iss(v, kTenant, iss_only);
+    // No `iss` claim at all.
+    AXIAM_CHECK_FALSE(
+        by_iss.try_authenticate(key.make_jwt("EdDSA", claims("\"exp\":" + exp))).has_value());
+    // `iss` present but not a string.
+    AXIAM_CHECK_FALSE(
+        by_iss.try_authenticate(key.make_jwt("EdDSA", claims("\"exp\":" + exp + ",\"iss\":42")))
+            .has_value());
+
+    AuthenticatorOptions aud_only = fixed_clock();
+    aud_only.expected_audience = "axiam:user";
+    TokenAuthenticator by_aud(v, kTenant, aud_only);
+    // `aud` present but neither a string nor an array of strings.
+    AXIAM_CHECK_FALSE(
+        by_aud.try_authenticate(key.make_jwt("EdDSA", claims("\"exp\":" + exp + ",\"aud\":7")))
+            .has_value());
+    AXIAM_CHECK_FALSE(by_aud
+                          .try_authenticate(key.make_jwt(
+                              "EdDSA", claims("\"exp\":" + exp + ",\"aud\":[1,2]")))
+                          .has_value());
+}
+
 AXIAM_TEST("credential extraction helpers") {
     AXIAM_CHECK(*TokenAuthenticator::bearer_from_authorization("Bearer abc.def.ghi") ==
                 "abc.def.ghi");

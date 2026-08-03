@@ -62,8 +62,16 @@ TokenAuthenticator::TokenAuthenticator(JwksVerifier& jwks, std::string expected_
             "TokenAuthenticator: expected_tenant_id must not be empty (an empty "
             "expectation would disable the cross-tenant check)");
     }
+    // §10.1 rule 7: the leeway is bounded. An operator who could set it to an
+    // arbitrary value could re-open the expiry window indefinitely, which is
+    // exactly what rule 2 exists to close — so the ceiling is not configurable.
     if (options_.clock_skew.count() < 0) {
         throw std::invalid_argument("TokenAuthenticator: clock_skew must not be negative");
+    }
+    if (options_.clock_skew > kMaxClockSkew) {
+        throw std::invalid_argument(
+            "TokenAuthenticator: clock_skew exceeds the maximum permitted leeway "
+            "(kMaxClockSkew, 60s) — a larger window would keep expired tokens valid");
     }
 }
 

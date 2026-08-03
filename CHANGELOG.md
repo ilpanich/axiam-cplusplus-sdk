@@ -41,6 +41,13 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   with a loopback carve-out for development (`localhost`, `127.0.0.1`, `::1`). Userinfo
   cannot smuggle a loopback host past the check, and lookalike hosts such as
   `localhost.evil.example` are rejected.
+- **Signed-integer overflow (UB) in the base64url decoder.** `base64url_decode()`
+  accumulated symbols into a never-truncated `int`, so decoding any token part longer
+  than a handful of characters overflowed — undefined behaviour on the code path that
+  decodes every JWT header, payload and signature. The accumulator is now an explicitly
+  masked `std::uint32_t`. Caught by an ASan+UBSan run of the suite (`-fno-sanitize-recover=all`),
+  which the suite now passes clean; the same latent overflow in the tests' base64url
+  encoder was fixed alongside it.
 - **`CURLOPT_CUSTOMREQUEST` leaked across requests on the shared easy handle.** The handle
   is reused for the client's lifetime, and `CURLOPT_CUSTOMREQUEST` is sticky: after any POST
   every subsequent GET went out with the previous POST's verb, silently turning the JWKS
@@ -69,6 +76,31 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   `JwksVerifier::verify_signature_only_unchecked()` (SEC-074). The behaviour is unchanged —
   the name and the docs now say what it does. It validates the signature and no claims, so
   it must not be wired into a request guard; use `TokenAuthenticator` instead.
+- **Behaviour-breaking:** `AuthenticatorOptions::clock_skew` is now **bounded**
+  (CONTRACT §10.1 rule 7). It must lie in `[0, axiam::kMaxClockSkew]` (60 s, the
+  value §10.1 recommends); a larger leeway now throws `std::invalid_argument` from
+  the `TokenAuthenticator` constructor instead of being honoured. An unbounded
+  leeway would let an operator re-open the expiry window indefinitely, defeating
+  rule 2. Deployments that set a skew above 60 s must lower it or fix their clock
+  synchronisation. The default is unchanged: `axiam::kDefaultClockSkew` (30 s),
+  now a named `constexpr` rather than an inline literal, and deliberately stricter
+  than the ceiling.
+
+### Conformance
+
+- **CONTRACT §10.1 (minimum local-verification set) — no behavioural change was
+  required to the claim checks.** `TokenAuthenticator`, the documented §10 guard
+  entry point, already applied all seven rules: the EdDSA `alg` pin runs before
+  any key lookup (`src/jwks.cpp`), `exp` is required and both an absent and a
+  non-numeric `exp` hard-fail, `nbf` is honoured when present, `tenant_id` is
+  required and asserted (with an empty tenant expectation refused at
+  construction), and `iss`/`aud` are checked when — and only when — configured.
+  The only §10.1 gap was rule 7's bound on the leeway, fixed above. §10.1 also
+  cites this SDK's `verify_signature_only_unchecked` as the reference spelling for
+  a raw signature-only primitive. The §10.1 negative-test set is now complete: the
+  `alg: none` and HS-signed-with-an-EdDSA-`kid` confusion cases were added, along
+  with the conditional-`iss`/`aud` fail-closed cases and the skew-ceiling case.
+- Vendored `CONTRACT.md` re-synced with §10.1.
 
 ## [1.0.0-alpha23] - 2026-08-02
 
