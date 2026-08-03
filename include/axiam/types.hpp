@@ -33,7 +33,10 @@ struct LoginResult {
     std::int64_t expires_in = 0;
 
     // MFA-required branch (HTTP 202 MfaRequiredResponse).
-    std::string challenge_token;
+    /// Short-lived MFA challenge token. §7 classes this as secret material, so it
+    /// is wrapped: it never appears in a log line, stream insertion or to_string().
+    /// Pass it straight back to Client::verify_mfa(), which takes the wrapper.
+    Sensitive<std::string> challenge_token;
     std::vector<std::string> available_methods;
 };
 

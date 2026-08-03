@@ -47,6 +47,53 @@ std::optional<std::string> jwt_claim(const std::string& jwt, const std::string& 
     return j[claim].get<std::string>();
 }
 
+/// §6 / SEC-073: refuse a plaintext base URL at construction.
+///
+/// The base URL is concatenated verbatim into every request, so an `http://`
+/// base silently downgrades the whole session — login credentials, the httpOnly
+/// cookie jar, the CSRF token and the tenant header all go out in cleartext,
+/// with strict TLS never getting a chance to apply. Only `https` is accepted,
+/// with the usual loopback carve-out (`localhost`, `127.0.0.1`, `::1`) so local
+/// development against a plaintext dev server still works. Mirrors the Rust
+/// SDK's `ensure_secure_scheme`.
+void ensure_secure_scheme(const std::string& base_url) {
+    const auto scheme_end = base_url.find("://");
+    if (scheme_end == std::string::npos) {
+        throw std::invalid_argument(
+            "AxiamClient: base_url must be an absolute https:// URL");
+    }
+    const std::string scheme = CaseInsensitiveLess::lower(base_url.substr(0, scheme_end));
+    if (scheme == "https") return;
+    if (scheme != "http") {
+        throw std::invalid_argument("AxiamClient: base_url scheme '" + scheme +
+                                    "' is not supported; https:// is required");
+    }
+
+    // http:// — permitted only for loopback development hosts.
+    std::string authority = base_url.substr(scheme_end + 3);
+    const auto path_start = authority.find_first_of("/?#");
+    if (path_start != std::string::npos) authority.erase(path_start);
+    const auto userinfo = authority.rfind('@');
+    if (userinfo != std::string::npos) authority.erase(0, userinfo + 1);
+
+    std::string host;
+    if (!authority.empty() && authority.front() == '[') {  // [::1]:8080
+        const auto close = authority.find(']');
+        if (close != std::string::npos) host = authority.substr(1, close - 1);
+    } else {
+        const auto colon = authority.find(':');
+        host = (colon == std::string::npos) ? authority : authority.substr(0, colon);
+    }
+    host = CaseInsensitiveLess::lower(host);
+
+    if (host == "localhost" || host == "127.0.0.1" || host == "::1") return;
+
+    throw std::invalid_argument(
+        "AxiamClient: refusing a plaintext http:// base_url for host '" + host +
+        "' (CONTRACT §6 requires https; http is allowed only for localhost, "
+        "127.0.0.1 and ::1)");
+}
+
 /// Resolve the org_id (UUID) from the access-token cookie set by a login
 /// response, if present. See jwt_claim for the trust rationale.
 std::optional<std::string> org_id_from_cookies(const std::vector<std::string>& set_cookies) {
@@ -273,6 +320,8 @@ Client Client::Builder::build() {
     if (base_url_.empty()) {
         throw std::invalid_argument("AxiamClient: base_url is required");
     }
+    // §6 / SEC-073: no plaintext transport (loopback dev exception).
+    ensure_secure_scheme(base_url_);
     // §5: tenant context is non-optional. No default tenant.
     if (!tenant_slug_.has_value() && !tenant_id_.has_value()) {
         throw AuthError("AxiamClient: tenant_slug or tenant_id is required (no default tenant)");
@@ -344,7 +393,8 @@ LoginResult Client::login(const std::string& username_or_email, const std::strin
     if (resp.status == 202 || (!j.is_discarded() && j.value("mfa_required", false))) {
         result.mfa_required = true;
         if (!j.is_discarded()) {
-            result.challenge_token = j.value("challenge_token", "");
+            result.challenge_token =
+                Sensitive<std::string>(j.value("challenge_token", std::string{}));
             if (j.contains("available_methods") && j["available_methods"].is_array()) {
                 for (const auto& m : j["available_methods"]) {
                     if (m.is_string()) result.available_methods.push_back(m.get<std::string>());
@@ -369,6 +419,11 @@ LoginResult Client::login(const std::string& username_or_email, const std::strin
         if (auto oid = org_id_from_cookies(resp.set_cookies)) p_->resolved_org_id = *oid;
     }
     return result;
+}
+
+LoginResult Client::verify_mfa(const Sensitive<std::string>& challenge_token,
+                               const std::string& totp_code) {
+    return verify_mfa(detail::reveal(challenge_token), totp_code);
 }
 
 LoginResult Client::verify_mfa(const std::string& challenge_token, const std::string& totp_code) {

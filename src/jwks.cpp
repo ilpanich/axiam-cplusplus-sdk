@@ -137,7 +137,8 @@ std::size_t JwksVerifier::cached_key_count() {
     return keys_.size();
 }
 
-std::optional<VerifiedToken> JwksVerifier::verify(const std::string& jwt) {
+std::optional<VerifiedToken> JwksVerifier::verify_signature_only_unchecked(
+    const std::string& jwt) {
     std::string header_b64, payload_b64, sig_b64;
     if (!split_jwt(jwt, header_b64, payload_b64, sig_b64)) return std::nullopt;
 

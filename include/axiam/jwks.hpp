@@ -1,9 +1,19 @@
-// JWKS fetch + Ed25519 (EdDSA) JWT signature verification.
+// JWKS fetch + Ed25519 (EdDSA) JWT *signature* verification.
 //
 // Fetches GET {base}/oauth2/jwks, caches the key set for 300s, and verifies a
 // compact JWS using OpenSSL raw Ed25519 keys. Only alg == "EdDSA" is accepted;
-// any other alg is rejected before signature work. The verifier does NOT check
-// token expiry (`exp`) — that is the caller's concern.
+// any other alg is rejected before signature work.
+//
+// !! This is an EXPERT-ONLY primitive. !!
+// It checks the signature and NOTHING ELSE — no `exp`, no `nbf`, no `iss`, no
+// `aud`, and no tenant binding. Wiring it directly into a request guard accepts
+// expired tokens and tokens minted for a different tenant.
+//
+// The supported entry point for authenticating an inbound request is
+// axiam::TokenAuthenticator in <axiam/authenticator.hpp>, which layers the
+// expiry, not-before and tenant checks on top of this primitive and fails
+// closed. Reach for JwksVerifier::verify_signature_only_unchecked() only when
+// you are deliberately implementing those checks yourself.
 #pragma once
 
 #include <chrono>
@@ -38,10 +48,17 @@ public:
     JwksVerifier(Transport transport, std::string base_url,
                  std::chrono::seconds cache_ttl = std::chrono::seconds(300));
 
-    /// Verify a compact JWS. Ed25519/EdDSA only. On success returns the payload;
-    /// returns nullopt if the alg is not EdDSA, the kid is unknown, the token is
-    /// malformed, or the signature does not verify. Does not check `exp`.
-    std::optional<VerifiedToken> verify(const std::string& jwt);
+    /// EXPERT PRIMITIVE — signature only. Verifies a compact JWS against the
+    /// cached Ed25519 key set (EdDSA only) and returns the decoded payload.
+    /// Returns nullopt if the alg is not EdDSA, the kid is unknown, the token is
+    /// malformed, or the signature does not verify.
+    ///
+    /// It performs NO claim validation whatsoever: an expired token, a
+    /// not-yet-valid token and a token belonging to another tenant all come back
+    /// as a successful result. The name says `unchecked` because the claims are
+    /// unchecked. Use axiam::TokenAuthenticator (<axiam/authenticator.hpp>)
+    /// unless you are implementing those checks yourself.
+    std::optional<VerifiedToken> verify_signature_only_unchecked(const std::string& jwt);
 
     /// Force-refresh the cached key set (also called lazily by verify()).
     void refresh_keys();

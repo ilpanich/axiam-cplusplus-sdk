@@ -55,10 +55,36 @@ AXIAM_TEST("login MFA-required (202) returns challenge branch") {
     Client c = make_client(st);
     LoginResult res = c.login("alice", "pw");
     AXIAM_CHECK(res.mfa_required);
-    AXIAM_CHECK(res.challenge_token == "chal-9");
+    // SEC-076: the challenge token is §7 secret material, so it is wrapped and
+    // only reachable through the module-private accessor.
+    AXIAM_CHECK(detail::reveal(res.challenge_token) == "chal-9");
+    AXIAM_CHECK(res.challenge_token.to_string() == "[SENSITIVE]");
+    AXIAM_CHECK_FALSE(res.challenge_token.empty());
     AXIAM_REQUIRE(res.available_methods.size() == 1);
     AXIAM_CHECK(res.available_methods[0] == "totp");
     AXIAM_CHECK_FALSE(c.has_session());
+}
+
+AXIAM_TEST("verify_mfa accepts the wrapped challenge token straight from login (SEC-076)") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) {
+        if (req.url.find("/auth/login") != std::string::npos) {
+            return json_response(202, R"({"mfa_required":true,"challenge_token":"chal-9"})");
+        }
+        return json_response(200,
+                             R"({"session_id":"s","expires_in":900,)"
+                             R"("user":{"id":"u-1","username":"a","email":"a@x","tenant_id":"t-1"}})");
+    };
+    Client c = make_client(st);
+    LoginResult challenge = c.login("alice", "pw");
+    AXIAM_REQUIRE(challenge.mfa_required);
+
+    // No unwrapping at the call site — the Sensitive overload takes it directly.
+    LoginResult res = c.verify_mfa(challenge.challenge_token, "123456");
+    AXIAM_CHECK(c.has_session());
+    AXIAM_REQUIRE(res.user.has_value());
+    // The token still reached the wire.
+    AXIAM_CHECK(st->last().body.find("chal-9") != std::string::npos);
 }
 
 AXIAM_TEST("verify_mfa success establishes session") {

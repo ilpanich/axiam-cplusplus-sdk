@@ -10,7 +10,7 @@ Idiomatic C++17 client for [AXIAM](https://github.com/ilpanich/axiam) (Access
 eXtended Identity and Authorization Management) — authentication, authorization
 checks, JWKS verification, and framework-agnostic route guards.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§11 (including §6.1 mTLS).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§11 and §13 (including §6.1 mTLS).**
 
 > Scope note: this v1 covers the REST surface. **gRPC** — including the gRPC-only
 > `get_user_info` operation (CONTRACT §1.1, contract 1.3) — and **§8 AMQP HMAC** are
@@ -110,13 +110,43 @@ All failures are exceptions rooted at `axiam::AxiamError`:
 
 Token strings never appear in `what()`, logs, or serialized output (§7).
 
-### Route guards & declarative helpers (§10 / §11)
+### Authenticating a request (§10)
+
+`axiam::TokenAuthenticator` is **the** entry point for turning an inbound
+credential into an `AxiamUser`. It verifies the Ed25519 signature **and** the
+claims that make a signature meaningful — `exp` (with a small named clock skew),
+`nbf` when present, and that the token's `tenant_id` matches the tenant this
+server serves — and fails closed on anything missing or malformed.
+
+```cpp
+#include <axiam/authenticator.hpp>
+
+axiam::TokenAuthenticator auth(client.jwks(), "11111111-2222-3333-4444-555555555555");
+
+// Wire it into the framework-agnostic guard: you supply the credential
+// extraction, the authenticator supplies the verification.
+axiam::AxiamGuard<MyRequest> guard(
+    auth.guard_authenticator<MyRequest>([](const MyRequest& r) {
+        return axiam::TokenAuthenticator::bearer_from_authorization(r.header("Authorization"));
+    }));
+
+axiam::AxiamUser user = guard(request);   // throws axiam::AuthError (401) otherwise
+```
+
+Optional `iss` / `aud` pinning and the clock skew live on
+`axiam::AuthenticatorOptions`; `AuthenticatorOptions::now` is the injection seam
+for tests. `try_authenticate()` is the non-throwing twin.
+
+> **Do not** build an `AxiamUser` from
+> `JwksVerifier::verify_signature_only_unchecked()`. That is a deliberately
+> named expert primitive: it validates the signature and nothing else, so a
+> guard fed from it accepts expired tokens and tokens minted for another tenant.
+
+### Declarative helpers (§11)
 
 ```cpp
 #include <axiam/guard.hpp>
 
-// The host adapter (Crow / Pistache / any server) authenticates the request into
-// an AxiamUser; the helpers then compose on top of check_access.
 void handler(axiam::Client& client, const std::optional<axiam::AxiamUser>& user) {
     axiam::require_auth(user);                        // 401 if unauthenticated
     axiam::require_role(user, {"editor", "admin"});   // local role check, 403
@@ -128,13 +158,49 @@ void handler(axiam::Client& client, const std::optional<axiam::AxiamUser>& user)
 `require_access` propagates `subject_id = user.user_id` (§11.2), fails closed on
 transport errors (§11.5), and never caches decisions (§11.6).
 
+### Webhook signature verification (§13)
+
+```cpp
+#include <axiam/webhook.hpp>
+
+// `raw_body` MUST be the exact bytes received off the wire — never a
+// re-serialization of parsed JSON, which changes key order and whitespace and
+// breaks the MAC.
+axiam::webhook::Options opts;
+opts.event_type  = request.header("X-Axiam-Event");
+opts.delivery_id = request.header("X-Axiam-Delivery");
+// opts.tolerance defaults to 300s, applied in BOTH directions.
+
+auto result = axiam::webhook::verify(
+    axiam::Sensitive<std::string>(webhook_secret),
+    request.header("X-Axiam-Signature"),
+    raw_body,
+    opts);
+
+if (!result) {
+    return respond(400, result.error_message());   // typed, never leaks the MAC
+}
+// result.event.delivery_id is the at-least-once dedup key: a retry replays a
+// valid signature inside the freshness window, so keep a short-lived seen-set
+// if your handler is not idempotent.
+handle(result.event);
+```
+
+`verify_or_throw(...)` is the exception-based twin (`axiam::webhook::VerifyException`).
+
 ---
 
 ## TLS & mTLS (§6 / §6.1)
 
 Strict server verification is **always on** (`CURLOPT_SSL_VERIFYPEER=1`,
 `CURLOPT_SSL_VERIFYHOST=2`). There is **no** API to disable it — the only trust
-escape hatch is adding a custom CA:
+escape hatch is adding a custom CA.
+
+The base URL must be `https://`: `Client::Builder::build()` throws
+`std::invalid_argument` for a plaintext `http://` base, so a misconfiguration
+cannot silently send credentials, cookies, the CSRF token and the tenant header
+in cleartext. `http://` is accepted only for the loopback development hosts
+`localhost`, `127.0.0.1` and `::1`.
 
 ```cpp
 auto client = axiam::Client::builder()
