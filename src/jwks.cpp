@@ -23,13 +23,18 @@ std::optional<std::string> base64url_decode(const std::string& in) {
     };
 
     std::string out;
-    int buffer = 0;
+    // The accumulator MUST be unsigned and masked. Only the low `bits` are ever
+    // read back, but the accumulator itself is never truncated, so a signed one
+    // overflows after a handful of symbols — signed overflow is UB, and this
+    // runs on every token the §10.1 verification path decodes. 24 bits is ample:
+    // at most 13 are ever live (6 shifted in on top of at most 7 still owed).
+    std::uint32_t buffer = 0;
     int bits = 0;
     for (char ch : in) {
         if (ch == '=') break;  // tolerate padding
         const int v = val(static_cast<unsigned char>(ch));
         if (v < 0) return std::nullopt;
-        buffer = (buffer << 6) | v;
+        buffer = ((buffer << 6) | static_cast<std::uint32_t>(v)) & 0xFFFFFFu;
         bits += 6;
         if (bits >= 8) {
             bits -= 8;

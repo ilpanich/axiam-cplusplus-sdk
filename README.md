@@ -133,9 +133,20 @@ axiam::AxiamGuard<MyRequest> guard(
 axiam::AxiamUser user = guard(request);   // throws axiam::AuthError (401) otherwise
 ```
 
+This is CONTRACT §10.1's minimum local-verification set: the `alg` pin runs
+before any key lookup, `exp` is required (absent *and* non-numeric both
+hard-fail), `nbf` is honoured when present, and `tenant_id` is asserted — an
+empty tenant expectation is refused at construction rather than silently
+disabling the check.
+
 Optional `iss` / `aud` pinning and the clock skew live on
 `axiam::AuthenticatorOptions`; `AuthenticatorOptions::now` is the injection seam
-for tests. `try_authenticate()` is the non-throwing twin.
+for tests. `try_authenticate()` is the non-throwing twin. The issuer and
+audience checks are **conditional** — leave them unset (the default) and the
+claims are not checked; set one and it becomes required, so a token missing that
+claim is refused. The skew is a named, bounded constant: it defaults to
+`axiam::kDefaultClockSkew` (30 s) and may not exceed `axiam::kMaxClockSkew`
+(60 s), because an unbounded leeway would keep expired tokens usable.
 
 > **Do not** build an `AxiamUser` from
 > `JwksVerifier::verify_signature_only_unchecked()`. That is a deliberately

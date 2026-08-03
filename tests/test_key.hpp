@@ -4,7 +4,9 @@
 #pragma once
 
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -17,9 +19,12 @@ namespace axtest {
 inline std::string b64url_encode(const unsigned char* data, size_t len) {
     static const char* tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     std::string out;
-    int buffer = 0, bits = 0;
+    // Unsigned + masked: only the low `bits` are read back, but the accumulator
+    // is never truncated, so a signed one overflows (UB) after a few bytes.
+    std::uint32_t buffer = 0;
+    int bits = 0;
     for (size_t i = 0; i < len; ++i) {
-        buffer = (buffer << 8) | data[i];
+        buffer = ((buffer << 8) | data[i]) & 0xFFFFFFu;
         bits += 8;
         while (bits >= 6) {
             bits -= 6;
@@ -83,6 +88,29 @@ struct TestKey {
         std::string signing_input = b64url_encode(header) + "." + b64url_encode(payload);
         std::string sig = sign(signing_input);
         return signing_input + "." + b64url_encode(sig);
+    }
+
+    /// An `alg: none` token in its canonical shape: three parts, the third
+    /// empty. CONTRACT §10.1 rule 1 requires rejection without consulting a key.
+    std::string make_alg_none_jwt(const std::string& payload) const {
+        std::string header = "{\"alg\":\"none\",\"typ\":\"JWT\",\"kid\":\"" + kid + "\"}";
+        return b64url_encode(header) + "." + b64url_encode(payload) + ".";
+    }
+
+    /// The classic HS/EdDSA confusion: the header claims HS256 and carries the
+    /// EdDSA `kid`, and the MAC is genuinely computed with the org's PUBLISHED
+    /// Ed25519 public key as the HMAC secret. An implementation that trusted
+    /// the header would compute the same MAC and accept the token.
+    std::string make_hs256_confused_jwt(const std::string& payload) const {
+        std::string header = "{\"alg\":\"HS256\",\"typ\":\"JWT\",\"kid\":\"" + kid + "\"}";
+        const std::string signing_input = b64url_encode(header) + "." + b64url_encode(payload);
+        const std::string secret = raw_public();
+        unsigned char mac[EVP_MAX_MD_SIZE];
+        unsigned int maclen = 0;
+        HMAC(EVP_sha256(), secret.data(), static_cast<int>(secret.size()),
+             reinterpret_cast<const unsigned char*>(signing_input.data()),
+             signing_input.size(), mac, &maclen);
+        return signing_input + "." + b64url_encode(mac, maclen);
     }
 };
 

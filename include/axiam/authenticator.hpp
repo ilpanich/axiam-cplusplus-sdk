@@ -42,12 +42,26 @@ namespace axiam {
 /// Clock seam: returns the current time as unix seconds. Injected in tests.
 using NowFn = std::function<std::int64_t()>;
 
+/// CONTRACT §10.1 rule 7 — the leeway applied to `exp` and `nbf` must be a
+/// *named*, documented, bounded constant, never an inline literal and never
+/// operator-configurable to an unbounded value.
+///
+/// `kMaxClockSkew` is the hard ceiling the constructor enforces; it is the
+/// value §10.1 recommends (60 s). `kDefaultClockSkew` is deliberately stricter
+/// than the ceiling: every second of leeway is a second in which an already
+/// expired access token is still admitted, so the default takes only what a
+/// well-synchronised deployment actually needs. Anything above the ceiling is
+/// rejected at construction rather than silently honoured.
+inline constexpr std::chrono::seconds kDefaultClockSkew{30};
+inline constexpr std::chrono::seconds kMaxClockSkew{60};
+
 /// Tuning for TokenAuthenticator. The defaults are the safe ones.
 struct AuthenticatorOptions {
     /// Tolerance applied to `exp` and `nbf` for small clock differences between
     /// this resource server and the AXIAM issuer. Deliberately small: it widens
-    /// the window in which an expired access token is still accepted.
-    std::chrono::seconds clock_skew{30};
+    /// the window in which an expired access token is still accepted. Must be
+    /// in [0, kMaxClockSkew]; anything else throws from the constructor.
+    std::chrono::seconds clock_skew{kDefaultClockSkew};
 
     /// When set, the `iss` claim must be present and equal to this value.
     std::optional<std::string> expected_issuer;
@@ -70,7 +84,8 @@ public:
     /// @param expected_tenant_id the tenant this resource server serves. Every
     ///        token's `tenant_id` claim must equal it exactly.
     /// @throws std::invalid_argument when expected_tenant_id is empty — an
-    ///         empty expectation would silently disable the tenant check.
+    ///         empty expectation would silently disable the tenant check — or
+    ///         when options.clock_skew is negative or exceeds kMaxClockSkew.
     TokenAuthenticator(JwksVerifier& jwks, std::string expected_tenant_id,
                        AuthenticatorOptions options = {});
 
