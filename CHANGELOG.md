@@ -8,6 +8,19 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Added
 
+- **ASan+UBSan and valgrind CI job (§13.4 observation 10 / §12.6.1).** `OBS-4`
+  was a signed-integer overflow — undefined behaviour — in **this repository's**
+  base64url decoder, on the token-decode path, and it survived three security
+  passes because the only CI legs here were gcc/clang builds plus coverage. An
+  ordinary build does not report UB, so nothing was ever going to catch it; it
+  surfaced only because a sanitizer run was done by hand.
+
+  The new job runs the suite under ASan+UBSan with `-fno-sanitize-recover=all`
+  (so a UBSan diagnostic aborts rather than printing and letting the run stay
+  green) and then runs it again under valgrind with `--error-exitcode=9
+  --leak-check=full`. Verified locally before wiring: 107 test cases / 380
+  checks pass under the sanitizers, and valgrind reports no errors or definite
+  leaks.
 - **Safe-by-default request authenticator (`axiam::TokenAuthenticator`, SEC-074).**
   New header `<axiam/authenticator.hpp>`. It is now the documented §10 entry point for
   turning an inbound credential into an `AxiamUser`: it verifies the Ed25519 signature
