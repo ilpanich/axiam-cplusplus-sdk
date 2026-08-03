@@ -40,6 +40,56 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  sanitizers:
+    # §13.4 observation 10 / §12.6.1. OBS-4 was a signed-integer overflow (UB)
+    # in this repository's base64url decoder — on the token-decode path — and it
+    # survived three security passes because the only legs here were gcc/clang
+    # builds plus coverage. An ordinary build does not report UB, so nothing was
+    # ever going to catch it; the suite already passes cleanly under these
+    # tools, so wiring them in costs a few minutes and closes the class.
+    name: ASan+UBSan & valgrind
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libcurl4-openssl-dev libssl-dev valgrind
+
+      # -fno-sanitize-recover=all is load-bearing: without it UBSan prints a
+      # diagnostic and carries on, so the run stays green and the finding is
+      # only visible to whoever reads the log. Aborting makes it a gate.
+      - name: Configure (ASan + UBSan)
+        run: |
+          cmake -S . -B build-asan -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug -DAXIAM_BUILD_TESTS=ON \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build (ASan + UBSan)
+        run: cmake --build build-asan -j
+
+      - name: Test under ASan + UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build-asan --output-on-failure
+
+      - name: Configure (plain, for valgrind)
+        run: cmake -S . -B build-vg -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAXIAM_BUILD_TESTS=ON
+
+      - name: Build (plain)
+        run: cmake --build build-vg -j
+
+      # Run the binary directly rather than via ctest: this project uses
+      # enable_testing() rather than include(CTest), so there is no
+      # MemoryCheckCommand wiring for `ctest -T memcheck` to use.
+      - name: Valgrind
+        run: |
+          valgrind --error-exitcode=9 --leak-check=full \
+            --errors-for-leak-kinds=definite -q build-vg/tests/axiam_cpp_tests
+
   tls-bypass-gate:
     name: TLS-bypass lint gate (§6)
     runs-on: ubuntu-latest
