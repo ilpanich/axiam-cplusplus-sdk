@@ -5,8 +5,12 @@
 // that TokenAuthenticator still rejects it on a claim the primitive does not look
 // at, and that the guard path goes through the authenticator rather than the
 // primitive.
+#include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
+#include <type_traits>
+#include <vector>
 
 #include "assert.hpp"
 #include "axiam/authenticator.hpp"
@@ -446,4 +450,114 @@ AXIAM_TEST("make_authenticator binds a client's JWKS verifier") {
     AXIAM_CHECK_FALSE(
         auth.try_authenticate(key.make_jwt("EdDSA", claims("\"exp\":" + std::to_string(kNow - 3600))))
             .has_value());
+}
+
+// ---------------------------------------------------------------------------
+// CONTRACT.md §10.1 rule 8 — "subject of the decision" (SEC-085, §15.3.1).
+//
+// Rules 1-7 ask whether the token is good. Rule 8 asks whether it is the token
+// the decision is even ABOUT. SEC-085 satisfied all seven and was still an
+// authentication bypass: the PHP guard routed a failed verification into a
+// second, successful one against the *application's own* session, so the caller
+// was admitted as the app's service account — in an IAM integration typically
+// far more privileged than the user whose request it replaced.
+//
+// This SDK is structurally safe from that shape: TokenAuthenticator holds a
+// JwksVerifier and a tenant id, never a Client with a session, so there is no
+// second credential in scope to substitute. These tests pin the property rather
+// than assume it — the guardrail §15.3.1 asks for.
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("rule 8 — a failed caller token is rejected while another valid token exists") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    // The application's own credential: same key, same tenant, genuinely fresh.
+    // If any fallback existed this is what it would substitute — and it would
+    // succeed, which is what makes the assertion below meaningful.
+    const std::string app_token =
+        key.make_jwt("EdDSA", std::string("{\"sub\":\"app-service-account\",\"tenant_id\":\"") +
+                                  kTenant + "\",\"exp\":" + std::to_string(kNow + 900) +
+                                  ",\"roles\":[\"admin\"]}");
+
+    // Precondition: prove the substitute really would verify. Without this the
+    // test could pass for an incidental reason — a fallback that fails because
+    // there was nothing valid to fall back to proves nothing.
+    AXIAM_REQUIRE(auth.try_authenticate(app_token).has_value());
+
+    // The caller's credential: valid signature, right tenant, expired. It fails
+    // rule 2 and nothing else, so the only way to admit it is substitution.
+    const std::string expired =
+        key.make_jwt("EdDSA", claims("\"exp\":" + std::to_string(kNow - 900)));
+
+    AXIAM_REQUIRE_THROWS_AS(auth.authenticate(expired), AuthError);
+
+    auto maybe = auth.try_authenticate(expired);
+    AXIAM_CHECK_FALSE(maybe.has_value());
+    // Stated directly: the app's principal must never be the answer to a
+    // question asked about someone else's credential.
+    if (maybe.has_value()) {
+        AXIAM_CHECK(maybe->user_id != "app-service-account");
+    }
+}
+
+AXIAM_TEST("rule 8 — the guard authenticator decides on the request's own credential") {
+    // The guard path, not just the authenticator: AxiamGuard receives whatever
+    // the extractor pulled off the request. A guard that consulted anything
+    // else would show up here as an admitted caller.
+    struct FakeRequest {
+        std::string bearer;
+    };
+
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    const std::string app_token =
+        key.make_jwt("EdDSA", std::string("{\"sub\":\"app-service-account\",\"tenant_id\":\"") +
+                                  kTenant + "\",\"exp\":" + std::to_string(kNow + 900) + "}");
+    const std::string expired =
+        key.make_jwt("EdDSA", claims("\"exp\":" + std::to_string(kNow - 900)));
+    AXIAM_REQUIRE(auth.try_authenticate(app_token).has_value());
+
+    // The extractor records what it was asked for, so we can assert the guard
+    // consulted exactly one credential — the caller's.
+    auto seen = std::make_shared<std::vector<std::string>>();
+    auto authenticator = auth.guard_authenticator<FakeRequest>(
+        [seen](const FakeRequest& req) -> std::optional<std::string> {
+            seen->push_back(req.bearer);
+            return req.bearer;
+        });
+
+    FakeRequest req{expired};
+    auto result = authenticator(req);
+
+    AXIAM_CHECK_FALSE(result.has_value());
+    AXIAM_CHECK(seen->size() == 1);
+    AXIAM_CHECK((*seen)[0] == expired);
+    for (const auto& s : *seen) {
+        AXIAM_CHECK(s != app_token);
+    }
+}
+
+AXIAM_TEST("rule 8 — the authenticator holds no client and therefore no session") {
+    // The shape of the bug: PHP's guard reached a stateful session through the
+    // client it held. TokenAuthenticator is constructible from a JwksVerifier
+    // alone — no Client, no session, nothing carrying a credential of its own.
+    //
+    // A compile-time assertion, so that making a Client the only way to build
+    // one would have to be a deliberate act rather than a silent drift.
+    static_assert(std::is_constructible<TokenAuthenticator, JwksVerifier&, std::string>::value,
+                  "TokenAuthenticator must remain constructible from a verifier and a tenant "
+                  "alone — requiring a Client would put a second credential in the guard's "
+                  "reach and make rule 8 violable");
+
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+    AXIAM_CHECK(auth.expected_tenant_id() == kTenant);
 }
