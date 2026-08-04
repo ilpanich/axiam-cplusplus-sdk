@@ -4,6 +4,23 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha24] - 2026-08-04
+
+### Added
+
+- Safe-by-default authenticator, webhook verifier, https-only base URL, keep-alive transport
+
+### Changed
+
+- Add the §10.1 rule-8 guardrail regression tests (#13)
+- Device (mTLS) tokens now carry aud=axiam:m2m (#12)
+- Service accounts can use login_client_credentials (#11)
+- Add ASan+UBSan and valgrind gates (§13.4 observation 10 / §12.6.1) (#10)
+
+### Fixed
+
+- Bound the verification clock skew and fix base64url UB (§10.1)
+
 ## [Unreleased]
 
 ### Added
