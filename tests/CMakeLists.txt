@@ -13,6 +13,7 @@ add_executable(axiam_cpp_tests
   test_authenticator.cpp
   test_webhook.cpp
   test_integration_curl.cpp
+  test_transport_concurrency.cpp
   test_transport_reuse.cpp
 )
 

@@ -4,6 +4,40 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [Unreleased]
+
+### Fixed
+
+- **The transport now performs requests concurrently (D2).** Benchmark runs 4
+  and 5 both measured `check_access` at p50 3.2 ms against p95 280 ms — a tail
+  this SDK's own acceptance bar (p95 ≤ 3× p50) rejects, and one the run-4
+  connection-lifetime work (`MAXAGE_CONN`, Happy-Eyeballs, TCP keepalive) did
+  not move. It was never the wire. `CurlTransport::perform` held a mutex over a
+  **single** libcurl easy handle, so a `Client` shared across threads served
+  requests strictly one at a time: p50 was the uncontended service time, p95
+  was fifteen callers queueing — and because `std::mutex` barges rather than
+  queues fairly, the tail was heavy rather than merely 16× the median, which is
+  why the shape reproduced identically across runs.
+
+  The transport now keeps a pool of easy handles, one per in-flight request,
+  each with its own hot connection. Cookies, DNS and TLS session state are
+  shared across them through libcurl's `CURLSH`, so the §4 session semantics
+  are preserved exactly — a request served by any handle carries the same
+  session. Connections are deliberately *not* shared: a shared connection cache
+  would put every handle back behind one lock at acquisition time.
+
+### Added
+
+- **`Client::Builder::max_concurrent_requests(unsigned)`** (default 16) — how
+  many requests a client may have in flight. Callers beyond the cap wait for a
+  handle rather than opening unbounded connections to the server. Ignored when
+  a custom `transport()` is supplied.
+- `tests/test_transport_concurrency.cpp`: a loopback server that holds each
+  request open long enough for its siblings to arrive, asserting the server
+  observes more than one request in flight (structural, so it cannot flake on a
+  loaded CI box the way a timing assertion would) and that a client capped at 2
+  never exceeds 2.
+
 ## [1.0.0-alpha24] - 2026-08-04
 
 ### Added

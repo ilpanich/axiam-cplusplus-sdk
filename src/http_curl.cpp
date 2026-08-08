@@ -2,8 +2,10 @@
 
 #include <curl/curl.h>
 
+#include <condition_variable>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace axiam {
 
@@ -46,29 +48,125 @@ size_t header_cb(char* buffer, size_t size, size_t nitems, void* userdata) {
 
 struct CurlTransport::Impl {
     TlsConfig cfg;
-    CURL* handle = nullptr;
-    std::mutex mtx;
+
+    // ---- D2: a POOL of easy handles, not one handle behind a mutex. ----
+    //
+    // Benchmark run 5 measured this SDK at check p50 3.2 ms / p95 280 ms —
+    // the same signature as run 4, unmoved by the I11 connection-lifetime
+    // fixes below, and failing the SDK's own acceptance bar (p95 <= 3x p50).
+    // The I11 work was not wrong; it was aimed at the wrong thing. The tail
+    // was never reconnects.
+    //
+    // It was this class. `perform()` used to take a lock_guard over a single
+    // shared CURL easy handle, so a Client used from N threads served its
+    // requests strictly one at a time. p50 3.2 ms is the uncontended service
+    // time — the connection really is hot, so I11 did work — and p95 280 ms
+    // is what a caller waits when fifteen others hold the lock ahead of it.
+    // `std::mutex` is also barging rather than FIFO, so an unlucky thread can
+    // be passed over repeatedly; that is why the tail is heavy rather than
+    // merely 16x the median, and why the shape reproduced identically across
+    // runs.
+    //
+    // A pool of handles fixes the actual problem. Each handle keeps its own
+    // hot connection (which is exactly what the I11 options below are for),
+    // while cookies, DNS and TLS session state are SHARED through libcurl's
+    // `CURLSH` so the session stays one session regardless of which handle
+    // serves a given request — the §4 cookie semantics are preserved, not
+    // approximated.
+    //
+    // Connections are deliberately NOT shared (`CURL_LOCK_DATA_CONNECT` is
+    // not registered): a shared connection cache would put every handle back
+    // behind one lock at acquisition time, reintroducing a smaller version of
+    // the very contention this removes.
+    CURLSH* share = nullptr;
+    std::mutex share_locks[CURL_LOCK_DATA_LAST];
+
+    std::mutex pool_mtx;
+    std::condition_variable pool_cv;
+    std::vector<CURL*> idle;      // handles available for reuse
+    std::vector<CURL*> all;       // every handle ever created, for cleanup
+    unsigned in_use = 0;
 
     explicit Impl(TlsConfig c) : cfg(std::move(c)) {
         ensure_curl_global_init();
-        handle = curl_easy_init();
-        // Enable the in-memory cookie engine for this handle (§4). An empty
-        // filename turns the engine on without reading/writing any file.
-        curl_easy_setopt(handle, CURLOPT_COOKIEFILE, "");
-        apply_connection_reuse_options(handle);
+        if (cfg.max_concurrent_requests == 0) cfg.max_concurrent_requests = 1;
+        share = curl_share_init();
+        if (share != nullptr) {
+            curl_share_setopt(share, CURLSHOPT_LOCKFUNC, &Impl::lock_cb);
+            curl_share_setopt(share, CURLSHOPT_UNLOCKFUNC, &Impl::unlock_cb);
+            curl_share_setopt(share, CURLSHOPT_USERDATA, this);
+            curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE);
+            curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+            curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+        }
     }
 
     ~Impl() {
-        if (handle != nullptr) curl_easy_cleanup(handle);
+        // Easy handles first: an easy handle still referencing a freed share
+        // is a use-after-free inside libcurl.
+        for (CURL* h : all) curl_easy_cleanup(h);
+        if (share != nullptr) curl_share_cleanup(share);
+    }
+
+    static void lock_cb(CURL*, curl_lock_data data, curl_lock_access, void* user) {
+        static_cast<Impl*>(user)->share_locks[data].lock();
+    }
+    static void unlock_cb(CURL*, curl_lock_data data, void* user) {
+        static_cast<Impl*>(user)->share_locks[data].unlock();
+    }
+
+    /// Take a handle from the pool, creating one if the pool is below its
+    /// cap, otherwise waiting for a busy handle to come back. Blocking rather
+    /// than growing without bound keeps a burst of callers from opening an
+    /// unbounded number of connections to the server.
+    CURL* acquire() {
+        std::unique_lock<std::mutex> lock(pool_mtx);
+        for (;;) {
+            if (!idle.empty()) {
+                CURL* h = idle.back();
+                idle.pop_back();
+                ++in_use;
+                return h;
+            }
+            if (all.size() < cfg.max_concurrent_requests) {
+                CURL* h = curl_easy_init();
+                if (h == nullptr) return nullptr;
+                configure_new_handle(h);
+                all.push_back(h);
+                ++in_use;
+                return h;
+            }
+            pool_cv.wait(lock);
+        }
+    }
+
+    void release(CURL* h) {
+        if (h == nullptr) return;
+        {
+            std::lock_guard<std::mutex> lock(pool_mtx);
+            idle.push_back(h);
+            --in_use;
+        }
+        pool_cv.notify_one();
+    }
+
+    /// Per-handle setup that never changes between requests.
+    void configure_new_handle(CURL* h) {
+        // Enable the in-memory cookie engine for this handle (§4). An empty
+        // filename turns the engine on without reading/writing any file; the
+        // jar itself lives in the shared CURLSH, so every handle sees the
+        // same session cookies.
+        curl_easy_setopt(h, CURLOPT_COOKIEFILE, "");
+        if (share != nullptr) curl_easy_setopt(h, CURLOPT_SHARE, share);
+        apply_connection_reuse_options(h);
     }
 
     // ---- I11: keep the connection hot for the handle's whole lifetime. ----
     //
-    // One easy handle serves every request a Client makes, so libcurl's
-    // connection cache should keep a single TCP+TLS connection hot and the p50
-    // reflects that (~3 ms). The bimodal tail came from libcurl *defaults* that
-    // periodically throw that connection away and then make re-establishing it
-    // expensive:
+    // Each pooled handle should keep its own TCP+TLS connection hot for the
+    // client's lifetime, and the ~3 ms p50 shows that it does. These options
+    // undo libcurl *defaults* that periodically throw that connection away and
+    // then make re-establishing it expensive:
     //
     //   * `CURLOPT_MAXAGE_CONN` defaults to 118 s — libcurl refuses to reuse a
     //     connection older than that and opens a fresh one instead. For a
@@ -125,9 +223,23 @@ CurlTransport::CurlTransport(TlsConfig cfg) : impl_(std::make_unique<Impl>(std::
 CurlTransport::~CurlTransport() = default;
 
 HttpResponse CurlTransport::perform(const HttpRequest& req) {
-    std::lock_guard<std::mutex> lock(impl_->mtx);
-    CURL* h = impl_->handle;
+    // RAII borrow of a pooled handle, so every return path — including one
+    // taken by an exception out of a callback — puts the handle back. Defined
+    // here rather than at namespace scope because `Impl` is private to this
+    // class; a local class inside a member function shares that access.
+    struct HandleLease {
+        Impl* impl;
+        CURL* h;
+        ~HandleLease() { impl->release(h); }
+    };
+
     HttpResponse resp;
+    HandleLease lease{impl_.get(), impl_->acquire()};
+    CURL* h = lease.h;
+    if (h == nullptr) {
+        resp.transport_error = "could not allocate a libcurl handle";
+        return resp;
+    }
 
     curl_easy_setopt(h, CURLOPT_URL, req.url.c_str());
 
