@@ -65,6 +65,22 @@ struct TlsConfig {
     long connect_timeout_ms = 10000;
     long request_timeout_ms = 30000;
 
+    /// Maximum libcurl easy handles the transport keeps, i.e. the number of
+    /// requests it can genuinely have in flight at once.
+    ///
+    /// Before this existed the transport owned exactly ONE easy handle behind
+    /// a mutex, so every call from every thread serialized — a client used
+    /// concurrently had a p95 dominated by lock queueing rather than by the
+    /// server. Set this to your application's expected concurrency; callers
+    /// beyond it wait for a handle rather than opening an unbounded number of
+    /// connections.
+    ///
+    /// Cookies, DNS and TLS session state are shared across the handles (via
+    /// libcurl's `CURLSH`), so the session is one session no matter which
+    /// handle serves a given request. Connections are NOT shared: each handle
+    /// keeps its own hot connection, which is the point.
+    unsigned max_concurrent_requests = 16;
+
     bool has_client_cert() const {
         return !client_cert_pem.empty() && !client_key_pem.empty();
     }

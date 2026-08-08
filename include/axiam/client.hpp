@@ -43,6 +43,18 @@ public:
         Builder& connect_timeout(std::chrono::milliseconds ms);
         Builder& request_timeout(std::chrono::milliseconds ms);
 
+        /// How many requests this client may have in flight at once (default
+        /// 16). The default transport keeps one libcurl handle — and one hot
+        /// connection — per in-flight request; callers beyond the cap wait for
+        /// a handle rather than opening unbounded connections to the server.
+        ///
+        /// Before this existed the transport served every caller through a
+        /// single mutex-guarded handle, so a Client shared across threads had
+        /// a p95 made of lock queueing rather than of server time. Set this to
+        /// your application's real concurrency. Ignored when a custom
+        /// transport() is supplied.
+        Builder& max_concurrent_requests(unsigned n);
+
         /// Override the HTTP transport (test seam). When unset, build() creates
         /// the default libcurl transport from the configured TLS material.
         Builder& transport(Transport t);
@@ -60,6 +72,7 @@ public:
         std::optional<std::string> tenant_id_;
         std::optional<std::string> org_slug_;
         std::optional<std::string> org_id_;
+        unsigned max_concurrent_requests_ = 16;
         std::string custom_ca_pem_;
         std::string client_cert_pem_;
         std::string client_key_pem_;

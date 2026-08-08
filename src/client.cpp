@@ -311,6 +311,10 @@ Client::Builder& Client::Builder::request_timeout(std::chrono::milliseconds ms) 
     request_timeout_ = ms;
     return *this;
 }
+Client::Builder& Client::Builder::max_concurrent_requests(unsigned n) {
+    max_concurrent_requests_ = n == 0 ? 1u : n;
+    return *this;
+}
 Client::Builder& Client::Builder::transport(Transport t) {
     transport_ = std::move(t);
     return *this;
@@ -344,6 +348,7 @@ Client Client::Builder::build() {
         tls.client_key_pem = Sensitive<std::string>(client_key_pem_);
         tls.connect_timeout_ms = static_cast<long>(connect_timeout_.count());
         tls.request_timeout_ms = static_cast<long>(request_timeout_.count());
+        tls.max_concurrent_requests = max_concurrent_requests_;
         impl->transport = CurlTransport::make_transport(std::move(tls));
     }
 
