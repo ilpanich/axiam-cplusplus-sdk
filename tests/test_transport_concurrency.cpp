@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <mutex>
 #include <string>
@@ -89,6 +90,14 @@ struct ConcurrentMiniServer {
             if (::select(listen_fd + 1, &rfds, nullptr, nullptr, &tv) <= 0) continue;
             int fd = ::accept(listen_fd, nullptr, nullptr);
             if (fd < 0) continue;
+            // A receive timeout is load-bearing, not defensive. These are
+            // keep-alive connections: after the last request libcurl holds
+            // them open (that is the whole point of the pool), so a worker
+            // blocked in recv() would never return and shutdown()'s join
+            // would hang the test suite forever. The timeout lets each worker
+            // wake up and re-check `stop`.
+            timeval rcv{0, 100000};  // 100 ms
+            ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcv, sizeof(rcv));
             std::lock_guard<std::mutex> lock(workers_mtx);
             workers.emplace_back([this, fd] {
                 serve(fd);
@@ -105,7 +114,11 @@ struct ConcurrentMiniServer {
             size_t header_end = data.find("\r\n\r\n");
             while (header_end == std::string::npos) {
                 ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-                if (n <= 0) return;
+                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    if (stop.load()) return;   // shutting down
+                    continue;                  // idle keep-alive connection
+                }
+                if (n <= 0) return;            // peer closed, or a real error
                 data.append(buf, static_cast<size_t>(n));
                 header_end = data.find("\r\n\r\n");
             }
@@ -122,6 +135,10 @@ struct ConcurrentMiniServer {
             }
             while (data.size() - body_start < want) {
                 ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    if (stop.load()) return;
+                    continue;
+                }
                 if (n <= 0) return;
                 data.append(buf, static_cast<size_t>(n));
             }
