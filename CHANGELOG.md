@@ -6,6 +6,37 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Added
+
+- **Decision reason codes (CONTRACT §11 rule 9).** `AccessDecision` gains
+  `std::optional<std::string> reason_code`, populated by `check_access`, `can`
+  and every element of `batch_check`, with `axiam::ReasonCode::kAllowed`,
+  `kNoGrant` and `kDeniedByRule` as comparison constants. The two refusals are
+  both `allowed == false` but mean opposite things to the user — *ask an admin*
+  versus *an admin already decided* — and an application that cannot tell them
+  apart sends people to raise tickets that will be refused.
+
+  Deliberately a string and not an `enum class`: §11 rule 9 requires an
+  unrecognised code be surfaced verbatim, so a server that adds a fourth code
+  must not become a decode failure in every deployed client. A server that omits
+  the field (or sends `null`, or a non-string) yields `std::nullopt` — absence,
+  not an error — and the allow/deny outcome stays in `allowed` alone. Guard
+  behaviour is unchanged: `require_access` still throws `AuthzError` (403) for
+  both refusals, which `tests/test_reason_code.cpp` asserts alongside the
+  reporting half.
+
+  `ReasonCode` is a struct of `static constexpr` members rather than a
+  namespace, so `ReasonCode::kAllowed` still resolves in a scope holding a local
+  named `reason_code`.
+
+### Changed
+
+- **Re-vendored `CONTRACT.md` and `openapi.json`** from `ilpanich/axiam` at
+  contract 1.7. Of the sections 1.7 adds, only §11 rule 9 is implemented here;
+  §12.7 (logout), §14 (device grant) and §15 (token exchange) all build on a §12
+  OIDC relying-party layer this SDK does not have, and are recorded under
+  Deferred / follow-ups in the README rather than half-shipped.
+
 ### Fixed
 
 - **The transport now performs requests concurrently (D2).** Benchmark runs 4

@@ -378,6 +378,11 @@ AccessDecision parse_decision(const json& d) {
     AccessDecision dec;
     dec.allowed = d.value("allowed", false);
     if (d.contains("reason") && d["reason"].is_string()) dec.reason = d["reason"].get<std::string>();
+    // §11 rule 9. Copied verbatim, with no validation against the three known
+    // codes: an unrecognised code must reach the caller, and a server that omits
+    // the field (or sends null) must read as absent rather than as an error.
+    if (d.contains("reason_code") && d["reason_code"].is_string())
+        dec.reason_code = d["reason_code"].get<std::string>();
     return dec;
 }
 }  // namespace
