@@ -87,7 +87,8 @@ int main() {
 
     // §1: check_access / can / batch_check take (action, resource[, scope]).
     axiam::AccessDecision d = client.check_access("read", "resource-uuid");
-    std::cout << "allowed=" << std::boolalpha << d.allowed << "\n";
+    std::cout << "allowed=" << std::boolalpha << d.allowed
+              << " (" << d.reason_code.value_or("no reason code") << ")\n";
 
     auto results = client.batch_check({
         {"read",  "res-1", std::nullopt, std::nullopt},
@@ -168,6 +169,47 @@ void handler(axiam::Client& client, const std::optional<axiam::AxiamUser>& user)
 
 `require_access` propagates `subject_id = user.user_id` (§11.2), fails closed on
 transport errors (§11.5), and never caches decisions (§11.6).
+
+### Decision reason codes (§11 rule 9)
+
+Every `AccessDecision` — from `check_access`, `can`, and each element of
+`batch_check` — carries a `reason_code` alongside `allowed`:
+
+| `axiam::ReasonCode::` | value | meaning |
+|---|---|---|
+| `kAllowed` | `allowed` | an allow grant matched and no deny did |
+| `kNoGrant` | `no_grant` | nothing matched — default deny |
+| `kDeniedByRule` | `denied_by_rule` | an explicit deny rule matched and overrode any allow |
+
+The two refusals are both `allowed == false`, but they mean opposite things to
+the person on the other end: `no_grant` says *ask an admin for access*,
+`denied_by_rule` says *an admin has already decided*. Branch on the code when
+you are telling a user what to do next:
+
+```cpp
+axiam::AccessDecision d = client.check_access("docs:edit", doc_id);
+if (!d.allowed) {
+    if (d.reason_code == axiam::ReasonCode::kNoGrant)
+        show_request_access_button();
+    else
+        show_plain_denied_message();   // a rule, or a code we don't know
+}
+```
+
+Three things this field deliberately is **not**:
+
+- **Not an `enum class`.** An unrecognised code is surfaced verbatim, so the
+  server can add a fourth code without turning every deployed client into a
+  decode failure. Compare against the constants and let anything unknown fall
+  through to a default branch.
+- **Not the decision.** The outcome is carried by `allowed` alone. Never
+  re-derive allow/deny from the code.
+- **Not guaranteed present.** A server older than this clause omits the field
+  and `reason_code` is `std::nullopt` — that is absence, not an error.
+
+Enforcement is unchanged: `require_access` throws `AuthzError` (403) for both
+refusals. The clause is about reporting, and the guard must not vary its
+behaviour on the code.
 
 ### Webhook signature verification (§13)
 
@@ -253,5 +295,23 @@ Coverage (clang / llvm-cov or gcc / gcov): configure with
 - **gRPC transport** (Tonic-parity authz checks). The §6.1 "both transports" rule
   applies once gRPC lands; the REST client already isolates TLS material for reuse.
 - **§8 AMQP HMAC consumer** (not required of C++ by the contract).
+- **§12 OIDC relying-party surface**, and with it the three sections built on top
+  of it: **§12.7** RP-initiated and back-channel logout, **§14** the device
+  authorization grant (RFC 8628), and **§15** token exchange (RFC 8693).
+
+  This SDK ships no OIDC layer — no discovery-document cache, no token endpoint,
+  no ID-token validation, no PKCE. Each of those sections needs it directly:
+  §12.7's `logout_url` must read `end_session_endpoint` *from discovery* (the
+  clause exists precisely to forbid concatenating onto the issuer), §14 must read
+  `device_authorization_endpoint` from discovery and then poll the token
+  endpoint, and §15 is a token-endpoint grant requiring confidential-client
+  authentication. Adding them means designing an OIDC stack for C++, not
+  extending an existing one, so they are tracked here rather than half-shipped.
+
+  What *is* implemented from the same area is local JWT/JWKS verification
+  (§10.1), which the route guards need and which does not depend on discovery.
+  Note also that `DeviceAuth` / `authenticate_device()` is **§6.1 mTLS device
+  authentication**, not the §14 device *authorization grant* — different
+  mechanisms that share a word.
 - Framework adapter samples for Crow / Pistache (the guard interface is already
   framework-agnostic).

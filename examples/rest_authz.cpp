@@ -29,6 +29,25 @@ std::string env_or(const char* key, const std::string& fallback) {
     return (v && *v) ? std::string(v) : fallback;
 }
 
+// Turn a §11 rule 9 reason code into something worth showing a person. This is
+// the entire reason the code exists: `no_grant` and `denied_by_rule` are both
+// `allowed == false`, but one means "ask an admin" and the other means "an
+// admin has already said no". Sending a user to raise a ticket that will be
+// refused is the bug the clause prevents.
+//
+// Note what this does NOT do: it never decides the outcome. That is `allowed`,
+// and a code this build has never seen falls through to the default without
+// changing anything.
+std::string explain(const axiam::AccessDecision& d) {
+    if (!d.reason_code) return "(server predates reason codes)";
+    if (*d.reason_code == axiam::ReasonCode::kAllowed) return "a grant matched";
+    if (*d.reason_code == axiam::ReasonCode::kNoGrant)
+        return "nothing grants this — you can request access";
+    if (*d.reason_code == axiam::ReasonCode::kDeniedByRule)
+        return "an explicit deny rule applies — requesting access will not help";
+    return "an unrecognised reason code — treat it as opaque";
+}
+
 }  // namespace
 
 int main() {
@@ -60,6 +79,9 @@ int main() {
                   << read.allowed;
         if (read.reason) std::cout << " reason=" << *read.reason;
         std::cout << "\n";
+        // §11 rule 9 — the machine-readable half of the decision.
+        std::cout << "  reason_code=" << read.reason_code.value_or("(absent)")
+                  << " (" << explain(read) << ")\n";
 
         // can() — the UI-facing alias for check_access (same wire call).
         axiam::AccessDecision write = client.can("resource:write", resource_id);
@@ -72,7 +94,9 @@ int main() {
         };
         std::vector<axiam::AccessDecision> results = client.batch_check(checks);
         for (std::size_t i = 0; i < results.size(); ++i) {
-            std::cout << "batch_check[" << i << "] -> allowed=" << results[i].allowed << "\n";
+            std::cout << "batch_check[" << i << "] -> allowed=" << results[i].allowed
+                      << " reason_code=" << results[i].reason_code.value_or("(absent)")
+                      << " (" << explain(results[i]) << ")\n";
         }
 
         client.logout();

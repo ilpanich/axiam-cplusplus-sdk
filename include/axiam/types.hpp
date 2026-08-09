@@ -63,10 +63,36 @@ struct AccessCheck {
     std::optional<std::string> subject_id;
 };
 
+/// The three decision reason codes the server currently emits (§11 rule 9).
+///
+/// Deliberately string constants and not an `enum class`: §11 rule 9 requires an
+/// unrecognised code be surfaced *verbatim*, so a server that adds a fourth code
+/// must not become a decode failure in every deployed client. Compare
+/// `AccessDecision::reason_code` against these and let anything else fall
+/// through to a default branch.
+///
+/// (A struct rather than a namespace so that `ReasonCode::kAllowed` still
+/// resolves in a scope that happens to hold a local named `reason_code`.)
+struct ReasonCode {
+    /// An allow grant matched and no deny did.
+    static constexpr const char* kAllowed = "allowed";
+    /// Nothing matched — default deny. Tells the user to *ask an admin for access*.
+    static constexpr const char* kNoGrant = "no_grant";
+    /// An explicit deny rule matched and overrode any allow. *An admin already decided.*
+    static constexpr const char* kDeniedByRule = "denied_by_rule";
+};
+
 /// Result of an access check (CheckAccessResponse).
 struct AccessDecision {
     bool allowed = false;
+    /// Human-readable prose, when the server sends any.
     std::optional<std::string> reason;
+    /// §11 rule 9 machine-readable decision reason. `std::nullopt` when the
+    /// server predates the clause — absence, not an error. One of the
+    /// `reason_code::` constants, or an unrecognised code passed through
+    /// untouched. The allow/deny outcome is carried by `allowed` alone; never
+    /// re-derive it from this field.
+    std::optional<std::string> reason_code;
 };
 
 }  // namespace axiam
