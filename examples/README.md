@@ -9,6 +9,7 @@ build them offline and run them against a real server when you have one.
 |---------|-------|
 | [`login_mfa.cpp`](login_mfa.cpp)   | Two-phase login + MFA verify (CONTRACT.md §1, §5, §5.1) |
 | [`rest_authz.cpp`](rest_authz.cpp) | `check_access` / `can` / `batch_check` (CONTRACT.md §1) |
+| [`telemetry_hook.cpp`](telemetry_hook.cpp) | Metrics without a metrics dependency: §19 hooks, the §16 retry signal, the §19.2 rule 6 clamp warning, and §18 `close()` |
 
 ## Build
 
@@ -45,6 +46,7 @@ export AXIAM_PASSWORD='correct horse battery staple'
 
 ./build/examples/axiam_example_login_mfa
 ./build/examples/axiam_example_rest_authz
+./build/examples/axiam_example_telemetry_hook
 ```
 
 > **Why org context?** A tenant slug is only unique within an organization, so
