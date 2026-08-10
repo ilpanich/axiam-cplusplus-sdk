@@ -8,6 +8,54 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Added
 
+- **Bounded read-only retry (CONTRACT §16).** `check_access`, `can`, `batch_check`
+  and the JWKS fetch now retry a transient failure: 3 attempts total, 200 ms base,
+  5 s cap, **full jitter** over `[0, backoff]`, and `Retry-After` honored as a
+  **floor** — it can lengthen a wait, never shorten one, so a `Retry-After: 0`
+  cannot defeat the backoff. On by default; `Builder::retry_enabled(false)` gives
+  exactly one attempt for a caller who owns their own retry layer. The attempt
+  cap, base and delay cap are deliberately **not** settable: §16.1 permits
+  lowering or disabling, never raising, and a caller who can raise them turns one
+  client into the herd a backoff exists to prevent.
+
+  Eligibility is "changes no server state", **not** "is a `GET`". The
+  authorization check is a `POST` with a body and is the operation this policy
+  exists for; `login`, `verify_mfa`, `logout`, `refresh` and
+  `authenticate_device` are never retried, both because they change state and
+  because their credentials are single-use. The §9 refresh does not reset the §16
+  budget — one refresh, one budget, per logical call.
+
+- **Client-side decision memo (CONTRACT §17).** `Builder::decision_memo_ttl`
+  enables a bounded, TTL-clamped cache of authorization decisions. **Disabled by
+  default**, and zero means disabled rather than "cache for zero milliseconds". A
+  TTL above 5 s is clamped rather than rejected, allows and denies are cached
+  identically, `reason_code` comes back with the decision, failures are never
+  cached, and any credential change clears it.
+
+  **Read-your-own-writes is not guaranteed.** The staleness bound is the TTL in
+  both directions — a grant just *added* can still read as denied for up to the
+  TTL — which is the direction that surprises people, and it breaks silently.
+
+- **Deterministic shutdown (CONTRACT §18).** `Client::close()` releases the
+  transport and its connection pool, clears the cookie jar, the CSRF token and the
+  memo, and is idempotent. It issues **no request**: the server-side session
+  deliberately outlives the client object, so a close that logged out would
+  silently end every user's session on each deploy. A call on a closed client
+  throws `NetworkError` naming the cause rather than silently reconnecting. The
+  destructor releases whatever `close()` has not, so a `Client` that simply goes
+  out of scope still frees its transport.
+
+- **Telemetry hooks (CONTRACT §19).** `Builder::telemetry_hook` installs a sink for
+  `RequestStartEvent`, `RequestEndEvent`, `RetryEvent`, `RefreshEvent` and
+  `ConfigClampedEvent`, so metrics can be wired without this library taking a
+  dependency on any metrics package. One request pair per **attempt**, so a caller
+  can count real wire calls from the events. `TelemetryEvent` is a closed
+  `std::variant` — no code outside `telemetry.hpp` can add an alternative — which
+  is what makes "no event carries a token" checkable by reading one declaration,
+  and it carries the path *template* rather than a URL with ids substituted in. A
+  hook that throws is caught and swallowed: telemetry is not permitted to fail an
+  authorization check.
+
 - **Decision reason codes (CONTRACT §11 rule 9).** `AccessDecision` gains
   `std::optional<std::string> reason_code`, populated by `check_access`, `can`
   and every element of `batch_check`, with `axiam::ReasonCode::kAllowed`,

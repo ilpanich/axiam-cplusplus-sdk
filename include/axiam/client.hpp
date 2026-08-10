@@ -6,6 +6,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <future>
 #include <memory>
 #include <optional>
@@ -14,6 +15,7 @@
 
 #include "axiam/errors.hpp"
 #include "axiam/jwks.hpp"
+#include "axiam/telemetry.hpp"
 #include "axiam/transport.hpp"
 #include "axiam/types.hpp"
 
@@ -59,6 +61,36 @@ public:
         /// the default libcurl transport from the configured TLS material.
         Builder& transport(Transport t);
 
+        /// §16: enable or disable the bounded read-only retry policy. ON BY
+        /// DEFAULT.
+        ///
+        /// There is deliberately no builder method for the attempt cap, the base
+        /// delay or the delay cap: §16.1 permits *lowering* the budget or
+        /// disabling it, never raising it, and a caller who can raise them turns
+        /// one client into the herd a backoff exists to prevent. Pass `false` for
+        /// exactly one attempt — the right choice for a caller who owns their own
+        /// retry layer and knows their own deadline.
+        Builder& retry_enabled(bool enabled);
+
+        /// §17: enable the client-side decision memo with a TTL. DISABLED BY
+        /// DEFAULT, and zero means disabled — not "cache for zero milliseconds".
+        ///
+        /// A TTL above 5 s is CLAMPED to 5 s rather than rejected (§17.1 rule 2),
+        /// and the clamp is announced through the §19 `ConfigClampedEvent`.
+        ///
+        /// READ-YOUR-OWN-WRITES IS NOT GUARANTEED. The staleness bound is the TTL
+        /// in both directions: a grant revoked on the server can still read as
+        /// allowed for up to the TTL, and a grant just *added* can still read as
+        /// denied for up to the TTL. An admin UI that grants a role and
+        /// immediately re-checks is the case that breaks, and it breaks silently.
+        /// Switch this on having read that, not because it looks like an easy win.
+        Builder& decision_memo_ttl(std::chrono::milliseconds ttl);
+
+        /// §19: install a telemetry sink. Invoked on the calling thread, so it
+        /// must not block; buffering is the caller's job (§19.2 rule 4). A hook
+        /// that throws cannot fail the operation that fired it.
+        Builder& telemetry_hook(TelemetryHook hook);
+
         /// Validates required fields and constructs the client.
         /// @throws std::invalid_argument if base_url is empty or is not an
         ///         https:// URL (loopback hosts excepted, §6).
@@ -79,6 +111,11 @@ public:
         std::chrono::milliseconds connect_timeout_{10000};
         std::chrono::milliseconds request_timeout_{30000};
         Transport transport_;  // empty => default libcurl
+        bool retry_enabled_ = true;  // §16.1: the switch MUST default to on
+        // Stored UNCLAMPED, so the §19 config_clamped event can report what the
+        // caller actually asked for rather than the value it was turned into.
+        std::chrono::milliseconds decision_memo_ttl_{0};
+        TelemetryHook telemetry_hook_;
     };
 
     static Builder builder();
@@ -117,6 +154,16 @@ public:
     // ---- Introspection (used by tests / middleware) ----
     /// Number of times a network refresh call was actually issued (§9 assertion).
     int refresh_call_count() const;
+
+    /// Test seam: replace the §16 jitter source and the sleep.
+    ///
+    /// §16.7 requires backoff and jitter to be tested with an injected clock and
+    /// an injected PRNG, never by sleeping — a test that really waits 200 ms is a
+    /// test nobody runs. This is the only way to reach those from outside, since
+    /// the policy is otherwise sealed inside the impl. NEVER called in
+    /// production; nothing in src/ writes it.
+    void _set_retry_test_seams(std::function<double()> jitter,
+                               std::function<void(std::chrono::milliseconds)> sleeper);
     /// Currently-stored CSRF token, if any (§3).
     std::optional<std::string> csrf_token() const;
     /// Whether a session has been established (login/verify_mfa succeeded).
@@ -125,6 +172,27 @@ public:
     JwksVerifier& jwks();
     /// Tenant identifier injected as X-Tenant-ID on every request (§5).
     const std::string& tenant_header() const;
+
+    /// Deterministic shutdown (CONTRACT.md §18).
+    ///
+    /// Releases the transport and its connection pool, and clears the cookie
+    /// jar, the CSRF token and the §17 memo.
+    ///
+    /// * IDEMPOTENT (§18.1 rule 2): calling it twice is a no-op the second time,
+    ///   never a double release. Cleanup runs from error paths, and an error path
+    ///   that itself throws hides the original failure.
+    /// * DOES NOT LOG OUT (§18.1 rule 5): it issues no request. The server-side
+    ///   session deliberately outlives the client object — that is what lets a
+    ///   process restart and resume — so a close() that logged out would silently
+    ///   end every user's session on each deploy.
+    /// * USE AFTER CLOSE IS AN ERROR, NOT UNDEFINED (§18.1 rule 4): every
+    ///   operation afterwards throws NetworkError naming the cause rather than
+    ///   silently reconnecting.
+    ///
+    /// The destructor releases whatever close() has not, so a Client that goes
+    /// out of scope without an explicit close() still frees its transport —
+    /// §18.1 rule 1's "a destructor plus close()" for C++.
+    void close();
 
 private:
     struct Impl;
