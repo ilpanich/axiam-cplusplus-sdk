@@ -1,13 +1,18 @@
 #include "axiam/client.hpp"
 
 #include <atomic>
+#include <functional>
 #include <mutex>
+#include <random>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
 #include "axiam/http_curl.hpp"
 #include "axiam/jwks.hpp"
+#include "decision_memo.hpp"
 #include "refresh_guard.hpp"
+#include "retry.hpp"
 
 namespace axiam {
 
@@ -129,6 +134,52 @@ struct Client::Impl {
 
     std::unique_ptr<JwksVerifier> jwks_verifier;
 
+    // §16. The seams are internal on purpose: §16.1 forbids raising the table,
+    // and a public knob for the jitter source or the sleep would be an
+    // attractive nuisance. Tests reach them through src/ being on the include
+    // path, the same way test_refresh_guard.cpp reaches the §9 guard.
+    bool retry_enabled = true;
+    std::function<double()> jitter = [] {
+        // Not cryptographic; §16.1 says the source need not be — the jitter is a
+        // load-spreading device, not a secret. thread_local so concurrent callers
+        // do not serialise on one generator or share a sequence.
+        static thread_local std::mt19937 gen{std::random_device{}()};
+        static thread_local std::uniform_real_distribution<double> dist(0.0, 1.0);
+        return dist(gen);
+    };
+    std::function<void(std::chrono::milliseconds)> sleeper = [](std::chrono::milliseconds d) {
+        if (d > std::chrono::milliseconds{0}) std::this_thread::sleep_for(d);
+    };
+
+    // §17. Constructed by build(); disabled unless a TTL was configured.
+    std::unique_ptr<detail::DecisionMemo> memo;
+
+    // §19.
+    TelemetryHook telemetry;
+
+    // §18 shutdown flag, guarded by state_mtx and read on every operation.
+    bool closed = false;
+
+    /// §19.2 rule 2: a hook that throws cannot fail the operation that fired it.
+    /// Telemetry is not permitted to fail an authorization check, and letting a
+    /// broken sink unwind here would turn a metrics problem into one.
+    void emit(const TelemetryEvent& ev) const {
+        if (!telemetry) return;
+        try {
+            telemetry(ev);
+        } catch (...) {
+            // Deliberately swallowed; see above.
+        }
+    }
+
+    /// §18.1 rule 4: use after close is an error, not undefined.
+    void ensure_open() {
+        std::lock_guard<std::mutex> lock(state_mtx);
+        if (closed) {
+            throw NetworkError("client is closed (CONTRACT.md \u00a718.1 rule 4)", "closed");
+        }
+    }
+
     static bool is_state_changing(const std::string& method) {
         return method == "POST" || method == "PUT" || method == "PATCH" || method == "DELETE";
     }
@@ -201,6 +252,95 @@ struct Client::Impl {
                            "http_" + std::to_string(s));
     }
 
+    // One §16-eligible operation: the bounded retry budget plus the §19 pairs
+    // around it.
+    //
+    // §16.2: eligibility is "changes no server state", NOT "is a GET". The
+    // authorization check is a POST with a body and is the single most important
+    // operation in that section — an SDK that gated retry on the HTTP verb would
+    // retry nothing that matters. This method is reached only from the authz
+    // paths; login, verify_mfa, logout, refresh and authenticate_device call
+    // execute() directly and make exactly one attempt.
+    //
+    // One RequestStart/RequestEnd pair PER ATTEMPT (§19.2 rule 5), with a Retry
+    // between consecutive pairs: a caller must be able to count real wire calls
+    // from the events, which one pair per logical operation would hide.
+    HttpResponse execute_retrying(const std::string& op, const std::string& path,
+                                  const std::string& body) {
+        const int budget = retry_enabled ? detail::kRetryMaxAttempts : 1;
+
+        for (int attempt = 1;; ++attempt) {
+            emit(RequestStartEvent{op, "POST", path, attempt});
+            const auto started = std::chrono::steady_clock::now();
+
+            std::optional<long> status;
+            std::optional<HttpResponse> resp;
+            std::exception_ptr thrown;
+            try {
+                resp = send_raw(build_request("POST", path, body));
+                status = resp->status;
+            } catch (const NetworkError&) {
+                // No HTTP response arrived at all, so the request may never have
+                // been seen. Held rather than rethrown so the pair still closes.
+                thrown = std::current_exception();
+            }
+
+            const bool ok = status && *status >= 200 && *status < 300;
+            emit(RequestEndEvent{op, "POST", path, attempt, status,
+                                 std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     std::chrono::steady_clock::now() - started),
+                                 ok ? Outcome::kSuccess : Outcome::kFailure});
+
+            if (attempt < budget && detail::retry_should_retry(status)) {
+                std::optional<std::chrono::milliseconds> hint;
+                if (resp) {
+                    auto it = resp->headers.find("Retry-After");
+                    if (it != resp->headers.end()) {
+                        hint = detail::retry_after_from_header(it->second);
+                    }
+                }
+                const auto wait = detail::retry_delay(attempt, hint, jitter());
+                // §16.5: a retried-then-succeeded operation is otherwise
+                // invisible. The reason carries a status or a transport
+                // category, never a token.
+                emit(RetryEvent{op, attempt, wait,
+                                status ? "HTTP " + std::to_string(*status)
+                                       : std::string("transport failure")});
+                sleeper(wait);
+                continue;
+            }
+
+            if (thrown) std::rethrow_exception(thrown);
+            if (resp->status >= 200 && resp->status < 300) return *resp;
+
+            // The §9 refresh-then-retry-once path. §16.2: the two mechanisms
+            // compose in one direction only — the §16 budget is NOT reset by a §9
+            // refresh occurring mid-operation, so the post-refresh call below is
+            // exactly one attempt.
+            if (resp->status == 401) {
+                bool have_session;
+                {
+                    std::lock_guard<std::mutex> lock(state_mtx);
+                    have_session = session;
+                }
+                if (have_session) {
+                    do_single_flight_refresh();  // throws AuthError on failure
+                    emit(RequestStartEvent{op, "POST", path, attempt + 1});
+                    const auto retry_started = std::chrono::steady_clock::now();
+                    HttpResponse retried = send_raw(build_request("POST", path, body));
+                    const bool retried_ok = retried.status >= 200 && retried.status < 300;
+                    emit(RequestEndEvent{op, "POST", path, attempt + 1, retried.status,
+                                         std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             std::chrono::steady_clock::now() - retry_started),
+                                         retried_ok ? Outcome::kSuccess : Outcome::kFailure});
+                    if (retried_ok) return retried;
+                    raise_for_status(retried);
+                }
+            }
+            raise_for_status(*resp);
+        }
+    }
+
     // Execute a request with §2 status mapping and §9 refresh-on-401.
     HttpResponse execute(const std::string& method, const std::string& path,
                          const std::string& body, bool allow_refresh) {
@@ -233,7 +373,20 @@ struct Client::Impl {
     // waiters block on the shared future. See src/refresh_guard.hpp for the
     // ownership/publication-ordering invariants.
     TokenPair do_single_flight_refresh() {
-        return refresh_guard.run([this] { return perform_refresh(); });
+        const auto started = std::chrono::steady_clock::now();
+        const int before = refresh_count.load();
+        TokenPair tp = refresh_guard.run([this] { return perform_refresh(); });
+        // §17.1 rule 9: a refresh is a credential change.
+        if (memo) memo->clear();
+        // §19.1 refresh. The role is the whole value of the event: a follower's
+        // latency is the leader's, so without it a §9 coalescing problem looks
+        // like a slow server. This caller led iff the wire count moved while it
+        // was inside the guard.
+        emit(RefreshEvent{refresh_count.load() > before ? RefreshRole::kLeader
+                                                        : RefreshRole::kFollower,
+                          std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - started)});
+        return tp;
     }
 
     // The actual refresh network call (invoked at most once per single-flight).
@@ -277,6 +430,18 @@ Client::Builder& Client::Builder::tenant_slug(std::string slug) {
 }
 Client::Builder& Client::Builder::tenant_id(std::string id) {
     tenant_id_ = std::move(id);
+    return *this;
+}
+Client::Builder& Client::Builder::retry_enabled(bool enabled) {
+    retry_enabled_ = enabled;
+    return *this;
+}
+Client::Builder& Client::Builder::decision_memo_ttl(std::chrono::milliseconds ttl) {
+    decision_memo_ttl_ = ttl;
+    return *this;
+}
+Client::Builder& Client::Builder::telemetry_hook(TelemetryHook hook) {
+    telemetry_hook_ = std::move(hook);
     return *this;
 }
 Client::Builder& Client::Builder::org_slug(std::string slug) {
@@ -353,6 +518,24 @@ Client Client::Builder::build() {
     }
 
     impl->jwks_verifier = std::make_unique<JwksVerifier>(impl->transport, impl->base_url);
+
+    impl->retry_enabled = retry_enabled_;                                   // §16
+    impl->memo = std::make_unique<detail::DecisionMemo>(decision_memo_ttl_);  // §17
+    impl->telemetry = telemetry_hook_;                                      // §19
+
+    // §19.2 rule 6: a setting we lowered is reported, not swallowed. An operator
+    // who set a 60-second memo TTL believes their staleness bound is 60 seconds;
+    // it is five, and without this nothing anywhere says so. Nothing is emitted
+    // when the request was already inside the limit — an event that fires when
+    // nothing happened trains its reader to ignore it. The memo TTL is the only
+    // clamped setting here: §16.1's table is not configurable, only switchable.
+    if (decision_memo_ttl_ > std::chrono::milliseconds{0} &&
+        decision_memo_ttl_ != impl->memo->effective_ttl()) {
+        impl->emit(ConfigClampedEvent{
+            "decision_memo_ttl", std::to_string(decision_memo_ttl_.count()) + "ms",
+            std::to_string(impl->memo->effective_ttl().count()) + "ms", "\u00a717.1 rule 2"});
+    }
+
     return Client(std::move(impl));
 }
 
@@ -388,6 +571,12 @@ AccessDecision parse_decision(const json& d) {
 }  // namespace
 
 LoginResult Client::login(const std::string& username_or_email, const std::string& password) {
+    p_->ensure_open();
+    // §17.1 rule 9: cleared on the CALLER'S INTENT to change credentials, not on
+    // the server's answer. Entries are keyed by subject rather than session, so a
+    // login that failed still means this caller is done with the principal whose
+    // decisions are cached.
+    if (p_->memo) p_->memo->clear();
     json body;
     body["username_or_email"] = username_or_email;
     body["password"] = password;
@@ -437,6 +626,8 @@ LoginResult Client::verify_mfa(const Sensitive<std::string>& challenge_token,
 }
 
 LoginResult Client::verify_mfa(const std::string& challenge_token, const std::string& totp_code) {
+    p_->ensure_open();
+    if (p_->memo) p_->memo->clear();  // §17.1 rule 9
     json body;
     body["challenge_token"] = challenge_token;
     body["totp_code"] = totp_code;
@@ -460,9 +651,14 @@ LoginResult Client::verify_mfa(const std::string& challenge_token, const std::st
     return result;
 }
 
-TokenPair Client::refresh() { return p_->do_single_flight_refresh(); }
+TokenPair Client::refresh() {
+    p_->ensure_open();
+    return p_->do_single_flight_refresh();
+}
 
 void Client::logout() {
+    p_->ensure_open();
+    if (p_->memo) p_->memo->clear();  // §17.1 rule 9, before the wire
     try {
         p_->execute("POST", "/api/v1/auth/logout", "{}", false);
     } catch (const AxiamError&) {
@@ -473,18 +669,61 @@ void Client::logout() {
     p_->csrf.clear();
 }
 
+void Client::close() {
+    {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        // §18.1 rule 2: idempotent. The flag is checked and set under the same
+        // lock, so two threads racing on close cannot both reach the release
+        // below — cleanup runs from error paths, and an error path that
+        // double-releases hides the original failure.
+        if (p_->closed) return;
+        p_->closed = true;
+        p_->session = false;
+        p_->csrf.clear();
+    }
+    // NO REQUEST IS ISSUED HERE (§18.1 rule 5). The server-side session
+    // deliberately outlives the client object — that is what lets a process
+    // restart and resume — so a close() that logged out would silently end every
+    // user's session on each deploy.
+    if (p_->memo) p_->memo->clear();
+    // Dropping the std::function releases the last reference this client holds to
+    // the transport, and with it the libcurl handle pool. Cleared under no lock
+    // because a transport destructor may block on in-flight handles, and holding
+    // state_mtx across that would deadlock any concurrent operation trying to
+    // observe `closed`.
+    p_->transport = Transport{};
+}
+
 AccessDecision Client::check_access(const std::string& action, const std::string& resource_id,
                                     std::optional<std::string> scope,
                                     std::optional<std::string> subject_id) {
+    p_->ensure_open();
+
+    // §17: consulted before the wire, written only after a decision the server
+    // actually returned.
+    std::string key;
+    const bool use_memo = p_->memo && p_->memo->enabled();
+    if (use_memo) {
+        key = detail::DecisionMemo::key(subject_id, resource_id, action, scope);
+        if (auto cached = p_->memo->get(key)) return *cached;
+    }
+
     json body;
     body["action"] = action;
     body["resource_id"] = resource_id;
     if (scope) body["scope"] = *scope;
     if (subject_id) body["subject_id"] = *subject_id;
-    HttpResponse resp = p_->execute("POST", "/api/v1/authz/check", body.dump(), /*allow_refresh=*/true);
+    HttpResponse resp = p_->execute_retrying("check_access", "/api/v1/authz/check", body.dump());
     auto j = json::parse(resp.body, nullptr, false);
     if (j.is_discarded()) return AccessDecision{};
-    return parse_decision(j);
+    AccessDecision decision = parse_decision(j);
+
+    // §17.1 rule 7: only a decision the server actually returned — a thrown
+    // NetworkError never reaches here. Rule 4: allows and denies are stored
+    // identically, because asymmetric caching changes the timing of the two
+    // outcomes and so leaks which one occurred to anyone who can observe latency.
+    if (use_memo) p_->memo->put(key, decision);
+    return decision;
 }
 
 AccessDecision Client::can(const std::string& action, const std::string& resource_id,
@@ -493,6 +732,7 @@ AccessDecision Client::can(const std::string& action, const std::string& resourc
 }
 
 std::vector<AccessDecision> Client::batch_check(const std::vector<AccessCheck>& checks) {
+    p_->ensure_open();
     json body;
     json arr = json::array();
     for (const auto& c : checks) {
@@ -504,7 +744,13 @@ std::vector<AccessDecision> Client::batch_check(const std::vector<AccessCheck>& 
         arr.push_back(item);
     }
     body["checks"] = arr;
-    HttpResponse resp = p_->execute("POST", "/api/v1/authz/check/batch", body.dump(), true);
+    // Deliberately not memoized: the §17 key is per-check, so a batch would have
+    // to be split into n entries with n keys — the right design, but it changes
+    // what a partial hit means (some rows from the wire, some from the memo, one
+    // composite result). §17 says nothing about batch, so this SDK does the
+    // conservative thing rather than inventing semantics.
+    HttpResponse resp =
+        p_->execute_retrying("batch_check", "/api/v1/authz/check/batch", body.dump());
     std::vector<AccessDecision> out;
     auto j = json::parse(resp.body, nullptr, false);
     if (!j.is_discarded() && j.contains("results") && j["results"].is_array()) {
@@ -514,6 +760,7 @@ std::vector<AccessDecision> Client::batch_check(const std::vector<AccessCheck>& 
 }
 
 DeviceAuth Client::authenticate_device() {
+    p_->ensure_open();
     HttpResponse resp = p_->execute("POST", "/api/v1/auth/device", "{}", false);
     auto j = json::parse(resp.body, nullptr, false);
     DeviceAuth da;
@@ -558,6 +805,12 @@ std::future<std::vector<AccessDecision>> Client::batch_check_async(std::vector<A
         Client c(self);
         return c.batch_check(checks);
     });
+}
+
+void Client::_set_retry_test_seams(std::function<double()> jitter,
+                                   std::function<void(std::chrono::milliseconds)> sleeper) {
+    p_->jitter = std::move(jitter);
+    p_->sleeper = std::move(sleeper);
 }
 
 int Client::refresh_call_count() const { return p_->refresh_count.load(); }

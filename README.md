@@ -10,7 +10,7 @@ Idiomatic C++17 client for [AXIAM](https://github.com/ilpanich/axiam) (Access
 eXtended Identity and Authorization Management) — authentication, authorization
 checks, JWKS verification, and framework-agnostic route guards.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§11 and §13 (including §6.1 mTLS).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§11, §13 and §16–§19 (including §6.1 mTLS).**
 
 > Scope note: this v1 covers the REST surface. **gRPC** — including the gRPC-only
 > `get_user_info` operation (CONTRACT §1.1, contract 1.3) — and **§8 AMQP HMAC** are
@@ -240,6 +240,63 @@ handle(result.event);
 ```
 
 `verify_or_throw(...)` is the exception-based twin (`axiam::webhook::VerifyException`).
+
+---
+
+## Retry, memo, shutdown and telemetry (§16–§19)
+
+Retry is **on by default** and applies only to operations that change no server
+state — `check_access`, `can`, `batch_check` and the JWKS fetch. That is not the
+same as "HTTP GET": the authorization check is a `POST` with a body and is the
+operation this policy exists for. `login`, `verify_mfa`, `logout`, `refresh` and
+`authenticate_device` are never retried automatically, both because they change
+state and because their credentials are single-use.
+
+The policy is 3 attempts, 200 ms base, 5 s cap, **full jitter** over
+`[0, backoff]`, and `Retry-After` honored as a **floor** — it can lengthen a wait,
+never shorten one, so a `Retry-After: 0` cannot defeat the backoff. Only the
+switch is public; the attempt cap, base and cap are deliberately not settable,
+because §16.1 permits *lowering* the budget and never raising it.
+
+```cpp
+auto client = axiam::Client::builder()
+    .base_url("https://iam.example.com")
+    .tenant_slug("acme")
+    .retry_enabled(false)                                  // §16: one attempt
+    .decision_memo_ttl(std::chrono::seconds(5))            // §17: opt-in, off by default
+    .telemetry_hook([](const axiam::TelemetryEvent& ev) {  // §19
+        if (const auto* r = std::get_if<axiam::RetryEvent>(&ev)) {
+            std::cerr << "retry " << r->operation << " attempt=" << r->attempt << "\n";
+        }
+    })
+    .build();
+```
+
+> **Read-your-own-writes is not guaranteed** with the memo enabled. The staleness
+> bound is the TTL in *both* directions: a grant revoked on the server can still
+> read as allowed for up to the TTL, and a grant just *added* can still read as
+> denied for up to the TTL. An admin UI that grants a role and immediately
+> re-checks is the case that breaks, and it breaks silently. A TTL above 5 s is
+> **clamped** to 5 s, and the clamp is announced through the `ConfigClampedEvent`
+> rather than applied in silence.
+
+`TelemetryEvent` is a closed `std::variant` over five structs with fixed member
+lists and no maps, which is what makes "no event carries a token" checkable by
+reading one declaration. Events carry the *path template*
+(`/api/v1/authz/check`), never a URL with ids substituted in — a metric label
+with a UUID in it is a cardinality bomb — and a retried call emits one
+`RequestStartEvent`/`RequestEndEvent` pair per **attempt**, so a caller can count
+real wire calls. The hook runs on the calling thread and must not block;
+buffering is yours to choose. A hook that throws cannot fail the operation that
+fired it.
+
+`close()` releases the transport and its connection pool and clears the cookie
+jar, the CSRF token and the memo. It issues **no request** — it does not log out,
+because the server-side session deliberately outlives the client object. It is
+idempotent, and any operation attempted afterwards throws `NetworkError` naming
+the cause rather than silently reconnecting. The destructor releases whatever
+`close()` has not, so a `Client` that simply goes out of scope still frees its
+transport.
 
 ---
 

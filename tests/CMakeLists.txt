@@ -10,6 +10,7 @@ add_executable(axiam_cpp_tests
   test_refresh_guard.cpp
   test_guard.cpp
   test_reason_code.cpp
+  test_d5_conformance.cpp
   test_jwks.cpp
   test_authenticator.cpp
   test_webhook.cpp
