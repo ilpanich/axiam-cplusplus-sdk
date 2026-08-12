@@ -18,6 +18,7 @@
 #include "axiam/telemetry.hpp"
 #include "axiam/transport.hpp"
 #include "axiam/types.hpp"
+#include "axiam/uma.hpp"
 
 namespace axiam {
 
@@ -142,6 +143,91 @@ public:
     /// §6.1 device / service-account authentication via the configured mTLS
     /// client certificate (POST /api/v1/auth/device).
     DeviceAuth authenticate_device();
+
+    // ---- §20 UMA 2.0 — Protection API and ticket grant ----
+    //
+    // `pat` is a Protection API Token: a CLIENT-credentials token carrying the
+    // `uma_protection` scope (§20.2 rule 1). This SDK never substitutes its own
+    // session for it; an empty PAT throws AuthError with no wire call.
+
+    /// `GET /.well-known/uma2-configuration` (§20.1).
+    ///
+    /// Cached for five minutes, the floor §12.3 rule 6 sets for the OIDC
+    /// document: an endpoint map is not a credential, and re-fetching it on
+    /// every guarded request is a self-inflicted round trip. Every operation
+    /// below calls this itself, so a caller normally never needs to.
+    UmaConfiguration uma_discover();
+
+    /// `POST /uma2/rreg/resource_set` (§20.1) — register a resource set. The
+    /// returned id is directly usable as a UmaRequestedPermission's resource_id.
+    UmaResourceSet uma_register_resource(const Sensitive<std::string>& pat,
+                                         const std::string& name,
+                                         std::optional<std::string> type = std::nullopt,
+                                         std::vector<std::string> resource_scopes = {});
+
+    /// `GET /uma2/rreg/resource_set/{id}` (§20.1).
+    UmaResourceSet uma_read_resource(const Sensitive<std::string>& pat, const std::string& id);
+
+    /// `PUT /uma2/rreg/resource_set/{id}` (§20.1) — replace a resource set.
+    ///
+    /// `resource_scopes` REPLACES the declared list; it does not merge with it
+    /// (§20.2 rule 8). No read-modify-write: folding the current scopes in as a
+    /// convenience would make removing a scope impossible through this SDK.
+    UmaResourceSet uma_update_resource(const Sensitive<std::string>& pat, const std::string& id,
+                                       const std::string& name,
+                                       std::optional<std::string> type = std::nullopt,
+                                       std::vector<std::string> resource_scopes = {});
+
+    /// `DELETE /uma2/rreg/resource_set/{id}` (§20.1) — deregister.
+    void uma_delete_resource(const Sensitive<std::string>& pat, const std::string& id);
+
+    /// `GET /uma2/rreg/resource_set` (§20.1) — the ids THIS client registered.
+    ///
+    /// Not the tenant's resource tree: the server scopes the listing to the
+    /// registering client, so a PAT is not an enumeration handle.
+    std::vector<std::string> uma_list_resources(const Sensitive<std::string>& pat);
+
+    /// `POST /uma2/perm` (§20.1) — mint a permission ticket.
+    ///
+    /// The ticket comes back wrapped: for its 60-second life it is the
+    /// credential that converts into an RPT, and a short lifetime is not the
+    /// same as a harmless one (§20.6).
+    Sensitive<std::string> uma_request_ticket(const Sensitive<std::string>& pat,
+                                              const std::vector<UmaRequestedPermission>& permissions);
+
+    /// `POST /oauth2/token` with the UMA ticket grant (§20.1) — redeem a
+    /// permission ticket for a Requesting Party Token.
+    ///
+    /// What this method deliberately does NOT do:
+    ///
+    /// * **No retry, ever** (§20.2 rule 6) — not on `5xx`, not on a transport
+    ///   failure, not on `invalid_grant`. This is the one documented exception
+    ///   to §16, and a security rule rather than a performance one: the ticket
+    ///   is consumed *before* the request is evaluated, so a failed exchange has
+    ///   already spent it, and a retry is a second redemption — exactly the
+    ///   concurrent redemption whose measured residual ilpanich/axiam#302
+    ///   records. The property holds structurally: this call never enters
+    ///   execute_retrying()'s budget.
+    /// * **No defaulted claim_token** (rule 2). Defaulting it to the resource
+    ///   server's own PAT would mint an RPT for the resource server rather than
+    ///   for the user. An empty one throws with no wire call, so a request that
+    ///   could not have succeeded never spends a ticket.
+    /// * **No auto-narrowing on `access_denied`** (rule 3). A partial grant is
+    ///   refused whole; whether two-of-three permissions is useful is the
+    ///   calling application's judgement, not this SDK's.
+    /// * **No adoption** (rule 4). The RPT is the *requesting party's* token; it
+    ///   is returned to the caller and never becomes this client's credential.
+    /// * **No refresh token** (rule 5) — RequestingPartyToken has no member for
+    ///   one.
+    ///
+    /// The four ticket refusals — unknown, expired, already used, minted by
+    /// another client — all arrive as one `invalid_grant`, and this SDK does not
+    /// guess which (§20.4): the server collapses them because telling them apart
+    /// lets a caller probe for live ticket handles.
+    ///
+    /// @throws OAuthProtocolError carrying the `error` code, for any refusal
+    ///         whose body is an OAuth2ErrorResponse — at any status.
+    RequestingPartyToken uma_exchange_ticket(const UmaExchangeTicketParams& params);
 
     // ---- Accepted per-language async twins (§1, C++ row: std::future) ----
     std::future<LoginResult> login_async(std::string username_or_email, std::string password);
