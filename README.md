@@ -10,7 +10,7 @@ Idiomatic C++17 client for [AXIAM](https://github.com/ilpanich/axiam) (Access
 eXtended Identity and Authorization Management) — authentication, authorization
 checks, JWKS verification, and framework-agnostic route guards.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§11, §13 and §16–§19 (including §6.1 mTLS).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§11, §13, §16–§19 and §20 (including §6.1 mTLS).**
 
 > Scope note: this v1 covers the REST surface. **gRPC** — including the gRPC-only
 > `get_user_info` operation (CONTRACT §1.1, contract 1.3) — and **§8 AMQP HMAC** are
@@ -347,6 +347,68 @@ Coverage (clang / llvm-cov or gcc / gcov): configure with
 
 ---
 
+## UMA 2.0 — Protection API and ticket grant (§20)
+
+The resource-server side of User-Managed Access: register what you guard, ask
+the authorization server what a caller would need, and redeem the resulting
+ticket.
+
+```cpp
+// A PAT is a client-credentials token carrying `uma_protection` — never a user
+// token, and never this client's own session (§20.2 rule 1).
+const axiam::Sensitive<std::string> pat{protection_api_token};
+
+const auto resource = client.uma_register_resource(pat, "invoice-7", "document", {"view"});
+
+// The returned id IS the AXIAM resource id — no translation step.
+const auto ticket = client.uma_request_ticket(pat, {{*resource.id, {"view"}}});
+
+response.set_header("WWW-Authenticate",
+                    axiam::uma_challenge_header("invoices", issuer, ticket));
+```
+
+…and on the client side, having caught that `401`:
+
+```cpp
+if (auto challenge = axiam::uma_parse_challenge(www_authenticate); challenge && challenge->ticket) {
+    axiam::UmaExchangeTicketParams params;
+    params.ticket = *challenge->ticket;
+    params.claim_token = axiam::Sensitive<std::string>{users_access_token};
+    params.credentials = {client_id, axiam::Sensitive<std::string>{client_secret}};
+    const auto rpt = client.uma_exchange_ticket(params);
+}
+```
+
+The rules this surface exists to enforce:
+
+- **A ticket is never retried** — not on `5xx`, not on a transport failure, not
+  on `invalid_grant`. It is the one documented exception to §16's retry policy,
+  and a security rule rather than a performance one: the ticket is consumed
+  *before* the exchange is evaluated, so a failed exchange has already spent it
+  and a retry is a *second redemption*. Under concurrency that is exactly the
+  case whose measured residual
+  [`ilpanich/axiam#302`](https://github.com/ilpanich/axiam/issues/302) records.
+  On failure, request a **new** ticket.
+- **`uma_parse_challenge` does not exchange what it parsed.** The `as_uri` names
+  an authorization server you have not necessarily chosen to trust.
+- **`claim_token` is required, never defaulted.** An empty one, an empty PAT, or
+  a client configured with only a tenant *slug* throws before any wire call, so
+  a request that could not have succeeded never spends a ticket.
+- **No auto-narrowing on `access_denied`.** A partial grant is refused whole.
+- **The RPT is never adopted** as this client's credential, and
+  `RequestingPartyToken` has no refresh-token member.
+- **`uma_update_resource` replaces the scope list rather than merging it**, so
+  omitting a scope removes it. There is no read-modify-write.
+
+A refusal whose body is an `OAuth2ErrorResponse` throws `OAuthProtocolError`,
+which **derives from `AuthError`** — the §2 taxonomy stays at three top-level
+types, and a caller that only knows about `AuthError` still catches it. Dispatch
+on `error_code()` rather than the HTTP status: §20.4 puts `access_denied` on a
+`403` where RFC 8628's is a `400`, and the code is what stays correct if either
+moves. The exception's `what()` carries the code, never the server's free text —
+a description echoing the ticket must not reach a log line — and
+`error_description()` surfaces that text separately for a caller who opts in.
+
 ## Deferred / follow-ups
 
 - **gRPC transport** (Tonic-parity authz checks). The §6.1 "both transports" rule
@@ -370,5 +432,15 @@ Coverage (clang / llvm-cov or gcc / gcov): configure with
   Note also that `DeviceAuth` / `authenticate_device()` is **§6.1 mTLS device
   authentication**, not the §14 device *authorization grant* — different
   mechanisms that share a word.
+
+  **§20 UMA 2.0 is *not* on this list**, since 2026-08, and the difference is
+  real rather than a change of mind. UMA carries its **own** discovery document
+  (`/.well-known/uma2-configuration`, §20.1's named wire reference), the
+  Protection API is ordinary bearer-authenticated REST, and the ticket grant
+  returns an opaque RPT with no `id_token` to validate. One GET and one POST,
+  with no PKCE, no state store and no JWKS interaction. The "designing an OIDC
+  stack for C++" objection above holds for §12.7/§14/§15 and simply does not
+  apply here, so deferring §20 too would have been a habit rather than a reason.
+  See [UMA 2.0](#uma-20--protection-api-and-ticket-grant-20).
 - Framework adapter samples for Crow / Pistache (the guard interface is already
   framework-agnostic).

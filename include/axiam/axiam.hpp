@@ -13,6 +13,7 @@
 #include "axiam/sensitive.hpp"
 #include "axiam/transport.hpp"
 #include "axiam/types.hpp"
+#include "axiam/uma.hpp"
 #include "axiam/webhook.hpp"
 
 namespace axiam {

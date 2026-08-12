@@ -157,6 +157,12 @@ struct Client::Impl {
     // §19.
     TelemetryHook telemetry;
 
+    // §20 UMA discovery cache, guarded by state_mtx. An endpoint map is not a
+    // credential, and re-fetching it on every guarded request is a
+    // self-inflicted round trip.
+    std::optional<UmaConfiguration> uma_config;
+    std::chrono::steady_clock::time_point uma_config_expires_at{};
+
     // §18 shutdown flag, guarded by state_mtx and read on every operation.
     bool closed = false;
 
@@ -250,6 +256,49 @@ struct Client::Impl {
         }
         throw NetworkError("unexpected HTTP status (" + std::to_string(s) + ")",
                            "http_" + std::to_string(s));
+    }
+
+    /// One §20 Protection API call, PAT-authenticated (§20.2 rule 1).
+    ///
+    /// The PAT is an explicit Authorization header on a request built against an
+    /// ABSOLUTE url — an endpoint read from the UMA discovery document rather
+    /// than joined onto the base URL. A minted ticket is bound to the client_id
+    /// that minted it, so the credential here must be the caller's PAT; an empty
+    /// one is refused rather than becoming a request with no credential.
+    ///
+    /// Deliberately not routed through execute_retrying(): nothing here is a
+    /// §16-eligible read, and the ticket grant next door must issue exactly one
+    /// request.
+    HttpResponse uma_protection_request(const std::string& method, const std::string& url,
+                                        const Sensitive<std::string>& pat,
+                                        const std::string& body) {
+        ensure_open();
+        if (detail::reveal(pat).empty()) {
+            throw AuthError(
+                "the UMA Protection API requires a PAT — a client-credentials token carrying "
+                "the uma_protection scope; this SDK does not fall back to its own session "
+                "(CONTRACT.md §20.2 rule 1)");
+        }
+
+        HttpRequest req;
+        req.method = method;
+        req.url = url;
+        req.headers["X-Tenant-ID"] = tenant_header;  // §5
+        req.headers["Accept"] = "application/json";
+        req.headers["Authorization"] = "Bearer " + detail::reveal(pat);
+        if (!body.empty()) {
+            req.headers["Content-Type"] = "application/json";
+            req.body = body;
+        }
+
+        HttpResponse resp = send_raw(req);
+        if (resp.status < 200 || resp.status >= 300) {
+            // §20.4 maps the Protection API by status (401 / 403 / 400), not
+            // through the OAuth2 `error` rows — those belong to the token
+            // endpoint.
+            raise_for_status(resp);
+        }
+        return resp;
     }
 
     // One §16-eligible operation: the bounded retry budget plus the §19 pairs
@@ -829,5 +878,386 @@ bool Client::has_session() const {
 JwksVerifier& Client::jwks() { return *p_->jwks_verifier; }
 
 const std::string& Client::tenant_header() const { return p_->tenant_header; }
+
+// ---------------------------------------------------------------------------
+// §20 UMA 2.0 — Protection API and ticket grant
+// ---------------------------------------------------------------------------
+//
+// The one rule worth repeating where the code lives: uma_exchange_ticket()
+// issues EXACTLY ONE request, on every outcome. It does not enter
+// execute_retrying()'s budget, and it must not be made to.
+
+namespace {
+
+/// Percent-encode a string for a URL path segment or a form value.
+std::string percent_encode(const std::string& in) {
+    static const char* kHex = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(in.size());
+    for (unsigned char ch : in) {
+        const bool unreserved = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                                (ch >= '0' && ch <= '9') || ch == '-' || ch == '.' ||
+                                ch == '_' || ch == '~';
+        if (unreserved) {
+            out.push_back(static_cast<char>(ch));
+        } else {
+            out.push_back('%');
+            out.push_back(kHex[ch >> 4]);
+            out.push_back(kHex[ch & 0xF]);
+        }
+    }
+    return out;
+}
+
+std::string trim(const std::string& s) {
+    const auto first = s.find_first_not_of(" \t");
+    if (first == std::string::npos) return {};
+    const auto last = s.find_last_not_of(" \t");
+    return s.substr(first, last - first + 1);
+}
+
+/// Strip one layer of surrounding double quotes, if present.
+std::string unquote(std::string s) {
+    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+        return s.substr(1, s.size() - 2);
+    }
+    return s;
+}
+
+json parse_or_object(const std::string& body) {
+    auto j = json::parse(body, nullptr, false);
+    return j.is_discarded() ? json::object() : j;
+}
+
+/// The string members of a JSON array, in order.
+///
+/// A non-string member is dropped rather than fataling the call: neither a scope
+/// list nor an id list is a credential, and a server that grows a richer member
+/// should not take an otherwise-usable response down with it.
+std::vector<std::string> string_array(const json& j) {
+    std::vector<std::string> out;
+    if (!j.is_array()) return out;
+    for (const auto& item : j) {
+        if (item.is_string()) out.push_back(item.get<std::string>());
+    }
+    return out;
+}
+
+UmaResourceSet resource_set_from_wire(const json& j) {
+    if (!j.contains("name") || !j["name"].is_string()) {
+        throw NetworkError("uma: malformed ResourceSet (missing name)", "malformed_body");
+    }
+    UmaResourceSet rs;
+    rs.name = j["name"].get<std::string>();
+    if (j.contains("_id") && j["_id"].is_string() && !j["_id"].get<std::string>().empty()) {
+        rs.id = j["_id"].get<std::string>();
+    }
+    if (j.contains("type") && j["type"].is_string() && !j["type"].get<std::string>().empty()) {
+        rs.type = j["type"].get<std::string>();
+    }
+    if (j.contains("resource_scopes")) rs.resource_scopes = string_array(j["resource_scopes"]);
+    return rs;
+}
+
+/// §12.1's absent-optional rule: `type` is omitted rather than sent empty, so
+/// the server applies its own `uma_resource` default. `resource_scopes` is
+/// always present, because it is the complete new list (§20.2 rule 8) and an
+/// absent one would read as "no change".
+json resource_set_to_wire(const std::string& name, const std::optional<std::string>& type,
+                          const std::vector<std::string>& scopes) {
+    json body;
+    body["name"] = name;
+    if (type && !type->empty()) body["type"] = *type;
+    body["resource_scopes"] = scopes;
+    return body;
+}
+
+/// Looks like a UUID: 8-4-4-4-12 hex. A tenant SLUG is not one, and §12.3
+/// rule 4 forbids substituting it.
+bool looks_like_uuid(const std::string& s) {
+    static const int kGroups[] = {8, 4, 4, 4, 12};
+    std::size_t at = 0;
+    for (int g = 0; g < 5; ++g) {
+        for (int i = 0; i < kGroups[g]; ++i) {
+            if (at >= s.size()) return false;
+            const char ch = s[at++];
+            const bool hex = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') ||
+                             (ch >= 'A' && ch <= 'F');
+            if (!hex) return false;
+        }
+        if (g < 4) {
+            if (at >= s.size() || s[at++] != '-') return false;
+        }
+    }
+    return at == s.size();
+}
+
+}  // namespace
+
+UmaConfiguration Client::uma_discover() {
+    p_->ensure_open();
+    {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        if (p_->uma_config &&
+            std::chrono::steady_clock::now() < p_->uma_config_expires_at) {
+            return *p_->uma_config;
+        }
+    }
+
+    HttpRequest req = p_->build_request("GET", "/.well-known/uma2-configuration", "");
+    HttpResponse resp = p_->send_raw(req);
+    if (resp.status < 200 || resp.status >= 300) Client::Impl::raise_for_status(resp);
+
+    const json j = parse_or_object(resp.body);
+    if (!j.contains("token_endpoint") || !j["token_endpoint"].is_string() ||
+        !j.contains("permission_endpoint") || !j["permission_endpoint"].is_string() ||
+        !j.contains("resource_registration_endpoint") ||
+        !j["resource_registration_endpoint"].is_string()) {
+        // A document missing an endpoint is not "mostly usable": the operation
+        // that needed the missing one would otherwise build a request against
+        // nothing.
+        throw NetworkError(
+            "uma discovery: missing token/permission/resource_registration endpoint",
+            "malformed_body");
+    }
+
+    UmaConfiguration cfg;
+    cfg.issuer = j.value("issuer", std::string{});
+    cfg.token_endpoint = j["token_endpoint"].get<std::string>();
+    cfg.permission_endpoint = j["permission_endpoint"].get<std::string>();
+    cfg.resource_registration_endpoint = j["resource_registration_endpoint"].get<std::string>();
+    if (j.contains("permission_ticket_lifetime") && j["permission_ticket_lifetime"].is_number()) {
+        cfg.permission_ticket_lifetime = j["permission_ticket_lifetime"].get<long>();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        p_->uma_config = cfg;
+        p_->uma_config_expires_at = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+    }
+    return cfg;
+}
+
+UmaResourceSet Client::uma_register_resource(const Sensitive<std::string>& pat,
+                                             const std::string& name,
+                                             std::optional<std::string> type,
+                                             std::vector<std::string> resource_scopes) {
+    const UmaConfiguration cfg = uma_discover();
+    HttpResponse resp = p_->uma_protection_request(
+        "POST", cfg.resource_registration_endpoint, pat,
+        resource_set_to_wire(name, type, resource_scopes).dump());
+    return resource_set_from_wire(parse_or_object(resp.body));
+}
+
+UmaResourceSet Client::uma_read_resource(const Sensitive<std::string>& pat,
+                                         const std::string& id) {
+    const UmaConfiguration cfg = uma_discover();
+    HttpResponse resp = p_->uma_protection_request(
+        "GET", cfg.resource_registration_endpoint + "/" + percent_encode(id), pat, "");
+    return resource_set_from_wire(parse_or_object(resp.body));
+}
+
+UmaResourceSet Client::uma_update_resource(const Sensitive<std::string>& pat,
+                                           const std::string& id, const std::string& name,
+                                           std::optional<std::string> type,
+                                           std::vector<std::string> resource_scopes) {
+    const UmaConfiguration cfg = uma_discover();
+    // §20.2 rule 8: exactly the scopes given, with no read first.
+    HttpResponse resp = p_->uma_protection_request(
+        "PUT", cfg.resource_registration_endpoint + "/" + percent_encode(id), pat,
+        resource_set_to_wire(name, type, resource_scopes).dump());
+    return resource_set_from_wire(parse_or_object(resp.body));
+}
+
+void Client::uma_delete_resource(const Sensitive<std::string>& pat, const std::string& id) {
+    const UmaConfiguration cfg = uma_discover();
+    p_->uma_protection_request("DELETE",
+                               cfg.resource_registration_endpoint + "/" + percent_encode(id),
+                               pat, "");
+}
+
+std::vector<std::string> Client::uma_list_resources(const Sensitive<std::string>& pat) {
+    const UmaConfiguration cfg = uma_discover();
+    HttpResponse resp =
+        p_->uma_protection_request("GET", cfg.resource_registration_endpoint, pat, "");
+    const json j = parse_or_object(resp.body);
+    if (!j.is_array()) {
+        throw NetworkError("uma list resources: body is not a JSON array", "malformed_body");
+    }
+    return string_array(j);
+}
+
+Sensitive<std::string> Client::uma_request_ticket(
+    const Sensitive<std::string>& pat,
+    const std::vector<UmaRequestedPermission>& permissions) {
+    const UmaConfiguration cfg = uma_discover();
+
+    json body = json::array();
+    for (const auto& permission : permissions) {
+        json entry;
+        entry["resource_id"] = permission.resource_id;
+        entry["resource_scopes"] = permission.resource_scopes;
+        body.push_back(std::move(entry));
+    }
+
+    HttpResponse resp =
+        p_->uma_protection_request("POST", cfg.permission_endpoint, pat, body.dump());
+    const json j = parse_or_object(resp.body);
+    if (!j.contains("ticket") || !j["ticket"].is_string() ||
+        j["ticket"].get<std::string>().empty()) {
+        throw NetworkError("uma request ticket: malformed PermissionTicketResponse",
+                           "malformed_body");
+    }
+    // §20.6: wrapped on the way out. For its 60-second life the ticket IS the
+    // credential that converts into an RPT.
+    return Sensitive<std::string>(j["ticket"].get<std::string>());
+}
+
+RequestingPartyToken Client::uma_exchange_ticket(const UmaExchangeTicketParams& params) {
+    p_->ensure_open();
+
+    // Everything that can be refused client-side is refused BEFORE the wire
+    // call, so a request that could not have succeeded never spends a ticket
+    // (§20.2 rules 2 and 6 together).
+    if (detail::reveal(params.ticket).empty()) {
+        throw AuthError("the UMA ticket grant requires a ticket (CONTRACT.md §20.1)");
+    }
+    if (detail::reveal(params.claim_token).empty()) {
+        throw AuthError(
+            "the UMA ticket grant requires a claim_token naming the requesting party; it is "
+            "never defaulted (CONTRACT.md §20.2 rule 2)");
+    }
+    if (params.credentials.client_id.empty() ||
+        detail::reveal(params.credentials.client_secret).empty()) {
+        throw AuthError(
+            "the UMA ticket grant is a token-endpoint grant and requires confidential-client "
+            "credentials (CONTRACT.md §20.1)");
+    }
+
+    std::string tenant = params.tenant_id ? *params.tenant_id
+                                          : p_->tenant_id.value_or(std::string{});
+    if (!looks_like_uuid(tenant)) {
+        throw AuthError(
+            "the UMA ticket grant requires a tenant_id UUID for the /oauth2 query parameter; a "
+            "tenant slug cannot be substituted (CONTRACT.md §12.3 rule 4)");
+    }
+
+    const UmaConfiguration cfg = uma_discover();
+
+    // §12.1 note 2, which §20.1 applies to this grant unchanged. Existing query
+    // parameters on the discovered endpoint are preserved.
+    std::string url = cfg.token_endpoint;
+    url += (url.find('?') == std::string::npos) ? '?' : '&';
+    url += "tenant_id=" + percent_encode(tenant);
+
+    std::string form;
+    const std::pair<const char*, std::string> fields[] = {
+        {"grant_type", kUmaTicketGrantType},
+        {"ticket", detail::reveal(params.ticket)},
+        {"claim_token", detail::reveal(params.claim_token)},
+        {"claim_token_format", kUmaClaimTokenFormat},
+        {"client_id", params.credentials.client_id},
+        {"client_secret", detail::reveal(params.credentials.client_secret)},
+    };
+    for (const auto& [key, value] : fields) {
+        if (!form.empty()) form.push_back('&');
+        form += key;
+        form.push_back('=');
+        form += percent_encode(value);
+    }
+
+    // ONE REQUEST. No retry wrapper, on any outcome — see the rule 6 note on the
+    // declaration. The client authenticates through the form body, so no
+    // Authorization header goes with it, and no session cookie either: a second,
+    // unasked-for identity on the same request is not a convenience.
+    HttpRequest req;
+    req.method = "POST";
+    req.url = url;
+    req.headers["X-Tenant-ID"] = p_->tenant_header;
+    req.headers["Accept"] = "application/json";
+    req.headers["Content-Type"] = "application/x-www-form-urlencoded";
+    req.body = form;
+
+    HttpResponse resp = p_->send_raw(req);
+    if (resp.status < 200 || resp.status >= 300) {
+        // §20.4: dispatch on the `error` field at ANY status before the §2
+        // status mapping. access_denied answers 403 here where RFC 8628's is a
+        // 400, and the field is what stays correct if either moves.
+        const json j = parse_or_object(resp.body);
+        if (j.contains("error") && j["error"].is_string() &&
+            !j["error"].get<std::string>().empty()) {
+            const auto code = j["error"].get<std::string>();
+            std::optional<std::string> description;
+            if (j.contains("error_description") && j["error_description"].is_string()) {
+                description = j["error_description"].get<std::string>();
+            }
+            // The message carries the CODE, never the server's free text: a
+            // failed exchange is exactly when a description echoing the ticket
+            // would land in a caller's log.
+            throw OAuthProtocolError("uma ticket exchange refused: " + code, code,
+                                     std::move(description));
+        }
+        // Not an OAuth2ErrorResponse — a proxy's HTML 502, say. The ordinary §2
+        // mapping still applies rather than a protocol error with no code.
+        Client::Impl::raise_for_status(resp);
+    }
+
+    const json j = parse_or_object(resp.body);
+    if (!j.contains("access_token") || !j["access_token"].is_string() ||
+        j["access_token"].get<std::string>().empty()) {
+        throw NetworkError("uma ticket exchange: malformed TokenResponse (missing access_token)",
+                           "malformed_body");
+    }
+    RequestingPartyToken rpt;
+    rpt.access_token = Sensitive<std::string>(j["access_token"].get<std::string>());
+    rpt.token_type = j.value("token_type", std::string("Bearer"));
+    rpt.expires_in = j.value("expires_in", 0L);
+    // §20.2 rule 5: any refresh_token the server sent is ignored — there is no
+    // member for it, and synthesising one would let an RPT outlive its ticket.
+    return rpt;
+}
+
+// ---- §20.3 the challenge helpers ----
+
+std::optional<UmaChallenge> uma_parse_challenge(const std::string& header) {
+    const std::string trimmed = trim(header);
+    if (trimmed.rfind("UMA", 0) != 0) return std::nullopt;
+    const std::string rest = trimmed.substr(3);
+    // "UMA" alone is a valid, if useless, challenge; anything else must be
+    // separated by whitespace so `UMAX realm="…"` is not read as UMA.
+    if (!rest.empty() && rest.front() != ' ' && rest.front() != '\t') return std::nullopt;
+
+    UmaChallenge challenge;
+    std::size_t at = 0;
+    while (at <= rest.size()) {
+        const std::size_t comma = rest.find(',', at);
+        const std::string part =
+            rest.substr(at, comma == std::string::npos ? std::string::npos : comma - at);
+        const std::size_t equals = part.find('=');
+        if (equals != std::string::npos) {
+            const std::string key = trim(part.substr(0, equals));
+            const std::string value = unquote(trim(part.substr(equals + 1)));
+            if (key == "realm") {
+                challenge.realm = value;
+            } else if (key == "as_uri") {
+                challenge.as_uri = value;
+            } else if (key == "ticket") {
+                challenge.ticket = Sensitive<std::string>(value);
+            }
+            // Unknown parameters are ignored rather than rejected: UMA 2.0
+            // permits a server to add its own, and refusing the whole challenge
+            // over one would lose the ticket with it.
+        }
+        if (comma == std::string::npos) break;
+        at = comma + 1;
+    }
+    return challenge;
+}
+
+std::string uma_challenge_header(const std::string& realm, const std::string& as_uri,
+                                 const Sensitive<std::string>& ticket) {
+    return "UMA realm=\"" + realm + "\", as_uri=\"" + as_uri + "\", ticket=\"" +
+           detail::reveal(ticket) + "\"";
+}
 
 }  // namespace axiam

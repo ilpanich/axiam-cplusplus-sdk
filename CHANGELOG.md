@@ -8,6 +8,51 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Added
 
+- **UMA 2.0 — Protection API and ticket grant (CONTRACT §20).** New
+  `include/axiam/uma.hpp` plus eight methods on `Client`: `uma_discover`,
+  `uma_register_resource`, `uma_read_resource`, `uma_update_resource`,
+  `uma_delete_resource`, `uma_list_resources`, `uma_request_ticket` and
+  `uma_exchange_ticket`, with the two free challenge helpers `uma_parse_challenge` /
+  `uma_challenge_header`. New types `UmaConfiguration`, `UmaResourceSet`,
+  `UmaRequestedPermission`, `UmaRptPermission`, `RequestingPartyToken`,
+  `UmaChallenge`, `UmaClientCredentials`, `UmaExchangeTicketParams` and
+  `OAuthProtocolError`.
+
+  **This ships while §12 does not, and that is not an inconsistency.** §12.7, §14
+  and §15 stay deferred because each needs an OIDC stack this SDK does not have.
+  §20 does not: UMA carries its own discovery document, the Protection API is
+  ordinary bearer-authenticated REST, and the ticket grant returns an opaque RPT
+  with nothing to validate.
+
+  The load-bearing rules, all asserted in `tests/test_uma.cpp`:
+
+  - **`uma_exchange_ticket` is never retried** — not on `5xx`, not on a transport
+    failure, not on `invalid_grant`. This is the one documented exception to §16,
+    and a security rule rather than a performance one: the ticket is consumed
+    *before* the exchange is evaluated, so a retry is a second redemption — the
+    concurrency case whose measured residual `ilpanich/axiam#302` records. The
+    grant never enters `execute_retrying()`'s budget.
+  - **`uma_parse_challenge` performs no exchange.** The `as_uri` names an
+    authorization server the caller has not chosen to trust.
+  - **The RPT is never adopted**, and `RequestingPartyToken` has no refresh-token
+    member — asserted with a `sizeof` check, so a fourth member cannot be added
+    without the test noticing.
+  - **`uma_update_resource` replaces the scope list rather than merging it** — no
+    read-modify-write, so omitting a scope removes it.
+  - **An empty PAT, ticket, `claim_token` or client secret, or a slug-only
+    tenant, throws before any wire call**, so a request that could not have
+    succeeded never spends a ticket.
+
+- **`OAuthProtocolError`, deriving from `AuthError`.** §20.4 requires dispatching
+  on the body's `error` field rather than the HTTP status — `access_denied`
+  answers `403` on the ticket grant where RFC 8628's answers `400` — so the code
+  has to reach the caller. Deriving from `AuthError` is how the contract models
+  it: the §2 taxonomy keeps its three top-level types, and a caller that only
+  knows about `AuthError` still catches this. `what()` carries the code and never
+  the server's free text, since a failed exchange is exactly when a description
+  echoing the ticket would land in a log; `error_description()` surfaces that text
+  separately for a caller who opts in.
+
 - **Bounded read-only retry (CONTRACT §16).** `check_access`, `can`, `batch_check`
   and the JWKS fetch now retry a transient failure: 3 attempts total, 200 ms base,
   5 s cap, **full jitter** over `[0, backoff]`, and `Retry-After` honored as a
@@ -78,6 +123,8 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   named `reason_code`.
 
 ### Changed
+
+- Re-vendored `CONTRACT.md` at **1.10** and `openapi.json` (the server's `/uma2/*` surface).
 
 - **Re-vendored `CONTRACT.md` and `openapi.json`** from `ilpanich/axiam` at
   contract 1.7. Of the sections 1.7 adds, only §11 rule 9 is implemented here;
