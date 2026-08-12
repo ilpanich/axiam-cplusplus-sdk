@@ -8,6 +8,47 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Added
 
+- **§12 OIDC relying party, §12.7 logout, §14 device grant, §15 token exchange —
+  the contract-1.11 port.** These four were deferred in this SDK through contract
+  1.10; [§12.6](CONTRACT.md) reverses that and they ship together, in the new
+  `axiam/oidc.hpp`: `oidc_discover/begin/exchange/refresh`,
+  `login_client_credentials`, `introspect`, `revoke`, `sso_start/complete`;
+  `logout_url` and `verify_logout_token`; `device_authorize/poll/login`;
+  `token_exchange`.
+
+  The deferral reasoned from persona — a device- and IoT-oriented SDK with no
+  natural home for a browser redirect — which covers `oidc_begin` and
+  `oidc_exchange` and none of the other seven. §14 exists *because* a device
+  cannot show a browser, and §20 had already given this SDK a `/oauth2/token`
+  call, so it was speaking OAuth2 at the token endpoint without §12's discovery
+  cache or ID-token validation. The port removes a divergence rather than adding
+  one.
+
+  What the surface deliberately does not do: it stores no `state`, `nonce` or
+  `code_verifier` (§12.3 rule 1 — the caller keeps them, and the `redirect_uri`
+  too); it has no way to skip ID-token validation, and §12.4 rule 7's
+  all-or-nothing discard means a bad `id_token` takes the access and refresh
+  tokens with it; it adopts no token as the client's own credential; and it does
+  not retry a grant whose credential is single-use (§16.2).
+
+- **`OidcValidationError`**, carrying the §12.3 rule 3 closed seven-value
+  vocabulary via `reason()`. A SIBLING of `OAuthProtocolError` rather than a
+  subtype: the two carry different vocabularies from different clauses, and
+  §14.2's terminal `expired_token` is nearly a homograph of §12.4 rule 5's
+  `token_expired`. Distinct types make "which vocabulary am I catching?"
+  unavoidable.
+
+- **`JwksVerifier::verify_with_reason()`** — the same signature check, plus the
+  code naming which part of it failed. `verify_signature_only_unchecked()` is now
+  a thin wrapper over it, so the §10 authenticator and the §12 relying party
+  cannot drift on what "verified" means.
+
+- **Builder:** `oidc_client_id`, `oidc_client_secret`, `oidc_discovery_ttl`
+  (raised to the 5-minute floor), `oidc_clock_skew` (clamped down to 60 s, never
+  up).
+
+- **Examples:** `oidc_login.cpp`, `device_login.cpp`, `token_exchange.cpp`.
+
 - **§20.3 challenge emission from the §11 guard.** A `require_access` overload taking a
   `UmaChallenger` (realm, `as_uri`, PAT); on a denial it mints a permission ticket for the
   action that was refused and throws `AuthzChallengeError` carrying the formatted
@@ -184,6 +225,29 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   observes more than one request in flight (structural, so it cannot flake on a
   loaded CI box the way a timing assertion would) and that a client capped at 2
   never exceeds 2.
+
+### Changed
+
+- **The JWKS verifier now re-fetches at most once per cooldown window on an
+  unknown `kid`** (§12.4 rule 2). It previously re-fetched on EVERY unknown
+  `kid`, which is the fetch-amplification vector that rule names: an attacker
+  presenting arbitrary `kid` values drove one JWKS fetch per forged token. The
+  60-second window keeps key rotation working — "never re-fetch" is equally
+  forbidden — while bounding the amplification. This tightens the §10/§11 guard
+  path as well as the new §12 one.
+
+- `Client::Impl` moved to the non-installed `src/client_impl.hpp`, unchanged, so
+  the §12 translation unit can use the same transport, tenant header and §16
+  seams the other operations use. The alternative was a second copy of the
+  request plumbing beside the first — exactly the "second, parallel stack" the
+  §12.6 deferral warned about.
+
+- `oidc_refresh` is governed by its own §9-conformant single-flight guard, keyed
+  on the refresh token's digest. AXIAM rotates refresh tokens, so two threads
+  redeeming one concurrently would produce a winner and an `invalid_grant` for a
+  token that was good a millisecond earlier. Distinct tokens do not contend, and
+  a FAILING flight shares its failure with every waiter — §9 rule 2 says one
+  outcome, not one success.
 
 ## [1.0.0-alpha24] - 2026-08-04
 

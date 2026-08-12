@@ -1,5 +1,7 @@
 #include "axiam/jwks.hpp"
 
+#include "axiam/oidc.hpp"
+
 #include <openssl/evp.h>
 
 #include <array>
@@ -144,16 +146,38 @@ std::size_t JwksVerifier::cached_key_count() {
 
 std::optional<VerifiedToken> JwksVerifier::verify_signature_only_unchecked(
     const std::string& jwt) {
+    // One body, two entry points: the §10 authenticator and the §12 relying
+    // party must not be able to disagree about what "verified" means.
+    const JwtVerification v = verify_with_reason(jwt);
+    if (!v.ok) return std::nullopt;
+    return VerifiedToken{v.payload_json};
+}
+
+JwtVerification JwksVerifier::verify_with_reason(const std::string& jwt) {
+    const auto fail = [](const char* reason) {
+        JwtVerification v;
+        v.reason = reason;
+        return v;
+    };
+
+    // A token that is not three dot-separated parts cannot even have its
+    // algorithm established, which is why §12.3 rule 3 folds that case into
+    // `invalid_alg` rather than inventing an eighth code for it.
     std::string header_b64, payload_b64, sig_b64;
-    if (!split_jwt(jwt, header_b64, payload_b64, sig_b64)) return std::nullopt;
+    if (!split_jwt(jwt, header_b64, payload_b64, sig_b64)) {
+        return fail(OidcValidationReason::kInvalidAlg);
+    }
 
     const auto header_json = base64url_decode(header_b64);
-    if (!header_json) return std::nullopt;
+    if (!header_json) return fail(OidcValidationReason::kInvalidAlg);
     auto header = nlohmann::json::parse(*header_json, nullptr, /*allow_exceptions=*/false);
-    if (header.is_discarded()) return std::nullopt;
+    if (header.is_discarded()) return fail(OidcValidationReason::kInvalidAlg);
 
-    // Reject any non-EdDSA algorithm BEFORE any signature work.
-    if (header.value("alg", "") != "EdDSA") return std::nullopt;
+    // §12.4 rule 1: read `alg` from the header and check it BEFORE any signature
+    // work. An SDK must not let the token select its own verification
+    // algorithm, and the discovery document's advertised list cannot widen this
+    // either.
+    if (header.value("alg", "") != "EdDSA") return fail(OidcValidationReason::kInvalidAlg);
     const std::string kid = header.value("kid", "");
 
     Ed25519Jwk jwk;
@@ -162,25 +186,43 @@ std::optional<VerifiedToken> JwksVerifier::verify_signature_only_unchecked(
         ensure_keys_locked();
         auto it = keys_.find(kid);
         if (it == keys_.end()) {
-            // Unknown kid: force a single refresh in case of rotation.
-            have_keys_ = false;
-            ensure_keys_locked();
-            it = keys_.find(kid);
-            if (it == keys_.end()) return std::nullopt;
+            // §12.4 rule 2, per WINDOW rather than per token. The first unknown
+            // `kid` costs one re-fetch and opens the cooldown; a further unknown
+            // `kid` inside it re-consults the cached set with no network call.
+            // Before this, an attacker presenting arbitrary `kid` values drove
+            // one JWKS fetch per forged token — the amplification the rule
+            // exists to bound.
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= refetch_cooldown_until_) {
+                refetch_cooldown_until_ =
+                    now + std::chrono::seconds(kOidcJwksRefetchCooldownSeconds);
+                have_keys_ = false;
+                ensure_keys_locked();
+                it = keys_.find(kid);
+            }
+            // Covers "no kid in the header at all" as well as "no key matches
+            // it", which §12.3 rule 3 folds into one code deliberately.
+            if (it == keys_.end()) return fail(OidcValidationReason::kUnknownKid);
         }
         jwk = it->second;
     }
 
     const auto raw_pub = base64url_decode(jwk.x_b64url);
     const auto sig = base64url_decode(sig_b64);
-    if (!raw_pub || !sig) return std::nullopt;
+    if (!raw_pub || !sig) return fail(OidcValidationReason::kInvalidSignature);
 
     const std::string signing_input = header_b64 + "." + payload_b64;
-    if (!ed25519_verify(*raw_pub, signing_input, *sig)) return std::nullopt;
+    if (!ed25519_verify(*raw_pub, signing_input, *sig)) {
+        return fail(OidcValidationReason::kInvalidSignature);
+    }
 
     const auto payload_json = base64url_decode(payload_b64);
-    if (!payload_json) return std::nullopt;
-    return VerifiedToken{*payload_json};
+    if (!payload_json) return fail(OidcValidationReason::kInvalidSignature);
+
+    JwtVerification v;
+    v.ok = true;
+    v.payload_json = *payload_json;
+    return v;
 }
 
 }  // namespace axiam

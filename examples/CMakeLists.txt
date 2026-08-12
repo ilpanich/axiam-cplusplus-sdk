@@ -16,3 +16,14 @@ target_link_libraries(axiam_example_uma_resource_server PRIVATE axiam::axiam_cpp
 
 add_executable(axiam_example_uma_client uma_client.cpp)
 target_link_libraries(axiam_example_uma_client PRIVATE axiam::axiam_cpp)
+
+# The contract-1.11 port (§12.6): the OIDC relying party, the device grant, and
+# token exchange.
+add_executable(axiam_example_oidc_login oidc_login.cpp)
+target_link_libraries(axiam_example_oidc_login PRIVATE axiam::axiam_cpp)
+
+add_executable(axiam_example_device_login device_login.cpp)
+target_link_libraries(axiam_example_device_login PRIVATE axiam::axiam_cpp)
+
+add_executable(axiam_example_token_exchange token_exchange.cpp)
+target_link_libraries(axiam_example_token_exchange PRIVATE axiam::axiam_cpp)

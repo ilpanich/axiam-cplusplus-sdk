@@ -29,6 +29,7 @@ add_library(axiam_cpp
   src/client.cpp
   src/http_curl.cpp
   src/jwks.cpp
+  src/oidc.cpp
   src/webhook.cpp
 )
 add_library(axiam::axiam_cpp ALIAS axiam_cpp)
