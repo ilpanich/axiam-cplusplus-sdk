@@ -16,6 +16,8 @@ add_executable(axiam_cpp_tests
   test_webhook.cpp
   test_uma.cpp
   test_uma_challenge.cpp
+  test_oidc.cpp
+  test_oidc_grants.cpp
   test_integration_curl.cpp
   test_transport_concurrency.cpp
   test_transport_reuse.cpp

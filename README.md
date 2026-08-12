@@ -10,7 +10,7 @@ Idiomatic C++17 client for [AXIAM](https://github.com/ilpanich/axiam) (Access
 eXtended Identity and Authorization Management) — authentication, authorization
 checks, JWKS verification, and framework-agnostic route guards.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§11, §13, §16–§19 and §20 (including §6.1 mTLS).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §16–§19 and §20 (including §6.1 mTLS, §12.7 logout, and the §11 rule 9 decision reason codes).**
 
 > Scope note: this v1 covers the REST surface. **gRPC** — including the gRPC-only
 > `get_user_info` operation (CONTRACT §1.1, contract 1.3) — and **§8 AMQP HMAC** are
@@ -447,38 +447,75 @@ that was refused and the engine's deny rules keep applying to whatever RPT comes
 Both halves run in [`examples/uma_resource_server.cpp`](examples/uma_resource_server.cpp) and
 [`examples/uma_client.cpp`](examples/uma_client.cpp).
 
+## §12 OIDC, §12.7 logout, §14 device grant, §15 token exchange
+
+These four shipped together in the contract-1.11 port ([`CONTRACT.md` §12.6](CONTRACT.md)).
+They were previously deferred here, and the reasoning behind the reversal is
+worth keeping. The original deferral argued from persona — this is a device- and
+IoT-oriented SDK and the browser-redirect flow has no natural home in it — which
+covered `oidc_begin` and `oidc_exchange` and none of the other seven operations.
+`login_client_credentials` is the machine-to-machine login an embedded consumer
+wants; `introspect` and `revoke` are ordinary questions a device asks about its
+own credentials; §14 exists *because* a device cannot show a browser. Meanwhile
+§20 had already given this SDK a `/oauth2/token` call, so it was speaking OAuth2
+at the token endpoint anyway — without the shared discovery cache and ID-token
+validation §12 specifies. The port removed a divergence rather than adding one.
+
+```cpp
+auto client = axiam::Client::builder()
+                  .base_url("https://iam.example.com")
+                  .tenant_id("11111111-1111-1111-1111-111111111111")  // UUID, not a slug
+                  .oidc_client_id("example-rp")
+                  .oidc_client_secret(secret)   // omit for a public client
+                  .build();
+
+const auto doc = client.oidc_discover();          // cached >= 5 min per client
+const auto req = client.oidc_begin(doc, redirect_uri, "openid profile");
+// No network I/O happened. Keep req.state, req.nonce, req.code_verifier AND your
+// redirect_uri — §12.3 rule 1 means the SDK stores none of them.
+
+axiam::OidcExchangeParams p;
+p.code = code;                       p.code_verifier = req.code_verifier;
+p.redirect_uri = redirect_uri;       p.nonce = req.nonce;
+const auto tokens = client.oidc_exchange(p);
+// tokens.id_claims is engaged only after every §12.4 rule passed; on any failure
+// the WHOLE set is discarded (rule 7) and OidcValidationError::reason() names the
+// rule.
+```
+
+Three things this surface will not do, each because a section says so:
+
+- **It stores no correlation values** (§12.3 rule 1). See above.
+- **It never skips ID-token validation** and has no flag to. §12.4 rule 7 is
+  all-or-nothing: a token set whose `id_token` fails any check is discarded
+  whole, access and refresh tokens included.
+- **It adopts nothing.** Every operation returns tokens; none becomes this
+  client's own credential. §15.2 rule 5 makes that a MUST NOT for the exchanged
+  token specifically, and this SDK takes one posture everywhere rather than two.
+
+Two error types, two closed vocabularies, deliberately kept apart:
+`OAuthProtocolError::error_code()` carries the server's OAuth2 `error`;
+`OidcValidationError::reason()` carries the §12.3 rule 3 ID-token code. One of
+each pair is nearly a homograph of the other (§14.2's terminal `expired_token`
+against §12.4 rule 5's `token_expired`), so catching the wrong one is a mistake
+the type system makes visible.
+
+Note that `DeviceAuth` / `authenticate_device()` remains **§6.1 mTLS device
+authentication** — a different mechanism from the §14 device *authorization
+grant*, sharing a word.
+
+Worked examples: [`examples/oidc_login.cpp`](examples/oidc_login.cpp),
+[`examples/device_login.cpp`](examples/device_login.cpp),
+[`examples/token_exchange.cpp`](examples/token_exchange.cpp).
+
 ## Deferred / follow-ups
 
 - **gRPC transport** (Tonic-parity authz checks). The §6.1 "both transports" rule
   applies once gRPC lands; the REST client already isolates TLS material for reuse.
 - **§8 AMQP HMAC consumer** (not required of C++ by the contract).
-- **§12 OIDC relying-party surface**, and with it the three sections built on top
-  of it: **§12.7** RP-initiated and back-channel logout, **§14** the device
-  authorization grant (RFC 8628), and **§15** token exchange (RFC 8693).
-
-  This SDK ships no OIDC layer — no discovery-document cache, no token endpoint,
-  no ID-token validation, no PKCE. Each of those sections needs it directly:
-  §12.7's `logout_url` must read `end_session_endpoint` *from discovery* (the
-  clause exists precisely to forbid concatenating onto the issuer), §14 must read
-  `device_authorization_endpoint` from discovery and then poll the token
-  endpoint, and §15 is a token-endpoint grant requiring confidential-client
-  authentication. Adding them means designing an OIDC stack for C++, not
-  extending an existing one, so they are tracked here rather than half-shipped.
-
-  What *is* implemented from the same area is local JWT/JWKS verification
-  (§10.1), which the route guards need and which does not depend on discovery.
-  Note also that `DeviceAuth` / `authenticate_device()` is **§6.1 mTLS device
-  authentication**, not the §14 device *authorization grant* — different
-  mechanisms that share a word.
-
-  **§20 UMA 2.0 is *not* on this list**, since 2026-08, and the difference is
-  real rather than a change of mind. UMA carries its **own** discovery document
-  (`/.well-known/uma2-configuration`, §20.1's named wire reference), the
-  Protection API is ordinary bearer-authenticated REST, and the ticket grant
-  returns an opaque RPT with no `id_token` to validate. One GET and one POST,
-  with no PKCE, no state store and no JWKS interaction. The "designing an OIDC
-  stack for C++" objection above holds for §12.7/§14/§15 and simply does not
-  apply here, so deferring §20 too would have been a habit rather than a reason.
-  See [UMA 2.0](#uma-20--protection-api-and-ticket-grant-20).
+- **The optional `OidcStateStore`** (§12.3 rule 1). The core §12 operations are
+  usable without one and the store is a MAY; a C++ reference implementation with
+  the mandated 10-minute TTL, single-use `consume`, and lazy (never
+  timer-driven) expiry is a follow-up.
 - Framework adapter samples for Crow / Pistache (the guard interface is already
   framework-agnostic).
