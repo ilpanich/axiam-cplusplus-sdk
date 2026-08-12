@@ -409,6 +409,44 @@ moves. The exception's `what()` carries the code, never the server's free text �
 a description echoing the ticket must not reach a log line — and
 `error_description()` surfaces that text separately for a caller who opts in.
 
+### Emitting the challenge from the §11 guard
+
+The `require_access` overload that takes a `UmaChallenger` mints and formats the challenge for
+you, so you do not hand-roll it on every denial:
+
+```cpp
+axiam::UmaChallenger challenger{"invoices", configuration.issuer, pat};
+
+try {
+    axiam::require_access(client, caller, "invoices:read", invoice_id, challenger);
+} catch (const axiam::AuthzChallengeError& denial) {
+    response.set_header("WWW-Authenticate", denial.challenge());  // send it; do not log it
+    response.status(403);
+}
+```
+
+`AuthzChallengeError` **derives from `AuthzError`**, so an adapter that knows nothing about UMA
+catches what it always caught and returns the same 403; the addition can never turn a denial
+into a different outcome. The challenge is not in `what()` — the value carries a live permission
+ticket (§20.6), and `what()` is what ends up in a log line.
+
+Two properties are deliberate, and both are asserted by counting Protection API calls:
+
+- **Opt-in.** Emitting a challenge means minting a credential. A guard that did that on every
+  denial by default would put a Protection API call — and a live ticket — behind every
+  unauthorized request, which is a denial-of-service amplifier pointed at your own authorization
+  server. The existing overloads are untouched; an allow mints nothing; an unauthenticated
+  request mints nothing, because only a *resource denial* is answerable with a ticket.
+- **A minting failure is not an escalation.** An expired PAT or an unreachable Protection API
+  still surfaces the original `AuthzError` — never a 503 escaping from the mint, and never an
+  allow.
+
+The requested UMA scope is the AXIAM **action**, so the ticket asks for exactly the authority
+that was refused and the engine's deny rules keep applying to whatever RPT comes back.
+
+Both halves run in [`examples/uma_resource_server.cpp`](examples/uma_resource_server.cpp) and
+[`examples/uma_client.cpp`](examples/uma_client.cpp).
+
 ## Deferred / follow-ups
 
 - **gRPC transport** (Tonic-parity authz checks). The §6.1 "both transports" rule

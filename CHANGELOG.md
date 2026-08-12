@@ -8,6 +8,27 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Added
 
+- **§20.3 challenge emission from the §11 guard.** A `require_access` overload taking a
+  `UmaChallenger` (realm, `as_uri`, PAT); on a denial it mints a permission ticket for the
+  action that was refused and throws `AuthzChallengeError` carrying the formatted
+  `WWW-Authenticate: UMA` value.
+
+  `AuthzChallengeError` **derives from `AuthzError`**, so an adapter that knows nothing about
+  UMA catches what it always caught and returns the same 403 — the addition can never turn a
+  denial into a different outcome. The challenge is deliberately absent from `what()`: the
+  value carries a live ticket (§20.6), and `what()` is what ends up in a log line.
+
+  The overload is **opt-in** because emitting a challenge means minting a credential: a guard
+  that did it by default would turn every unauthorized request into a Protection API call,
+  which is a denial-of-service amplifier pointed at your own authorization server. An allow
+  mints nothing, and neither does an unauthenticated request. And a **minting failure is not an
+  escalation** — the original denial is rethrown intact rather than the Protection API's own
+  error escaping as a 503. Both are asserted by counting Protection API calls.
+
+  Paired with the new `examples/uma_resource_server.cpp` and `examples/uma_client.cpp`, which
+  run both halves — including the trust decision §20.3 keeps in the caller's hands rather than
+  auto-exchanging against whatever host a 403 named.
+
 - **UMA 2.0 — Protection API and ticket grant (CONTRACT §20).** New
   `include/axiam/uma.hpp` plus eight methods on `Client`: `uma_discover`,
   `uma_register_resource`, `uma_read_resource`, `uma_update_resource`,
