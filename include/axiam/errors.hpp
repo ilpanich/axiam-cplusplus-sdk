@@ -41,6 +41,34 @@ private:
     std::optional<std::string> resource_id_;
 };
 
+/// An authorization failure that additionally names where to obtain authority
+/// (CONTRACT.md §20.3): the resource server minted a permission ticket for the
+/// pair the caller lacked, and this carries the formatted
+/// `WWW-Authenticate: UMA` value naming it.
+///
+/// Derives from AuthzError on purpose. An adapter that knows nothing about UMA
+/// catches AuthzError and returns the same 403 it always did; one that does
+/// catches this first (or dynamic_casts) and copies challenge() onto the
+/// response. The addition can never turn a denial into a different outcome.
+///
+/// **The challenge is not in what()**, and that is deliberate: the value carries
+/// a live permission ticket for its 60 seconds (§20.6), and what() is what ends
+/// up in a log line.
+class AuthzChallengeError : public AuthzError {
+public:
+    AuthzChallengeError(const std::string& message, std::string challenge,
+                        std::optional<std::string> action = std::nullopt,
+                        std::optional<std::string> resource_id = std::nullopt)
+        : AuthzError(message, std::move(action), std::move(resource_id)),
+          challenge_(std::move(challenge)) {}
+
+    /// The formatted `WWW-Authenticate` value. Send it as a header; do not log it.
+    const std::string& challenge() const noexcept { return challenge_; }
+
+private:
+    std::string challenge_;
+};
+
 /// Transport-level failure: connection refused, timeout, TLS error, DNS failure,
 /// malformed request (400), rate-limit (408/429) or server error (5xx).
 /// Carries the underlying transport cause string.

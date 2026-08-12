@@ -12,6 +12,7 @@
 // the client's check_access surface; they never re-implement token verification.
 #pragma once
 
+#include <exception>
 #include <functional>
 #include <initializer_list>
 #include <optional>
@@ -20,6 +21,8 @@
 
 #include "axiam/client.hpp"
 #include "axiam/errors.hpp"
+#include "axiam/sensitive.hpp"
+#include "axiam/uma.hpp"
 
 namespace axiam {
 
@@ -85,6 +88,77 @@ inline void require_access(Client& client, const std::optional<AxiamUser>& user,
     }
     if (!decision.allowed) {
         throw AuthzError("authorization_denied");
+    }
+}
+
+/// A configured `WWW-Authenticate: UMA` challenge emitter (§20.3, emit half).
+///
+/// Pass one to the require_access overload below and a denial stops being a bare
+/// AuthzError: the guard mints a fresh permission ticket for the pair the caller
+/// lacked and throws an AuthzChallengeError carrying the formatted header, so a
+/// UMA-aware adapter can hand the caller something to act on.
+///
+/// **Opt-in, and deliberately so.** Emitting a challenge means minting a
+/// credential — a wire call to the Protection API, and a live ticket, produced
+/// on a path the caller did not explicitly request. A guard that did that on
+/// every denial by default would turn each unauthorized request into a
+/// Protection API call, which is a denial-of-service amplifier pointed at your
+/// own authorization server. So the existing overloads are untouched and this is
+/// a separate one.
+///
+/// **Failure is not escalation.** If minting fails — the PAT expired, the
+/// Protection API is down, the resource declares none of the requested scopes —
+/// the denial still surfaces as a plain AuthzError. A caller who was going to be
+/// refused is refused either way; letting a Protection API outage turn a deny
+/// into a 503 would hand the outage a second consequence, and letting it turn
+/// into an allow would be a security bug.
+struct UmaChallenger {
+    /// The protection realm to name in the header.
+    std::string realm;
+    /// The authorization server to send the caller to — normally this
+    /// deployment's issuer, read from Client::uma_discover() rather than
+    /// concatenated by hand.
+    std::string as_uri;
+    /// A Protection API Token: a *client-credentials* token carrying the
+    /// `uma_protection` scope (§20.2 rule 1). A user token cannot stand in — a
+    /// minted ticket is bound to the client_id that minted it.
+    Sensitive<std::string> pat;
+};
+
+/// §11 require_access, with §20.3 challenge emission on a denial.
+///
+/// Identical to the overload above in every outcome; additionally, a denial
+/// throws AuthzChallengeError (which *is* an AuthzError) carrying a freshly
+/// minted ticket for (resource_id, action).
+///
+/// The requested UMA scope is the AXIAM *action*: asking for anything else would
+/// offer the caller authority other than the one they were denied, and would
+/// step outside the grants the engine just evaluated — deny rules included.
+inline void require_access(Client& client, const std::optional<AxiamUser>& user,
+                           const std::string& action, const std::string& resource_id,
+                           const UmaChallenger& challenger,
+                           std::optional<std::string> scope = std::nullopt) {
+    try {
+        require_access(client, user, action, resource_id, std::move(scope));
+        return;
+    } catch (const AuthzError& denial) {
+        // Captured before the nested try: inside it, current_exception() would be
+        // the *minting* failure, and a bare `throw;` there would surface that
+        // instead of the denial — turning a 403 into whatever went wrong at the
+        // Protection API, which is exactly the escalation this must not do.
+        const std::exception_ptr original = std::current_exception();
+        std::string header;
+        try {
+            auto ticket = client.uma_request_ticket(
+                challenger.pat, {UmaRequestedPermission{resource_id, {action}}});
+            header = uma_challenge_header(challenger.realm, challenger.as_uri, ticket);
+        } catch (const AxiamError&) {
+            // Swallowed deliberately — see UmaChallenger. The denial stands on
+            // its own; only the sugar is lost.
+            std::rethrow_exception(original);
+        }
+        throw AuthzChallengeError(denial.what(), std::move(header), denial.action(),
+                                  denial.resource_id());
     }
 }
 

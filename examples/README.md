@@ -10,6 +10,8 @@ build them offline and run them against a real server when you have one.
 | [`login_mfa.cpp`](login_mfa.cpp)   | Two-phase login + MFA verify (CONTRACT.md §1, §5, §5.1) |
 | [`rest_authz.cpp`](rest_authz.cpp) | `check_access` / `can` / `batch_check` (CONTRACT.md §1) |
 | [`telemetry_hook.cpp`](telemetry_hook.cpp) | Metrics without a metrics dependency: §19 hooks, the §16 retry signal, the §19.2 rule 6 clamp warning, and §18 `close()` |
+| [`uma_resource_server.cpp`](uma_resource_server.cpp) | UMA 2.0 (§20), emit half: register a resource, guard it, answer a denial with `WWW-Authenticate: UMA` |
+| [`uma_client.cpp`](uma_client.cpp) | The other half: parse the challenge, make the **trust decision** §20.3 keeps in the caller's hands, then exchange the ticket for an RPT |
 
 ## Build
 
@@ -47,6 +49,9 @@ export AXIAM_PASSWORD='correct horse battery staple'
 ./build/examples/axiam_example_login_mfa
 ./build/examples/axiam_example_rest_authz
 ./build/examples/axiam_example_telemetry_hook
+./build/examples/axiam_example_uma_resource_server
+AXIAM_WWW_AUTHENTICATE='UMA realm="invoices", as_uri="…", ticket="…"' \
+  ./build/examples/axiam_example_uma_client
 ```
 
 > **Why org context?** A tenant slug is only unique within an organization, so
