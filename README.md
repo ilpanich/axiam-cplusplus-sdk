@@ -508,6 +508,37 @@ Worked examples: [`examples/oidc_login.cpp`](examples/oidc_login.cpp),
 [`examples/device_login.cpp`](examples/device_login.cpp),
 [`examples/token_exchange.cpp`](examples/token_exchange.cpp).
 
+### §15.7 — external-IdP subject tokens
+
+The same call exchanges a token minted by a **trusted external IdP** — a
+partner's Entra, Okta or Keycloak — for an AXIAM token scoped to what the
+resolved AXIAM user may actually do. There is no separate operation:
+
+```cpp
+axiam::TokenExchangeParams params;
+params.subject_token      = axiam::Sensitive<std::string>(partner_token);
+params.subject_token_type = axiam::kJwtTokenType;   // named, never guessed
+params.audience           = "https://orders.internal";
+
+const auto exchanged = client.token_exchange(params);
+```
+
+- **`subject_token_type` is yours to state.** The SDK never decodes the subject
+  token to pick it, and never overrides what you named. `std::nullopt` still
+  means `kAccessTokenType`, the same-domain exchange of §15.1.
+- **No actor token.** Delegation across a trust boundary is unsupported in v1;
+  sending one is `invalid_request`, which the SDK will not work around by
+  dropping it and re-sending.
+- **One refusal is distinguishable.** `invalid_grant` whose
+  `error_description()` is `the subject token's issuer is not configured for
+  token exchange` means *fix the AXIAM trust configuration*. Every other
+  `invalid_grant` means *fix your token*, and is deliberately generic.
+- **Forward the result as-is.** It carries an `ext_exchange` claim naming the
+  partner issuer; never strip it, and never read it as an authorization input.
+  It also cannot be exchanged again — exchanges do not compose.
+
+The operator guide is `docs/api/federated-token-exchange.md`.
+
 ## Deferred / follow-ups
 
 - **gRPC transport** (Tonic-parity authz checks). The §6.1 "both transports" rule
