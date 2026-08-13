@@ -59,6 +59,10 @@ int main() {
 
         axiam::TokenExchangeParams params;
         params.subject_token = axiam::Sensitive<std::string>(subject);
+
+        // Required (§15.1), no default: only you know what kind of token you hold.
+
+        params.subject_token_type = axiam::kAccessTokenType;
         // Present → delegation. Absent → impersonation. Nothing in between, and
         // no default.
         const std::string actor = env_or("AXIAM_ACTOR_TOKEN", "");

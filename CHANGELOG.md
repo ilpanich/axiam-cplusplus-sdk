@@ -6,6 +6,31 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (contract 1.13): `TokenExchangeParams::subject_token_type` is now required**, and
+  its type narrows from `std::optional<std::string>` to `std::string`. It shipped optional,
+  defaulting to `kAccessTokenType` when unset — which satisfied §15.7's "never inspect the
+  subject token" while leaving the rule it serves unenforced: an optional member with a default
+  *is* a default the SDK applies whenever the caller says nothing. §15.1 now makes it required.
+
+  C++ cannot make an aggregate member mandatory, so the demand lands at the call: an empty
+  `subject_token_type` throws `AuthError` **client-side, with no wire call**, naming both
+  constants. A test asserts zero token calls.
+
+  **Migration** — one line, naming what you were previously getting by silence:
+
+  ```cpp
+  axiam::TokenExchangeParams params;
+  params.subject_token      = axiam::Sensitive<std::string>(user_token);
+  params.subject_token_type = axiam::kAccessTokenType;  // <- add this
+  ```
+
+  This closes a gap rather than opening one: `subject_token_type` has always been required *on
+  the wire*, and the SDK was covering for that with a constant which stopped being the only
+  legal value when X4 landed. For a caller who actually held a refresh token, the old default
+  traded the `invalid_request` that names the type for a generic `invalid_grant`.
+
 ### Added
 
 - **§15.7 external-IdP subject tokens (X4).** `token_exchange()` can now exchange a token minted

@@ -1270,6 +1270,16 @@ ExchangedToken Client::token_exchange(const TokenExchangeParams& params) {
     p_->ensure_open();
     const std::string& subject = detail::reveal(params.subject_token);
     if (subject.empty()) throw AuthError("token_exchange requires a subject_token");
+    // §15.1: subject_token_type is required and has no default. C++ cannot make
+    // an aggregate member mandatory, so the demand lands here — client-side,
+    // with no wire call, rather than sending …:access_token on the caller's
+    // behalf and letting the server refuse a token they never described.
+    if (params.subject_token_type.empty()) {
+        throw AuthError(
+            "token_exchange requires subject_token_type (§15.1): pass "
+            "kAccessTokenType for an AXIAM access token, or kJwtTokenType for a "
+            "trusted external issuer's JWT");
+    }
     const std::string& client_id = require_client_id(*p_, "token_exchange");
     // §15.1: the exchanging client authenticates — unlike §14's device, this is
     // a confidential service.
@@ -1284,10 +1294,7 @@ ExchangedToken Client::token_exchange(const TokenExchangeParams& params) {
     // pick this (§15.7): which kind of token the caller holds is the caller's to
     // know, and a guess here is the difference between a request that is refused
     // and one that is silently reinterpreted.
-    form.add("subject_token_type",
-             params.subject_token_type && !params.subject_token_type->empty()
-                 ? *params.subject_token_type
-                 : std::string(kAccessTokenType));
+    form.add("subject_token_type", params.subject_token_type);
     // §15.2 rule 1. The presence of an actor token selects DELEGATION; its
     // absence selects IMPERSONATION. Two different operations with different
     // risk, and this SDK supplies no default and never substitutes the client's

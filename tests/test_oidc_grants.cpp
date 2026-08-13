@@ -343,6 +343,9 @@ axiam::TokenExchangeParams exchange(const char* actor = nullptr,
                                     std::vector<std::string> scopes = {}) {
     axiam::TokenExchangeParams p;
     p.subject_token = axiam::Sensitive<std::string>("subject-token");
+    // §15.1: required. The same-domain exchange these tests exercise names it
+    // explicitly, exactly as a caller now must.
+    p.subject_token_type = axiam::kAccessTokenType;
     if (actor != nullptr) p.actor_token = axiam::Sensitive<std::string>(actor);
     p.scopes = std::move(scopes);
     return p;
@@ -488,6 +491,7 @@ axiam::TokenExchangeParams external_exchange(const char* subject_token_type,
                                              const char* subject = kExternalSubjectToken) {
     axiam::TokenExchangeParams p;
     p.subject_token = axiam::Sensitive<std::string>(subject);
+    // nullptr means "the caller named nothing" — which §15.1 now refuses.
     if (subject_token_type != nullptr) p.subject_token_type = std::string(subject_token_type);
     if (actor != nullptr) p.actor_token = axiam::Sensitive<std::string>(actor);
     return p;
@@ -526,16 +530,34 @@ AXIAM_TEST("§15.7 subject_token_type is never inferred from the token itself") 
     f.replies->token_script = {
         {200, R"({"access_token":"narrow","token_type":"Bearer","expires_in":300})"}};
     auto client = make_client(f);
-    // A subject token that *looks* exactly like a JWT. An SDK that sniffed the
-    // token would send …:jwt here; §15.7 says it must not look, so the caller's
-    // silence still means the §15.1 same-domain default.
+    // A subject token that *looks* exactly like a JWT, presented as an access
+    // token. An SDK that sniffed the token would "correct" this to …:jwt;
+    // §15.7 says it must not look, so what the caller named is what goes out.
+    // Being able to hold this wrong is the point: only the caller knows.
     client.token_exchange(external_exchange(
-        nullptr, nullptr,
+        axiam::kAccessTokenType, nullptr,
         "eyJhbGciOiJFZERTQSJ9.eyJpc3MiOiJodHRwczovL3BhcnRuZXIuZXhhbXBsZS8ifQ.sig"));
 
     const auto req = last_request(*f.st, "/oauth2/token");
     AXIAM_REQUIRE(req.body.find(std::string("subject_token_type=") + kEncAccessType) !=
                   std::string::npos);
+}
+
+AXIAM_TEST("§15.1 an omitted subject_token_type never reaches the wire") {
+    // The type is REQUIRED and has no default. C++ cannot make an aggregate
+    // member mandatory, so the demand lands at the call — client-side, with no
+    // wire call. Sending …:access_token instead would be the SDK choosing on
+    // the caller's behalf, which §15.7 forbids; and for a caller who actually
+    // held a refresh token it would trade the invalid_request that NAMES the
+    // type for a generic invalid_grant.
+    Fixture f;
+    f.replies->token_script = {
+        {200, R"({"access_token":"narrow","token_type":"Bearer","expires_in":300})"}};
+    auto client = make_client(f);
+
+    AXIAM_REQUIRE_THROWS_AS(client.token_exchange(external_exchange(nullptr)),
+                            axiam::AuthError);
+    AXIAM_REQUIRE(f.replies->token_calls == 0);
 }
 
 AXIAM_TEST("§15.7 an actor token with an external subject token is refused without retry") {

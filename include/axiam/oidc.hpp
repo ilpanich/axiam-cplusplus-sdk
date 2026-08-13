@@ -78,8 +78,9 @@ inline constexpr const char* kDeviceCodeGrantType =
     "urn:ietf:params:oauth:grant-type:device_code";
 inline constexpr const char* kTokenExchangeGrantType =
     "urn:ietf:params:oauth:grant-type:token-exchange";
-/// The `actor_token_type` this SDK sends, and the `subject_token_type` it sends
-/// when the caller names none — an AXIAM-issued access token (§15.1).
+/// The `actor_token_type` this SDK sends, and the `subject_token_type` a caller
+/// names for the same-domain exchange of §15.1. There is no default: the type
+/// is a required member of `TokenExchangeParams`.
 inline constexpr const char* kAccessTokenType =
     "urn:ietf:params:oauth:token-type:access_token";
 /// A JWT from a trusted external issuer — the cross-domain exchange of §15.7.
@@ -372,17 +373,21 @@ struct OidcExchangeParams {
 struct TokenExchangeParams {
     /// The token being exchanged. Required.
     Sensitive<std::string> subject_token;
-    /// What kind of token `subject_token` is (§15.7).
+    /// What kind of token `subject_token` is. **Required** (§15.1).
     ///
-    /// `std::nullopt` sends `kAccessTokenType`, the same-domain exchange of
-    /// §15.1. To exchange a token from a **trusted external issuer**, name it
-    /// explicitly — normally `kJwtTokenType`.
+    /// There is no default. A defaulted type would be this SDK choosing which
+    /// kind of credential you are holding, which is exactly what §15.7 forbids
+    /// — so an empty value fails **client-side, with no wire call**, the same
+    /// way a missing client secret does.
+    ///
+    /// Pass `kAccessTokenType` for the same-domain exchange of §15.1, or
+    /// `kJwtTokenType` for a trusted external issuer's JWT (§15.7).
     ///
     /// This SDK never reads `subject_token` to decide the value: which kind of
     /// token the caller holds is only the caller's to know, AXIAM refuses
     /// refresh and ID token types by name, and a refusal is never retried as a
     /// different type.
-    std::optional<std::string> subject_token_type;
+    std::string subject_token_type;
     /// **Its presence selects delegation; its absence selects impersonation.**
     ///
     /// Two different operations with different risk, and §15.2 rule 1 forbids
