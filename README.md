@@ -517,15 +517,17 @@ resolved AXIAM user may actually do. There is no separate operation:
 ```cpp
 axiam::TokenExchangeParams params;
 params.subject_token      = axiam::Sensitive<std::string>(partner_token);
-params.subject_token_type = axiam::kJwtTokenType;   // named, never guessed
+params.subject_token_type = axiam::kJwtTokenType;   // required; named, never guessed
 params.audience           = "https://orders.internal";
 
 const auto exchanged = client.token_exchange(params);
 ```
 
-- **`subject_token_type` is yours to state.** The SDK never decodes the subject
-  token to pick it, and never overrides what you named. `std::nullopt` still
-  means `kAccessTokenType`, the same-domain exchange of §15.1.
+- **`subject_token_type` is yours to state, and is required** (§15.1). The SDK
+  never decodes the subject token to pick it, and never overrides what you
+  named. There is no default: an empty value throws `AuthError` client-side
+  with no wire call, because a default would be the SDK choosing for you. Pass
+  `kAccessTokenType` for the same-domain exchange.
 - **No actor token.** Delegation across a trust boundary is unsupported in v1;
   sending one is `invalid_request`, which the SDK will not work around by
   dropping it and re-sending.
