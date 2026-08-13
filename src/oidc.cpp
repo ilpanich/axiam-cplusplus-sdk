@@ -1280,7 +1280,14 @@ ExchangedToken Client::token_exchange(const TokenExchangeParams& params) {
     Form form;
     form.add("grant_type", kTokenExchangeGrantType);
     form.add("subject_token", subject);
-    form.add("subject_token_type", kAccessTokenType);
+    // Whatever the caller named, verbatim. The subject token is NEVER decoded to
+    // pick this (§15.7): which kind of token the caller holds is the caller's to
+    // know, and a guess here is the difference between a request that is refused
+    // and one that is silently reinterpreted.
+    form.add("subject_token_type",
+             params.subject_token_type && !params.subject_token_type->empty()
+                 ? *params.subject_token_type
+                 : std::string(kAccessTokenType));
     // §15.2 rule 1. The presence of an actor token selects DELEGATION; its
     // absence selects IMPERSONATION. Two different operations with different
     // risk, and this SDK supplies no default and never substitutes the client's

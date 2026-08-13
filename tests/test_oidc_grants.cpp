@@ -53,10 +53,22 @@ struct Replies {
     long device_status = 200;
     std::string device_body = "{}";
     std::string jwks_body = R"({"keys":[]})";
-    // Widen the coalescing window for the §9 single-flight test, exactly as the
+    // Widen the coalescing window for the §9 single-flight tests, exactly as the
     // §9 cookie-refresh test does — without it the leader can finish before a
     // follower arrives and the test would pass for the wrong reason.
     std::chrono::milliseconds token_delay{0};
+    // The same window, made deterministic. A fixed delay is a bet that every
+    // follower gets scheduled within it, and under valgrind — one core, every
+    // thread slowed — that bet loses: the leader finishes first and the test
+    // fails for a reason that has nothing to do with the guard.
+    //
+    // So the leader also waits for `gate_expect` callers to have ENTERED the
+    // operation, which each worker signals by bumping `gate_arrived` on its way
+    // in. If the guard works, followers park and never reach here; if it were
+    // broken they would arrive here too, and `token_calls` would say so. Either
+    // way nothing deadlocks: a late arrival finds the count already satisfied.
+    std::atomic<int> gate_arrived{0};
+    int gate_expect = 0;
     std::mutex mtx;
 };
 
@@ -83,10 +95,21 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
         if (url.find("/oauth2/token") != std::string::npos) {
             std::size_t i;
             std::chrono::milliseconds delay;
+            int expect;
             {
                 std::lock_guard<std::mutex> lock(r->mtx);
                 i = r->token_calls++;
                 delay = r->token_delay;
+                expect = r->gate_expect;
+            }
+            if (expect > 0) {
+                // Bounded, so a genuine regression fails the assertion rather
+                // than hanging the suite until the job times out.
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+                while (r->gate_arrived.load(std::memory_order_acquire) < expect &&
+                       std::chrono::steady_clock::now() < deadline) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
             }
             if (delay.count() > 0) std::this_thread::sleep_for(delay);
             std::lock_guard<std::mutex> lock(r->mtx);
@@ -436,6 +459,175 @@ AXIAM_TEST("§15.1 token_exchange refuses a public client with no wire call") {
 }
 
 // ---------------------------------------------------------------------------
+// §15.7 external-IdP subject tokens (X4)
+//
+// No new operation: the same token_exchange carries a partner IdP's token. What
+// changes is which subject tokens the server accepts and what its refusals
+// mean, so these tests are about not getting in the way of either.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A token minted by a partner's IdP. Opaque to the SDK — deliberately not a
+/// well-formed JWT, because nothing here may decode it.
+constexpr const char* kExternalSubjectToken = "partner-idp-subject-token";
+
+/// The one normative `error_description` (§15.7). It means "fix the AXIAM trust
+/// configuration", not "fix your token".
+constexpr const char* kIssuerNotConfigured =
+    "the subject token's issuer is not configured for token exchange";
+
+/// Percent-encoded as `Form::pct` emits them — every URN colon becomes %3A.
+constexpr const char* kEncJwtType = "urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Ajwt";
+constexpr const char* kEncAccessType =
+    "urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token";
+
+/// `exchange()`, plus the §15.7 subject_token_type and an explicit subject.
+axiam::TokenExchangeParams external_exchange(const char* subject_token_type,
+                                             const char* actor = nullptr,
+                                             const char* subject = kExternalSubjectToken) {
+    axiam::TokenExchangeParams p;
+    p.subject_token = axiam::Sensitive<std::string>(subject);
+    if (subject_token_type != nullptr) p.subject_token_type = std::string(subject_token_type);
+    if (actor != nullptr) p.actor_token = axiam::Sensitive<std::string>(actor);
+    return p;
+}
+
+}  // namespace
+
+AXIAM_TEST("§15.7 an external subject_token_type is sent verbatim and the result surfaces unchanged") {
+    Fixture f;
+    f.replies->token_script = {
+        {200,
+         R"({"access_token":"narrow","issued_token_type":"urn:ietf:params:oauth:token-type:access_token",)"
+         R"("token_type":"Bearer","expires_in":300,"scope":"read:orders"})"}};
+    auto client = make_client(f);
+    const auto t = client.token_exchange(external_exchange(axiam::kJwtTokenType));
+
+    const auto req = last_request(*f.st, "/oauth2/token");
+    // The caller named …:jwt, so …:jwt goes on the wire. §15.7: the SDK must not
+    // inspect the subject token to pick this, and must not override it.
+    AXIAM_REQUIRE(req.body.find(std::string("subject_token_type=") + kEncJwtType) !=
+                  std::string::npos);
+    AXIAM_REQUIRE(req.body.find(std::string("subject_token=") + kExternalSubjectToken) !=
+                  std::string::npos);
+    // Delegation across a trust boundary is unsupported; nothing may add one.
+    AXIAM_REQUIRE_FALSE(body_has_field(*f.st, "/oauth2/token", "actor_token"));
+
+    // The cross-domain path is not a different result shape, and §15.2
+    // rules 6-7 still hold.
+    AXIAM_REQUIRE(axiam::detail::reveal(t.access_token) == "narrow");
+    AXIAM_REQUIRE(t.issued_token_type == axiam::kAccessTokenType);
+    AXIAM_REQUIRE(t.scope.value_or("") == "read:orders");
+}
+
+AXIAM_TEST("§15.7 subject_token_type is never inferred from the token itself") {
+    Fixture f;
+    f.replies->token_script = {
+        {200, R"({"access_token":"narrow","token_type":"Bearer","expires_in":300})"}};
+    auto client = make_client(f);
+    // A subject token that *looks* exactly like a JWT. An SDK that sniffed the
+    // token would send …:jwt here; §15.7 says it must not look, so the caller's
+    // silence still means the §15.1 same-domain default.
+    client.token_exchange(external_exchange(
+        nullptr, nullptr,
+        "eyJhbGciOiJFZERTQSJ9.eyJpc3MiOiJodHRwczovL3BhcnRuZXIuZXhhbXBsZS8ifQ.sig"));
+
+    const auto req = last_request(*f.st, "/oauth2/token");
+    AXIAM_REQUIRE(req.body.find(std::string("subject_token_type=") + kEncAccessType) !=
+                  std::string::npos);
+}
+
+AXIAM_TEST("§15.7 an actor token with an external subject token is refused without retry") {
+    Fixture f;
+    f.replies->token_script = {
+        {400,
+         R"({"error":"invalid_request","error_description":"actor_token is not supported for an external subject token"})"}};
+    auto client = make_client(f);
+    try {
+        client.token_exchange(external_exchange(axiam::kJwtTokenType, "actor-token"));
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OAuthProtocolError& e) {
+        AXIAM_REQUIRE(e.error_code() == "invalid_request");
+    }
+
+    // §15.7: no retry, and no rewriting. Dropping the actor token and re-sending
+    // would turn a delegation the caller asked for into an impersonation they
+    // did not.
+    AXIAM_REQUIRE(f.replies->token_calls == 1);
+    const auto req = last_request(*f.st, "/oauth2/token");
+    AXIAM_REQUIRE(req.body.find("actor_token=actor-token") != std::string::npos);
+    AXIAM_REQUIRE(req.body.find(std::string("subject_token_type=") + kEncJwtType) !=
+                  std::string::npos);
+}
+
+AXIAM_TEST("§15.7 a refused subject_token_type is never retried as another") {
+    // A refresh token is a re-authentication credential and an ID token is an
+    // assertion to a client about a login; neither is a bearer credential for an
+    // API, so both are refused BY NAME. Retrying as …:jwt would present one as
+    // if it were.
+    const std::vector<std::pair<const char*, const char*>> cases = {
+        {"urn:ietf:params:oauth:token-type:refresh_token",
+         "urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Arefresh_token"},
+        {"urn:ietf:params:oauth:token-type:id_token",
+         "urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aid_token"},
+    };
+    for (const auto& [refused, encoded] : cases) {
+        Fixture f;
+        f.replies->token_script = {
+            {400,
+             R"({"error":"invalid_request","error_description":"unsupported subject_token_type"})"}};
+        auto client = make_client(f);
+        AXIAM_REQUIRE_THROWS_AS(client.token_exchange(external_exchange(refused)),
+                                axiam::OAuthProtocolError);
+
+        AXIAM_REQUIRE(f.replies->token_calls == 1);
+        const auto req = last_request(*f.st, "/oauth2/token");
+        AXIAM_REQUIRE(req.body.find(std::string("subject_token_type=") + encoded) !=
+                      std::string::npos);
+    }
+}
+
+AXIAM_TEST("§15.7 the issuer-not-configured description reaches the caller intact") {
+    Fixture f;
+    f.replies->token_script = {
+        {400,
+         std::string(R"({"error":"invalid_grant","error_description":")") + kIssuerNotConfigured +
+             R"("})"}};
+    auto client = make_client(f);
+    try {
+        client.token_exchange(external_exchange(axiam::kJwtTokenType));
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OAuthProtocolError& e) {
+        AXIAM_REQUIRE(e.error_code() == "invalid_grant");
+        // This is the ONLY distinguishable external failure, and the whole point
+        // of it is that an integrator can tell "fix the AXIAM trust config" from
+        // "fix your token". Truncating or rewording it destroys that.
+        AXIAM_REQUIRE(e.error_description().value_or("") == kIssuerNotConfigured);
+    }
+}
+
+AXIAM_TEST("§15.7 no helper re-exchanges an externally exchanged token") {
+    // Tokens minted from an external subject token carry ext_exchange, and BOTH
+    // exchange paths refuse a subject token bearing it: exchanges do not
+    // compose. The SDK's part is to never feed a result back in by itself.
+    Fixture f;
+    f.replies->token_script = {
+        {200,
+         R"({"access_token":"narrow","token_type":"Bearer","expires_in":300,"scope":"read:orders"})"}};
+    auto client = make_client(f);
+    const auto t = client.token_exchange(external_exchange(axiam::kJwtTokenType));
+
+    // Exactly one exchange happened: nothing looped the result back in.
+    AXIAM_REQUIRE(f.replies->token_calls == 1);
+    // §15.2 rule 5 restated for the cross-domain path: had the result been
+    // adopted, the next exchange would carry it as a *subject* token, which is
+    // exactly the re-exchange §15.7 forbids, arrived at by accident.
+    AXIAM_REQUIRE_FALSE(client.has_session());
+    AXIAM_REQUIRE(axiam::detail::reveal(t.access_token) == "narrow");
+}
+
+// ---------------------------------------------------------------------------
 // §12.1 / §9 rule 2 — oidc_refresh is single-flighted
 // ---------------------------------------------------------------------------
 
@@ -458,10 +650,13 @@ AXIAM_TEST("§9 rule 2 concurrent refreshes of one token make exactly one wire c
     auto client = make_client(f);
     client.oidc_discover();  // warm the cache so the count is about the grant
 
+    f.replies->gate_expect = 8;
+
     std::vector<std::thread> threads;
     std::atomic<int> ok{0};
     for (int i = 0; i < 8; ++i) {
         threads.emplace_back([&] {
+            f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
             const auto set = client.oidc_refresh(axiam::Sensitive<std::string>("one-token"));
             if (axiam::detail::reveal(set.access_token) == "rotated-access" &&
                 set.refresh_token.has_value()) {
@@ -519,10 +714,13 @@ AXIAM_TEST("§9 rule 2 a failing flight shares its failure with every waiter") {
     auto client = make_client(f);
     client.oidc_discover();
 
+    f.replies->gate_expect = 8;
+
     std::vector<std::thread> threads;
     std::atomic<int> refused{0};
     for (int i = 0; i < 8; ++i) {
         threads.emplace_back([&] {
+            f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
             try {
                 client.oidc_refresh(axiam::Sensitive<std::string>("spent-token"));
             } catch (const axiam::OAuthProtocolError& e) {
