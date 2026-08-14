@@ -8,6 +8,16 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Changed
 
+- **Re-sync vendored `CONTRACT.md` to contract 1.14** — documentation only, no code change.
+  §20.2 rule 6 (a permission ticket MUST NOT be retried) cited a "measured residual
+  (ilpanich/axiam#302) … roughly 1 in 640" as its second reason. That residual is closed: the
+  server now decides the ticket race with a transaction its storage engine arbitrates plus a
+  redemption nonce read back after the commit. **The rule is unchanged, and this SDK's
+  behaviour is unchanged** — `uma_exchange_ticket` stays excluded from every automatic retry
+  path. What changed is the reasoning: the first reason (a spent ticket makes the retry
+  useless) always stood alone, and the second now rests on what an SDK can actually know —
+  it is talking to a server whose storage engine it cannot attest, and the guarantee is
+  conditional on that engine being persistent.
 - **BREAKING (contract 1.13): `TokenExchangeParams::subject_token_type` is now required**, and
   its type narrows from `std::optional<std::string>` to `std::string`. It shipped optional,
   defaulting to `kAccessTokenType` when unset — which satisfied §15.7's "never inspect the
