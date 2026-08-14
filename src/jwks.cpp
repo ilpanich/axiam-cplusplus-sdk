@@ -225,4 +225,91 @@ JwtVerification JwksVerifier::verify_with_reason(const std::string& jwt) {
     return v;
 }
 
+// ---------------------------------------------------------------------------
+// CONTRACT.md §10.1 rule 9 — sender-constrained (certificate-bound) tokens
+// (contract 1.15, RFC 8705 §3 / RFC 7800).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Constant-time string comparison.
+///
+/// The thumbprint is usually public — it derives from a certificate sent in the
+/// clear during the handshake — so this is defence in depth. It matters most
+/// for a self-signed client, where the registered thumbprint is the whole
+/// credential. Length inequality short-circuits, leaking only the length; both
+/// operands are fixed-length base64url SHA-256 digests when well-formed.
+bool constant_time_equal(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    unsigned char diff = 0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+    }
+    return diff == 0;
+}
+
+}  // namespace
+
+bool verify_certificate_binding(const std::string& claims_json,
+                                const std::optional<std::string>& presented_thumbprint) {
+    auto claims = nlohmann::json::parse(claims_json, nullptr, /*allow_exceptions=*/false);
+    if (claims.is_discarded() || !claims.is_object()) return false;
+
+    const auto cnf_it = claims.find("cnf");
+    if (cnf_it == claims.end() || cnf_it->is_null()) {
+        // An ordinary bearer token. Accepted with or without a certificate:
+        // rule 9 constrains tokens that CLAIM a constraint, and treating it
+        // otherwise would break every deployment that does not use mTLS.
+        return true;
+    }
+    if (!cnf_it->is_object()) return false;
+
+    const auto x5t_it = cnf_it->find("x5t#S256");
+    if (x5t_it == cnf_it->end() || !x5t_it->is_string()) {
+        // A confirmation naming a method this SDK cannot check — a DPoP `jkt`,
+        // say. An UNVERIFIABLE constraint, never NO constraint: read the other
+        // way, a sender-constrained token silently degrades to a bearer token
+        // the day a newer AXIAM issues a confirmation this SDK predates.
+        return false;
+    }
+    const auto expected = x5t_it->get<std::string>();
+    if (expected.empty()) return false;
+
+    if (!presented_thumbprint.has_value() || presented_thumbprint->empty()) return false;
+    return constant_time_equal(expected, *presented_thumbprint);
+}
+
+std::string certificate_thumbprint_s256(const std::string& der) {
+    std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
+    unsigned int digest_len = 0;
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (ctx == nullptr) return {};
+    const bool ok = EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+                    EVP_DigestUpdate(ctx, der.data(), der.size()) == 1 &&
+                    EVP_DigestFinal_ex(ctx, digest.data(), &digest_len) == 1;
+    EVP_MD_CTX_free(ctx);
+    if (!ok || digest_len != 32) return {};
+
+    // Base64url WITHOUT padding: RFC 7515 §2 defines base64url in JOSE that
+    // way, and a padded value will not compare equal to what AXIAM put in the
+    // token. A 32-byte digest encodes to exactly 43 characters.
+    static constexpr char kAlphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    std::string out;
+    out.reserve(43);
+    for (unsigned int i = 0; i < digest_len; i += 3) {
+        const unsigned int remaining = digest_len - i;
+        unsigned int v = static_cast<unsigned int>(digest[i]) << 16;
+        if (remaining > 1) v |= static_cast<unsigned int>(digest[i + 1]) << 8;
+        if (remaining > 2) v |= static_cast<unsigned int>(digest[i + 2]);
+
+        out.push_back(kAlphabet[(v >> 18) & 0x3f]);
+        out.push_back(kAlphabet[(v >> 12) & 0x3f]);
+        if (remaining > 1) out.push_back(kAlphabet[(v >> 6) & 0x3f]);
+        if (remaining > 2) out.push_back(kAlphabet[v & 0x3f]);
+    }
+    return out;
+}
+
 }  // namespace axiam

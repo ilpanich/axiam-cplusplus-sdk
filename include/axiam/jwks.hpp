@@ -58,6 +58,52 @@ struct JwtVerification {
 /// Base64url decode (unpadded or padded). Returns nullopt on malformed input.
 std::optional<std::string> base64url_decode(const std::string& in);
 
+/// CONTRACT.md §10.1 **rule 9** — enforce a token's sender constraint against
+/// the certificate the caller presented on **this** connection
+/// (RFC 8705 §3 / RFC 7800, contract 1.15).
+///
+/// A token carrying `cnf` is **not** a bearer token. Accepting one without
+/// proving the caller holds the named key converts it straight back into one,
+/// discarding the whole protection the operator turned on — which is why this
+/// is a rule and not a recommendation.
+///
+/// `claims_json` is VerifiedToken::payload_json. `presented_thumbprint` is the
+/// RFC 8705 §3.1 `x5t#S256` of the peer certificate, or nullopt.
+///
+///     token's cnf            presented              result
+///     absent                 anything               true (a bearer token)
+///     x5t#S256               equal                  true
+///     x5t#S256               different, or nullopt  false
+///     present, no x5t#S256   anything               false
+///
+/// The first row is why adopting this rule breaks nothing: an **unbound** token
+/// is still accepted whether or not a certificate is present. Rule 9 constrains
+/// tokens that claim a constraint; it does not make certificates mandatory.
+///
+/// The last row is the one that is easy to get wrong. A `cnf` naming a
+/// confirmation method this SDK cannot check — a DPoP `jkt`, say — is an
+/// *unverifiable constraint*, never *no constraint*. Read the other way, a
+/// sender-constrained token silently degrades to a bearer token the day a newer
+/// AXIAM issues a confirmation this SDK predates.
+///
+/// **The thumbprint must come from the transport** — the TLS peer certificate,
+/// or a value a *trusted* terminating proxy forwarded over a channel the
+/// application controls. Never from a caller-settable request header: a
+/// forgeable input makes the whole mechanism decorative.
+///
+/// Returns false (never throws) on malformed input, so every failure path is a
+/// rejection.
+bool verify_certificate_binding(const std::string& claims_json,
+                                const std::optional<std::string>& presented_thumbprint);
+
+/// Compute the RFC 8705 §3.1 `x5t#S256` thumbprint of a DER client
+/// certificate: base64url-encoded SHA-256, **without** padding.
+///
+/// Unpadded is not a style choice — RFC 7515 §2 defines base64url in JOSE as
+/// omitting `=`, and a padded value will not compare equal to what AXIAM put in
+/// the token. A well-formed value is exactly 43 characters.
+std::string certificate_thumbprint_s256(const std::string& der);
+
 class JwksVerifier {
 public:
     /// @param transport shared transport seam (same as the client's).

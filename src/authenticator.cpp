@@ -75,6 +75,25 @@ TokenAuthenticator::TokenAuthenticator(JwksVerifier& jwks, std::string expected_
     }
 }
 
+AxiamUser TokenAuthenticator::authenticate_sender_constrained(
+    const std::string& token,
+    const std::optional<std::string>& presented_thumbprint) const {
+    // Rules 1-8 first: rule 9 reports a fact about the token's binding, and
+    // reporting that before the token is known to be valid at all would answer
+    // a question the caller has not earned.
+    AxiamUser user = authenticate(token);
+
+    // Rule 9. `authenticate()` deliberately does not apply it — it has no
+    // transport to ask for a peer certificate — so a resource server that
+    // accepts certificate-bound tokens must come through here instead.
+    const auto verified = jwks_->verify_signature_only_unchecked(token);
+    if (!verified.has_value() ||
+        !verify_certificate_binding(verified->payload_json, presented_thumbprint)) {
+        throw AuthError("token sender constraint not satisfied");
+    }
+    return user;
+}
+
 AxiamUser TokenAuthenticator::authenticate(const std::string& token) const {
     if (token.empty()) {
         throw AuthError("authentication_failed: no token presented");
