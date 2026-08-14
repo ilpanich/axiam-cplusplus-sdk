@@ -97,6 +97,30 @@ public:
     /// Non-throwing twin, for wiring into AxiamGuard / framework adapters.
     std::optional<AxiamUser> try_authenticate(const std::string& token) const;
 
+    /// authenticate() plus CONTRACT.md §10.1 **rule 9** — the sender constraint
+    /// (RFC 8705 §3 / RFC 7800, contract 1.15).
+    ///
+    /// This is the entry point for a resource server that accepts
+    /// **certificate-bound** access tokens. `presented_thumbprint` is the
+    /// RFC 8705 §3.1 `x5t#S256` of the peer certificate on the current
+    /// connection, or `std::nullopt` when there is none;
+    /// axiam::certificate_thumbprint_s256() computes it from DER bytes.
+    ///
+    /// A separate method rather than a parameter on authenticate() because the
+    /// two have different *inputs*: most integrations have no transport-level
+    /// certificate to offer, and folding the thumbprint in would force every
+    /// caller to thread a `nullopt` they do not have — which reads as "no
+    /// certificate" and rejects every bound token.
+    ///
+    /// **An unbound token is still accepted** here, with or without a
+    /// certificate. Rule 9 constrains tokens that claim a constraint; it does
+    /// not make certificates mandatory.
+    ///
+    /// @throws AuthError on any rule violation, rules 1-8 and 9 alike.
+    AxiamUser authenticate_sender_constrained(
+        const std::string& token,
+        const std::optional<std::string>& presented_thumbprint) const;
+
     /// The tenant every token is bound to.
     const std::string& expected_tenant_id() const noexcept { return tenant_id_; }
 

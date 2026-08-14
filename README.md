@@ -10,7 +10,7 @@ Idiomatic C++17 client for [AXIAM](https://github.com/ilpanich/axiam) (Access
 eXtended Identity and Authorization Management) — authentication, authorization
 checks, JWKS verification, and framework-agnostic route guards.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §16–§19 and §20 (including §6.1 mTLS, §12.7 logout, and the §11 rule 9 decision reason codes).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §16–§19 and §20, §21 (including §6.1 mTLS, §12.7 logout, and the §11 rule 9 decision reason codes).**
 
 > Scope note: this v1 covers the REST surface. **gRPC** — including the gRPC-only
 > `get_user_info` operation (CONTRACT §1.1, contract 1.3) — and **§8 AMQP HMAC** are

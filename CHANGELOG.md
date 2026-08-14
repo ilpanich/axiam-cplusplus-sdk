@@ -6,6 +6,35 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Added
+
+- **CONTRACT.md §10.1 rule 9 — sender-constrained (certificate-bound) access tokens**
+  (contract 1.15, RFC 8705 §3 / RFC 7800). A token carrying `cnf` is **not** a bearer
+  token; accepting one without proving the caller holds the named key converts it back
+  into one.
+  - `axiam::verify_certificate_binding(claims_json, presented_thumbprint)` — the rule.
+    Returns `bool` and never throws, so every failure path is a rejection.
+  - `axiam::certificate_thumbprint_s256(der)` — RFC 8705 §3.1 `x5t#S256`: base64url,
+    **unpadded**, SHA-256 over the DER certificate.
+  - `TokenAuthenticator::authenticate_sender_constrained(token, presented_thumbprint)` —
+    the entry point for a resource server that accepts bound tokens.
+
+  **Not a breaking change, and it does not make certificates mandatory.** An *unbound*
+  token is still accepted with or without a certificate.
+
+  `authenticate()` deliberately does **not** apply rule 9: it has no transport to ask for
+  a peer certificate. The thumbprint must come from the transport, never from a
+  caller-settable header. A `cnf` naming an unimplemented method is **rejected**, never
+  read as "unconstrained".
+
+- **CONTRACT.md §21** — the FAPI 2.0 posture as an SDK sees it. Only rule 9 is normative
+  for this SDK.
+
+### Changed
+
+- **Re-sync vendored `CONTRACT.md` / `openapi.json` to contract 1.15.**
+
+
 ### Changed
 
 - **Re-sync vendored `CONTRACT.md` to contract 1.14** — documentation only, no code change.

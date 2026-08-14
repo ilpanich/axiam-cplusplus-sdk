@@ -4,6 +4,7 @@ add_executable(axiam_cpp_tests
   main.cpp
   test_sensitive.cpp
   test_errors.cpp
+  test_rule9_binding.cpp
   test_builder.cpp
   test_client.cpp
   test_single_flight.cpp
