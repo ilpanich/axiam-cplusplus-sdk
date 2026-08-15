@@ -32,13 +32,21 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAXIAM_BUILD_TESTS=ON
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAXIAM_BUILD_TESTS=ON -DAXIAM_BUILD_EXAMPLES=ON
 
       - name: Build
         run: cmake --build build -j
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      # CONTRACT.md §22.11/§22.13: this sample is a non-normative reactor
+      # that self-checks against the committed §22.13 reference vectors and
+      # exits non-zero on any byte mismatch. Running it here turns the
+      # sample into a real conformance gate instead of resting on a single
+      # local run that can rot silently as the contract evolves.
+      - name: Run reactor conformance sample (CONTRACT.md §22.11/§22.13)
+        run: ./build/examples/axiam_example_reactor
 
   sanitizers:
     # §13.4 observation 10 / §12.6.1. OBS-4 was a signed-integer overflow (UB)
