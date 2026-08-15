@@ -275,6 +275,18 @@ bool verify_certificate_binding(const std::string& claims_json,
     const auto expected = x5t_it->get<std::string>();
     if (expected.empty()) return false;
 
+    // A `cnf` naming BOTH a certificate and a DPoP key is a CONJUNCTION
+    // (contract 1.16): both constraints must hold. This SDK declines §21.7.2
+    // proof verification, so it can establish one half and must not answer for
+    // the whole — accepting on the certificate alone is exactly the "check
+    // whichever we can" the rule forbids, and it would let a caller holding the
+    // certificate but NOT the DPoP key through a door the operator bolted twice.
+    const auto jkt_it = cnf_it->find("jkt");
+    if (jkt_it != cnf_it->end() && jkt_it->is_string() &&
+        !jkt_it->get<std::string>().empty()) {
+        return false;
+    }
+
     if (!presented_thumbprint.has_value() || presented_thumbprint->empty()) return false;
     return constant_time_equal(expected, *presented_thumbprint);
 }

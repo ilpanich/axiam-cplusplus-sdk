@@ -74,7 +74,12 @@ std::optional<std::string> base64url_decode(const std::string& in);
 ///     absent                 anything               true (a bearer token)
 ///     x5t#S256               equal                  true
 ///     x5t#S256               different, or nullopt  false
+///     x5t#S256 AND jkt       anything               false
 ///     present, no x5t#S256   anything               false
+///
+/// The both-bound row is the §21.7.3 declining posture (§21.9): this SDK does
+/// not verify DPoP proofs, so a `cnf` naming both methods is a conjunction it
+/// can only half-check, and it must not answer for the whole.
 ///
 /// The first row is why adopting this rule breaks nothing: an **unbound** token
 /// is still accepted whether or not a certificate is present. Rule 9 constrains
