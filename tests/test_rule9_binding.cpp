@@ -83,3 +83,32 @@ AXIAM_TEST("rule 9: the thumbprint helper produces unpadded base64url") {
     other_der[0] = '\x43';
     AXIAM_CHECK(tp != certificate_thumbprint_s256(other_der));
 }
+
+
+// A `cnf` naming BOTH a certificate and a DPoP key is a CONJUNCTION (contract
+// 1.16): both constraints must hold. This SDK declines §21.7.2 proof
+// verification (§21.9), so it can establish one half and must not answer for
+// the whole.
+//
+// The regression this guards: accepting on the matching certificate alone —
+// "check whichever we can" — would let a caller holding the certificate but NOT
+// the DPoP key through a door the operator bolted twice.
+AXIAM_TEST("rule 9: a both-bound token is refused even with the right certificate") {
+    const std::string both =
+        R"({"cnf":{"x5t#S256":")" + kThumbprint +
+        R"(","jkt":"0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I"}})";
+
+    AXIAM_CHECK(!verify_certificate_binding(both, kThumbprint));
+    AXIAM_CHECK(!verify_certificate_binding(both, std::nullopt));
+}
+
+// The pure-DPoP case: this SDK declines §21.7.2, so a jkt-bound token is
+// REJECTED rather than accepted as a bearer token. That rejection is the first
+// of the three obligations §21.7.3 attaches to declining.
+AXIAM_TEST("rule 9: a jkt-bound token is refused, not read as unbound") {
+    const std::string dpop_bound =
+        R"({"cnf":{"jkt":"0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I"}})";
+
+    AXIAM_CHECK(!verify_certificate_binding(dpop_bound, kThumbprint));
+    AXIAM_CHECK(!verify_certificate_binding(dpop_bound, std::nullopt));
+}
