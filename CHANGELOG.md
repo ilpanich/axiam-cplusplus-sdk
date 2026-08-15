@@ -6,6 +6,34 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Changed
+
+- **Re-vendored `CONTRACT.md` (1.17 → 1.19) and `openapi.json` from
+  `ilpanich/axiam@main`.** The vendored copies had drifted; both are now
+  byte-identical to the upstream artifacts. **No code change** — nothing in
+  1.18 or 1.19 binds this SDK's implemented surface.
+  - **§22 Reactors — AMQP extension actors (contract 1.18).** A new chapter
+    describing external allow/deny/mutate actors on the AMQP bus.
+    [§22.11](CONTRACT.md) defers the *runtime helper* (`reactor_serve`) in
+    Swift, C and C++ for the same reason [§8](CONTRACT.md) has never listed
+    them among the SDKs that speak AMQP: no maintained AMQP client for these
+    targets this project is willing to vendor. §22.1–§22.8 remain a wire
+    protocol that binds a hand-rolled integrator in full, and the §22.13
+    vectors are the conformance surface for one. This SDK ships no reactor
+    runtime and is exactly as conformant as it was under 1.17.
+  - **SDK-Q10 closed (contract 1.19)** — the gRPC decision gains `reason`
+    (field 4) and deprecates `deny_reason`, converging on the REST shape this
+    SDK already speaks. This SDK is REST-only, so nothing moves:
+    `axiam::AccessDecision` already exposes exactly `allowed` + `reason` +
+    `reason_code` and has never carried a `resource_type`, which is the shape
+    [§11.2](CONTRACT.md) rule 9's amendment now makes canonical for both
+    transports.
+  - `openapi.json` picks up the X5.1 server surface (`dpop_bound_access_tokens`,
+    `dpop_require_nonce`, `jwks`/`jwks_uri` on client registration,
+    `private_key_jwt` as a client-auth method, `CnfClaim.jkt`) and the reactor
+    registration health counters (`recent_timeout_count`, `recent_veto_count`).
+    No paths added or removed, no schemas added or removed.
+
 ### Fixed
 
 - **CONTRACT.md §10.1 rule 9 conjunction fix, and the §21.7.3 declining posture
