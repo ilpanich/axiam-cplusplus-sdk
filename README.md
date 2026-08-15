@@ -575,6 +575,20 @@ The operator guide is `docs/api/federated-token-exchange.md`.
 - **gRPC transport** (Tonic-parity authz checks). The §6.1 "both transports" rule
   applies once gRPC lands; the REST client already isolates TLS material for reuse.
 - **§8 AMQP HMAC consumer** (not required of C++ by the contract).
+- **§22 reactor runtime.** No `reactor_serve` here, for the same reason: §22.11
+  defers the *runtime helper* on Swift, C and C++ because there is no vendorable
+  AMQP client for these targets. **That is a scope decision about the helper, not
+  a statement that reactors are unavailable to you.** §22.1–§22.8 is a wire
+  protocol, so an integrator hand-rolling a reactor against a third-party AMQP
+  client MUST satisfy every normative rule in it — the §8 v2 verification set on
+  the event, the signed reply shape with its omission rules (note that
+  `hmac_signature` serializes as **`null`** inside a reactor body rather than
+  being omitted as it is in §8's own two message types), the per-event
+  mutable-field allow-lists, and §22.7's hot-path exclusion. The §22.13 vectors
+  are the conformance surface and need no SDK to run against. Start from
+  [§22 and §22.11 of `CONTRACT.md`](CONTRACT.md) and the non-normative sample in
+  [`examples/reactor/`](examples/reactor/README.md), which checks itself against
+  those vectors.
 - **The optional `OidcStateStore`** (§12.3 rule 1). The core §12 operations are
   usable without one and the store is a MAY; a C++ reference implementation with
   the mandated 10-minute TTL, single-use `consume`, and lazy (never

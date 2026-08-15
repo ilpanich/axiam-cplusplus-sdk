@@ -12,6 +12,7 @@ build them offline and run them against a real server when you have one.
 | [`telemetry_hook.cpp`](telemetry_hook.cpp) | Metrics without a metrics dependency: §19 hooks, the §16 retry signal, the §19.2 rule 6 clamp warning, and §18 `close()` |
 | [`uma_resource_server.cpp`](uma_resource_server.cpp) | UMA 2.0 (§20), emit half: register a resource, guard it, answer a denial with `WWW-Authenticate: UMA` |
 | [`uma_client.cpp`](uma_client.cpp) | The other half: parse the challenge, make the **trust decision** §20.3 keeps in the caller's hands, then exchange the ticket for an RPT |
+| [`reactor/`](reactor/README.md) | **NON-NORMATIVE** (§22.11): a hand-rolled §22 reactor — this SDK ships no runtime, but §22.1–§22.8 still binds an integrator, and the sample checks itself against the committed §22.13 vectors |
 
 ## Build
 
