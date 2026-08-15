@@ -27,3 +27,27 @@ target_link_libraries(axiam_example_device_login PRIVATE axiam::axiam_cpp)
 
 add_executable(axiam_example_token_exchange token_exchange.cpp)
 target_link_libraries(axiam_example_token_exchange PRIVATE axiam::axiam_cpp)
+
+# CONTRACT.md §22.11 — a NON-NORMATIVE reactor sample.
+#
+# This SDK ships no reactor runtime and this target adds none: nothing here is
+# installed and no public header gained a reactor API. §22.11 plans exactly this
+# sample for the C++ SDK, and is explicit about its standing — "It is an example,
+# not a contract surface: this section governs, and the sample conforms to it or
+# is wrong." So that is checkable rather than aspirational, the program runs the
+# committed §22.13 reference vectors and exits non-zero if a byte differs.
+#
+# Two deliberate deviations from the "links only the public target" pattern the
+# examples above follow, both of which mirror what a real integrator does:
+#
+#   * it reaches for the vendored nlohmann header, because a hand-rolled reactor
+#     needs a JSON library and this repository already carries one, so the sample
+#     builds offline;
+#   * it carries no AMQP client. §22.11 defers the runtime precisely because
+#     there is no vendorable AMQP client for this target, so the transport is an
+#     abstract seam in the source and the integrator binds their own.
+add_executable(axiam_example_reactor reactor/reactor.cpp)
+target_link_libraries(axiam_example_reactor PRIVATE axiam::axiam_cpp)
+target_include_directories(axiam_example_reactor PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
+target_compile_definitions(axiam_example_reactor PRIVATE
+  AXIAM_REACTOR_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/reactor/reactor_v2_reference_vectors.json")

@@ -6,7 +6,43 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Added
+
+- **A NON-NORMATIVE §22 reactor sample — `examples/reactor/` (CONTRACT.md
+  §22.11).** §22.11 plans exactly this sample for the C++ SDK and is explicit
+  about its standing: "It is an example, not a contract surface: this section
+  governs, and the sample conforms to it or is wrong."
+
+  **This SDK still ships no reactor runtime.** Nothing was added under
+  `include/axiam/` or `src/`, nothing new is installed, and the conformance
+  statement is untouched — §22.11's MUST NOT forbids claiming §22 while shipping
+  no runtime. What the sample is, is the worked form of what §22.11 says still
+  binds an integrator: the §8 v2 verification set on the event (key version, then
+  MAC, then two-sided freshness, then the nonce seen-set — in that order, before
+  the payload is decoded), the signed reply shape with its omission rules —
+  including that `hmac_signature` serializes as **`null`** inside a reactor body
+  rather than being omitted as it is in §8's own two message types — the §22.5
+  namespace-prefix allow-lists, §22.8's strictest-wins failure-policy
+  composition, and §22.7's hot-path exclusion.
+
+  So "conforms to it or is wrong" is checkable rather than aspirational, the
+  program runs the committed **§22.13 reference vectors** (vendored from the
+  server's own sign path) in both directions and exits non-zero if a byte
+  differs. It needs no broker and no network. The AMQP client stays an abstract
+  seam with no declare or bind method (§22.1), because that missing client is the
+  whole reason §22.11 defers the runtime.
+
+  Built behind the existing `AXIAM_BUILD_EXAMPLES` option, like every other
+  example here.
+
 ### Changed
+
+- **README now points at CONTRACT.md §22.11 (the deferred reactor runtime).**
+  §22.11 carries a SHOULD that these READMEs point at it "so an integrator finds
+  the wire chapter rather than concluding reactors are unavailable" — the
+  "Deferred / follow-ups" section listed §8 AMQP and said nothing about §22, which
+  is exactly where a reader would draw that wrong conclusion. Documentation only,
+  and **no §22 conformance claim**.
 
 - **Re-vendored `CONTRACT.md` (1.17 → 1.19) and `openapi.json` from
   `ilpanich/axiam@main`.** The vendored copies had drifted; both are now
