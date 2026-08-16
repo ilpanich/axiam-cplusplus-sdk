@@ -561,3 +561,109 @@ AXIAM_TEST("rule 8 — the authenticator holds no client and therefore no sessio
     TokenAuthenticator auth(v, kTenant, fixed_clock());
     AXIAM_CHECK(auth.expected_tenant_id() == kTenant);
 }
+
+// ---------------------------------------------------------------------------
+// §10.1 rule 9 — authenticate_sender_constrained()
+//
+// tests/test_rule9_binding.cpp pins the PRIMITIVE (verify_certificate_binding).
+// What was untested is the authenticator entry point built on top of it, and
+// the two are not the same guarantee: this wrapper is where rule 9 is composed
+// with rules 1-8, in that ORDER. An implementation that checked the binding
+// first would answer "your certificate does not match" for a token that was
+// expired, forged, or minted for another tenant — telling an attacker which
+// half of a rejected request to fix.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A 43-character base64url x5t#S256 and a different one, as RFC 8705 §3.1.
+const char* kThumb = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+const char* kOtherThumb = "bWluZS1ub3QteW91cnMtdGhpcy1pcy00My1jaGFyc18";
+
+std::string bound_claims(const char* thumbprint, std::int64_t exp = kNow + 900) {
+    return claims("\"exp\":" + std::to_string(exp) + ",\"cnf\":{\"x5t#S256\":\"" +
+                  thumbprint + "\"}");
+}
+
+}  // namespace
+
+AXIAM_TEST("rule 9 via the authenticator: a bound token is accepted with its certificate") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    const std::string jwt = key.make_jwt("EdDSA", bound_claims(kThumb));
+    AxiamUser user = auth.authenticate_sender_constrained(jwt, kThumb);
+    AXIAM_CHECK(user.user_id == "user-1");
+    AXIAM_CHECK(user.tenant_id == kTenant);
+}
+
+AXIAM_TEST("rule 9 via the authenticator: an UNBOUND token still passes without a certificate") {
+    // The regression that matters most: rule 9 must not turn this entry point
+    // into a certificate mandate. A deployment that does not use mTLS at all
+    // must keep working through the sender-constrained call.
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    const std::string jwt =
+        key.make_jwt("EdDSA", claims("\"exp\":" + std::to_string(kNow + 900)));
+    AxiamUser user = auth.authenticate_sender_constrained(jwt, std::nullopt);
+    AXIAM_CHECK(user.user_id == "user-1");
+}
+
+AXIAM_TEST("rule 9 via the authenticator: a bound token is refused with no certificate") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    const std::string jwt = key.make_jwt("EdDSA", bound_claims(kThumb));
+    AXIAM_REQUIRE_THROWS_AS(auth.authenticate_sender_constrained(jwt, std::nullopt), AuthError);
+}
+
+AXIAM_TEST("rule 9 via the authenticator: a bound token is refused with the WRONG certificate") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    const std::string jwt = key.make_jwt("EdDSA", bound_claims(kThumb));
+    AXIAM_REQUIRE_THROWS_AS(auth.authenticate_sender_constrained(jwt, kOtherThumb), AuthError);
+}
+
+AXIAM_TEST("rule 9 via the authenticator: rules 1-8 are applied BEFORE the binding") {
+    // Each token below would ALSO fail the binding check, so a wrapper that
+    // ran rule 9 first would still throw and the test would still pass on
+    // outcome alone. What is asserted instead is WHICH failure surfaces: the
+    // claim failure, identifiable by its message, rather than the binding one.
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    // Expired, and bound to a certificate the caller does not present.
+    const std::string expired = key.make_jwt("EdDSA", bound_claims(kThumb, kNow - 3600));
+    bool saw_claim_failure = false;
+    try {
+        auth.authenticate_sender_constrained(expired, std::nullopt);
+    } catch (const AuthError& e) {
+        saw_claim_failure = std::string(e.what()).find("sender constraint") == std::string::npos;
+    }
+    AXIAM_CHECK(saw_claim_failure);
+
+    // Minted for another tenant, same shape.
+    const std::string other_tenant = key.make_jwt(
+        "EdDSA",
+        std::string("{\"sub\":\"user-1\",\"tenant_id\":\"") + kOtherTenant + "\",\"exp\":" +
+            std::to_string(kNow + 900) + ",\"cnf\":{\"x5t#S256\":\"" + kThumb + "\"}}");
+    saw_claim_failure = false;
+    try {
+        auth.authenticate_sender_constrained(other_tenant, std::nullopt);
+    } catch (const AuthError& e) {
+        saw_claim_failure = std::string(e.what()).find("sender constraint") == std::string::npos;
+    }
+    AXIAM_CHECK(saw_claim_failure);
+}
