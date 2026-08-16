@@ -46,9 +46,18 @@ jobs:
             ../src ../include/axiam
 
       # Regression gate: fail if line coverage of the logic layer drops below the
-      # floor. Set well below the current ~99% so it never false-fails; ratchet
-      # upward as coverage rises. Line coverage is computed from the DA records in
-      # the lcov report (a[2] is the hit count for each instrumented line).
+      # floor. Line coverage is computed from the DA records in the lcov report
+      # (a[2] is the hit count for each instrumented line) — note this is a
+      # DIFFERENT denominator from the "Lines" column `llvm-cov report` prints
+      # in the step above, so the two figures do not match and only this one
+      # gates.
+      #
+      # The floor was 95 against a claimed "~99%" that this metric never
+      # actually showed: measured, it was 95.88% — 0.88pp of margin, not four
+      # points. The §12 refusal-path suite (tests/test_oidc_errors.cpp) and the
+      # sender-constrained authenticator cases took it to 97.36%, so 96 restores
+      # a real margin against a number this job computes. Ratchet it the same
+      # way: only ever to a value measured here, never to an estimate.
       - name: Enforce coverage floor
         working-directory: build
         run: |
@@ -58,8 +67,8 @@ jobs:
             END { printf "%.2f", (t ? 100*c/t : 0) }
           ' coverage.lcov)
           echo "Line coverage: ${total}%"
-          awk -v t="$total" 'BEGIN { exit (t+0 >= 95) ? 0 : 1 }' || {
-            echo "::error::coverage ${total}% is below the 95% floor"; exit 1;
+          awk -v t="$total" 'BEGIN { exit (t+0 >= 96) ? 0 : 1 }' || {
+            echo "::error::coverage ${total}% is below the 96% floor"; exit 1;
           }
 
       - name: Upload to Coveralls
