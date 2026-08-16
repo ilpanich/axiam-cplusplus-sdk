@@ -4,6 +4,35 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha25] - 2026-08-16
+
+### Added
+
+- Subject_token_type is required (contract 1.13)
+- §15.7 — external-IdP subject tokens at the exchange (X4)
+- §12, §12.7, §14 and §15 — the ported deferral (contract 1.11) (#20)
+- §20.3 — emit a UMA challenge from the §11 guard (#19)
+- §20 UMA 2.0 — Protection API and ticket grant (#18)
+- §16 retry, §17 decision memo, §18 close(), §19 telemetry (D5)
+- §11 rule 9 decision reason codes; contract 1.7 re-sync (D6) (#15)
+
+### Changed
+
+- Build and run the §22.11 reactor example as a conformance gate
+- Docs+examples: CONTRACT.md §22.11 — README pointer and the non-normative reactor sample (#28)
+- Re-vendor CONTRACT.md 1.19 and openapi.json from main (R5.8) (#27)
+- Contract 1.15 — §10.1 rule 9, sender-constrained access tokens (#25)
+- Retire the "measured residual" justification (contract 1.14)
+- Re-sync to contract 1.14 (#302 closed)
+- Make the §9 single-flight tests wait for arrivals, not a clock
+- Runnable §16–§19 example for the C++ SDK (F3) (#17)
+- Stop the concurrency test's keep-alive server hanging on shutdown
+
+### Fixed
+
+- Refuse both-bound tokens; document the §21.7.3 declining posture (#26)
+- Serve concurrent callers in parallel, not one at a time (D2/J6)
+
 ## [Unreleased]
 
 ### Added
