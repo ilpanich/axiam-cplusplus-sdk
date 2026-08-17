@@ -4,6 +4,15 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha27] - 2026-08-17
+
+### Changed
+
+- Re-vendor CONTRACT.md 1.23 (§8b rules 7 and 8)
+- Re-vendor CONTRACT.md 1.22 and openapi.json from the server repo
+- Ratchet the C++ line-coverage floor 95 -> 96
+- Cover the §12 refusal paths and the sender-constrained authenticator
+
 ## [1.0.0-alpha25] - 2026-08-16
 
 ### Added
