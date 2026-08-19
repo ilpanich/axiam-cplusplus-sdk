@@ -22,6 +22,9 @@ add_executable(axiam_cpp_tests
   test_oidc_errors.cpp
   # §23 SRP: the cross-language vectors, the group constants, and the refusals.
   test_srp_vectors.cpp
+  # §23 SRP: the two HTTP calls around the arithmetic, against a fake that
+  # performs the server half for real.
+  test_srp_login.cpp
   test_integration_curl.cpp
   test_transport_concurrency.cpp
   test_transport_reuse.cpp
