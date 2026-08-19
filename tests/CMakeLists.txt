@@ -20,6 +20,8 @@ add_executable(axiam_cpp_tests
   test_oidc.cpp
   test_oidc_grants.cpp
   test_oidc_errors.cpp
+  # §23 SRP: the cross-language vectors, the group constants, and the refusals.
+  test_srp_vectors.cpp
   test_integration_curl.cpp
   test_transport_concurrency.cpp
   test_transport_reuse.cpp
