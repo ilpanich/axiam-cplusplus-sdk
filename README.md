@@ -10,7 +10,7 @@ Idiomatic C++17 client for [AXIAM](https://github.com/ilpanich/axiam) (Access
 eXtended Identity and Authorization Management) — authentication, authorization
 checks, JWKS verification, and framework-agnostic route guards.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §16–§19 and §20, §21 (including §6.1 mTLS, §12.7 logout, and the §11 rule 9 decision reason codes).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §16–§19, §20, §21 and §23 (including §6.1 mTLS, §12.7 logout, the §11 rule 9 decision reason codes, and the §23 SRP-6a login path — conditional on OpenSSL ≥ 3.2 for Argon2id, see below).**
 
 > Scope note: this v1 covers the REST surface. **gRPC** — including the gRPC-only
 > `get_user_info` operation (CONTRACT §1.1, contract 1.3) — and **§8 AMQP HMAC** are
@@ -333,6 +333,141 @@ no temporary files touch disk. The mTLS private key is held behind
 `std::invalid_argument` at construction.
 
 ---
+
+## Secure Remote Password (§23)
+
+`login_srp()` proves the password to the server without the password — or
+anything from which it can be cheaply recovered — ever crossing the wire. The
+server stores a **verifier** `v = g^x mod N` instead of a password hash, and
+what travels is `A` and a proof, neither of which is useful without that
+verifier.
+
+```cpp
+axiam::LoginResult result = client.login_srp("alice", password);
+```
+
+It takes the same arguments as `login()` and returns the same `LoginResult`,
+MFA branch included, so switching a tenant to SRP needs no change to how the
+result is handled. A runnable end-to-end example, including the fallback and the
+enrolment call, is [`examples/srp_login.cpp`](examples/srp_login.cpp).
+
+### What this buys, and what it does not
+
+SRP closes holes TLS 1.3 does not:
+
+- a TLS-terminating reverse proxy, ingress controller, CDN or service mesh sees
+  every plaintext password today; under SRP it sees `A` and `M1`;
+- an accidental request-body log, a heap dump or a crash reporter can no longer
+  capture a plaintext password, because the server never has one;
+- a leaked verifier database still costs a full KDF evaluation per candidate
+  password, exactly as a leaked Argon2id database does.
+
+It does **not** protect against a compromised AXIAM server, and this SDK does
+not claim it does.
+
+### Conditional on your OpenSSL: Argon2id needs 3.2
+
+The arithmetic is `BN_mod_exp`, available in every OpenSSL this SDK links
+against, and PBKDF2-HMAC-SHA256 comes from `PKCS5_PBKDF2_HMAC`, likewise. But
+**Argon2id arrives as an `EVP_KDF` only in OpenSSL 3.2**, and it is what a
+default-configured AXIAM tenant names.
+
+```cpp
+if (!axiam::srp::argon2_available()) { /* cannot serve an argon2id tenant */ }
+```
+
+`srp::argon2_available()` fetches the KDF rather than reading a version macro,
+because a macro answers for the headers this was *compiled* against rather than
+the libcrypto it is *running* against, and those differ routinely where OpenSSL
+is shared. When the KDF is absent, `login_srp()` throws `NetworkError` naming it
+— it never substitutes PBKDF2, which would derive a different `x` and surface as
+"invalid password", the single most misleading failure this code could produce.
+
+`Client::srp_available()` is the §23.1 capability probe and is unconditional
+here; the Argon2 probe is the one that can say no.
+
+### Tenant policy, and the errors that are not credential failures
+
+`srp_mode` is an organization baseline a tenant may tighten:
+
+| mode | `login()` | `login_srp()` |
+|---|---|---|
+| `disabled` (default) | works | `NetworkError` — the endpoint answers `404` |
+| `optional` | works | works |
+| `required` | `AuthzError` (`srp_required`) | works |
+
+Neither is an `AuthError`:
+
+- `NetworkError` from `login_srp()` means *this tenant does not offer SRP*, or
+  *this build cannot do the KDF it named* — a property of the tenant or the
+  build, never of any user. Fall back to `login()`.
+- `AuthzError` from `login()` means *this tenant refuses password login*. The
+  credentials were never examined. Telling a user their perfectly good password
+  is invalid is the failure this mapping exists to prevent.
+
+`required` refuses **every** principal in the tenant, not only the enrolled
+ones. Splitting the response on whether an account has a verifier would turn
+`/auth/login` into an enumeration oracle costing one junk password per name. It
+also means `required` locks out anyone not yet enrolled: a verifier needs the
+plaintext password, and a stored Argon2id hash is not invertible, so nobody can
+be enrolled retroactively. Operators turn it on last, after a password-reset
+campaign.
+
+### Enrolment
+
+The server cannot compute a verifier, so any request that **sets** a password
+has to carry one. `srp_enrollment()` produces the `srp` object for
+`POST /api/v1/users`, `/auth/password/change`, `/auth/reset/confirm` and
+`/admin/bootstrap`:
+
+```cpp
+axiam::SrpEnrollment enrolment = client.srp_enrollment(
+    "alice",                       // the USERNAME, not an email — see below
+    new_password,
+    std::nullopt,                  // nullopt = the tenant default group
+    axiam::SrpKdfParams{axiam::SrpKdfParams::kPbkdf2Sha256, 0, 0, 0});  // 0 = AXIAM's costs
+```
+
+The identity must be the account's **username**: `x` is derived over
+`identity ":" password` using the identity the challenge endpoint hands back, so
+a verifier enrolled against an email address can never satisfy a login. For the
+same reason, **renaming a user invalidates their verifier** — the server clears
+it, and the user re-enrols at their next password change.
+
+The salt is 32 fresh bytes from `RAND_bytes` on every call.
+
+### Cost
+
+`login_srp()` runs the tenant's KDF: Argon2id at 19 MiB and t=2 by default,
+which is tens to hundreds of milliseconds of CPU plus that memory, per login
+attempt. That cost is the point — it is what makes a leaked verifier no cheaper
+to attack than a leaked Argon2id hash. It is synchronous and blocking; size your
+request handling accordingly, since `login()` has no such cost.
+
+### Cryptographic parameters
+
+RFC 5054 Appendix A groups `rfc5054_2048`, `rfc5054_3072` and `rfc5054_4096`
+(the AXIAM default), embedded as constants. A modulus is **never** accepted from
+the server — a server-supplied `N` is a server-supplied trapdoor — and a group
+this SDK does not recognise is refused rather than guessed.
+
+Two deliberate divergences from RFC 5054, both AXIAM-wide: `H` is **SHA-256**,
+not SHA-1; and `x` is a **memory-hard KDF output**, not a bare hash, because RFC
+5054's bare-hash `x` would make a leaked verifier *cheaper* to attack offline
+than the Argon2id hashes AXIAM already stores.
+
+### Zeroization
+
+§23.3 rule 8 requires clearing what can be cleared, and C++ is a language where
+it can be. `x`, `S`, `K` and the joined `identity ":" password` are
+`OPENSSL_cleanse`d before their buffers are released; every `BIGNUM` uses
+`BN_clear_free`; the session's ephemeral `a` is wiped in the destructor **and**
+in the move operations, because a move of a short string is a copy and the
+moved-from buffer would otherwise still hold it. The suite runs clean under ASan
+and UBSan with leak detection on.
+
+The one thing this SDK cannot clear is the `const std::string&` you hand it —
+that memory is yours.
 
 ## Build from source
 

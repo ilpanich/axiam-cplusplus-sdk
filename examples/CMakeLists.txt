@@ -3,6 +3,11 @@
 add_executable(axiam_example_login_mfa login_mfa.cpp)
 target_link_libraries(axiam_example_login_mfa PRIVATE axiam::axiam_cpp)
 
+# CONTRACT.md §23: the SRP-6a exchange, the two ways it can be unavailable, and
+# the verifier the server cannot compute for itself.
+add_executable(axiam_example_srp_login srp_login.cpp)
+target_link_libraries(axiam_example_srp_login PRIVATE axiam::axiam_cpp)
+
 add_executable(axiam_example_rest_authz rest_authz.cpp)
 target_link_libraries(axiam_example_rest_authz PRIVATE axiam::axiam_cpp)
 

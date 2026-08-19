@@ -1,3 +1,5 @@
+#include <openssl/crypto.h>
+
 #include "axiam/client.hpp"
 
 #include <algorithm>
@@ -352,6 +354,195 @@ LoginResult Client::login(const std::string& username_or_email, const std::strin
     }
     return result;
 }
+
+// ---------------------------------------------------------------------------
+// §23 Secure Remote Password
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The group an exchange opens in before the server has named one.
+///
+/// The challenge response names the group, but `A` has to be computed *before*
+/// that response exists — so the first attempt guesses, and the exchange
+/// restarts if the server names another. The guess is AXIAM's own default, so
+/// the restart is the exceptional path rather than the normal one.
+constexpr const char* kSrpOpeningGroup = SrpGroup::kDefaultWireName;
+
+std::string json_str(const json& j, const char* name) {
+    return (!j.is_discarded() && j.contains(name) && j[name].is_string())
+               ? j[name].get<std::string>()
+               : std::string{};
+}
+
+unsigned json_uint(const json& j, const char* name) {
+    return (!j.is_discarded() && j.contains(name) && j[name].is_number_unsigned())
+               ? j[name].get<unsigned>()
+               : 0u;
+}
+
+}  // namespace
+
+LoginResult Client::login_srp(const std::string& username_or_email,
+                              const std::string& password) {
+    p_->ensure_open();
+    if (p_->memo) p_->memo->clear();  // §17.1 rule 9
+
+    auto opening = SrpGroup::from_wire(kSrpOpeningGroup);
+    if (!opening) throw NetworkError("SRP: the default group is missing from this build");
+
+    // Sends the challenge request and returns the parsed body. Reuses the login
+    // body's tenant/org resolution so the two paths cannot drift, and sends no
+    // `password` field — it has no business on this request.
+    auto request_challenge = [&](const srp::ClientSession& session) -> json {
+        json body;
+        body["username_or_email"] = username_or_email;
+        body["client_public"] = session.client_public();
+        if (p_->tenant_slug) body["tenant_slug"] = *p_->tenant_slug;
+        if (p_->tenant_id) body["tenant_id"] = *p_->tenant_id;
+        if (p_->org_slug) body["org_slug"] = *p_->org_slug;
+        if (p_->org_id) body["org_id"] = *p_->org_id;
+
+        // send_raw rather than execute(): §23.5 gives 404 a specific,
+        // non-error meaning on this endpoint ("this tenant has SRP disabled"),
+        // and execute()'s raise_for_status would collapse it into the same
+        // NetworkError every other 4xx produces.
+        HttpResponse resp = p_->send_raw(
+            p_->build_request("POST", "/api/v1/auth/srp/challenge", body.dump()));
+        if (resp.status == 404) {
+            // A property of the tenant, not of the user, and not a credential
+            // failure — so a caller can fall back to login() without mistaking
+            // it for a bad password.
+            throw NetworkError(
+                "SRP: this tenant does not offer Secure Remote Password "
+                "(srp_mode is disabled); use login() instead",
+                "srp_disabled");
+        }
+        if (resp.status < 200 || resp.status >= 300) p_->raise_for_status(resp);
+        json parsed = json::parse(resp.body, nullptr, false);
+        if (parsed.is_discarded()) {
+            throw NetworkError("SRP: the challenge response was not JSON", "srp_malformed");
+        }
+        return parsed;
+    };
+
+    srp::ClientSession session = srp::ClientSession::begin(*opening);
+    json challenge = request_challenge(session);
+
+    // The server named a group other than the one A was computed in, so the
+    // exchange has to restart. Rare — the opening guess is AXIAM's own default
+    // — but a tenant on a narrower group must work rather than fail.
+    const std::string named_name = json_str(challenge, "group");
+    auto named = SrpGroup::from_wire(named_name);
+    if (!named) {
+        // §23.4: refuse rather than guess. Computing in an unverified group
+        // could mean one whose discrete log the server knows.
+        throw NetworkError("SRP: this SDK does not implement group '" + named_name + "'",
+                           "srp_unsupported_group");
+    }
+    if (named->wire_name != session.group().wire_name) {
+        session = srp::ClientSession::begin(*named);
+        challenge = request_challenge(session);
+    }
+
+    // The identity comes from the SERVER, never from what the human typed
+    // (§23.3 rule 2): a user may sign in with a username or an email while only
+    // one of the two is bound into x.
+    const std::string identity = json_str(challenge, "identity");
+    const std::string salt_hex = json_str(challenge, "salt");
+    SrpKdfParams kdf;
+    kdf.kdf = json_str(challenge, "kdf");
+    kdf.iterations = json_uint(challenge, "iterations");
+    kdf.memory_kib = json_uint(challenge, "memory_kib");
+    kdf.parallelism = json_uint(challenge, "parallelism");
+
+    std::string x = srp::derive_x(identity, password, srp::from_hex(salt_hex, "salt"), kdf);
+    SrpProofs proofs;
+    try {
+        proofs = session.finish(identity, salt_hex, json_str(challenge, "b_pub"), x);
+    } catch (...) {
+        OPENSSL_cleanse(&x[0], x.size());
+        throw;
+    }
+    OPENSSL_cleanse(&x[0], x.size());
+
+    json verify_body;
+    verify_body["srp_session"] = json_str(challenge, "srp_session");
+    verify_body["client_proof"] = proofs.client_proof;
+
+    HttpResponse resp = p_->execute("POST", "/api/v1/auth/srp/verify", verify_body.dump(),
+                                    /*allow_refresh=*/false);
+    auto j = json::parse(resp.body, nullptr, false);
+
+    // Mutual authentication (§23.3 rule 6), checked BEFORE anything from the
+    // response is read back as a session or reported. A rogue server that
+    // cannot prove itself must not get the chance to collect an MFA code
+    // either.
+    if (!srp::verify_server_proof(proofs.expected_server_proof, json_str(j, "server_proof"))) {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        p_->session = false;
+        throw AuthError("SRP: the server failed to prove it holds this account's verifier");
+    }
+
+    LoginResult result;
+    if (resp.status == 202 || (!j.is_discarded() && j.value("mfa_required", false))) {
+        result.mfa_required = true;
+        if (!j.is_discarded()) {
+            result.challenge_token =
+                Sensitive<std::string>(j.value("challenge_token", std::string{}));
+            if (j.contains("available_methods") && j["available_methods"].is_array()) {
+                for (const auto& m : j["available_methods"]) {
+                    if (m.is_string()) result.available_methods.push_back(m.get<std::string>());
+                }
+            }
+        }
+        return result;
+    }
+
+    if (!j.is_discarded()) {
+        result.session_id = j.value("session_id", "");
+        result.expires_in = j.value("expires_in", static_cast<std::int64_t>(0));
+        if (j.contains("user") && j["user"].is_object()) result.user = parse_user(j["user"]);
+    }
+    {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        p_->session = true;
+        if (result.user) p_->resolved_tenant_id = result.user->tenant_id;
+        if (auto oid = org_id_from_cookies(resp.set_cookies)) p_->resolved_org_id = *oid;
+    }
+    return result;
+}
+
+SrpEnrollment Client::srp_enrollment(const std::string& identity, const std::string& password,
+                                     std::optional<std::string> group,
+                                     std::optional<SrpKdfParams> params) {
+    auto resolved_group = SrpGroup::from_wire(group.value_or(SrpGroup::kDefaultWireName));
+    if (!resolved_group) {
+        throw NetworkError("SRP: this SDK does not implement group '" + *group + "'",
+                           "srp_unsupported_group");
+    }
+    SrpKdfParams resolved = params.value_or(SrpKdfParams{}).with_defaults();
+
+    std::string salt = srp::generate_salt();
+    std::string x = srp::derive_x(identity, password, salt, resolved);
+    SrpEnrollment out;
+    try {
+        out.group = resolved_group->wire_name;
+        out.kdf = resolved.kdf;
+        out.memory_kib = resolved.memory_kib;
+        out.iterations = resolved.iterations;
+        out.parallelism = resolved.parallelism;
+        out.salt = srp::to_hex(salt);
+        out.verifier = srp::compute_verifier(*resolved_group, x);
+    } catch (...) {
+        OPENSSL_cleanse(&x[0], x.size());
+        throw;
+    }
+    OPENSSL_cleanse(&x[0], x.size());
+    return out;
+}
+
+bool Client::srp_available() const { return srp::available(); }
 
 LoginResult Client::verify_mfa(const Sensitive<std::string>& challenge_token,
                                const std::string& totp_code) {

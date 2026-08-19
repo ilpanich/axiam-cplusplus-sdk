@@ -16,6 +16,7 @@
 #include "axiam/errors.hpp"
 #include "axiam/jwks.hpp"
 #include "axiam/oidc.hpp"
+#include "axiam/srp.hpp"
 #include "axiam/telemetry.hpp"
 #include "axiam/transport.hpp"
 #include "axiam/types.hpp"
@@ -168,6 +169,64 @@ public:
     /// Overload for a challenge token obtained out of band (e.g. relayed by a
     /// front end). Prefer the Sensitive overload.
     LoginResult verify_mfa(const std::string& challenge_token, const std::string& totp_code);
+
+    // ---- §23 Secure Remote Password ----
+
+    /// `POST /api/v1/auth/srp/challenge` then `/verify` — SRP-6a login (§23).
+    ///
+    /// A sibling of \ref login, not a replacement. It takes the same arguments
+    /// and returns the same LoginResult, MFA branch included, so an application
+    /// can switch a tenant to SRP without touching its own code (§23.1).
+    ///
+    /// **What this does that \ref login does not.** The password never leaves
+    /// this process. What crosses the wire is `A` and a proof, neither of which
+    /// is useful without the account's verifier — so a TLS-terminating proxy, an
+    /// accidentally verbose request log, or a heap dump on the server cannot
+    /// capture a plaintext password, because the server never has one. It does
+    /// **not** protect against a compromised AXIAM server.
+    ///
+    /// **Cost.** Runs the tenant's KDF: Argon2id at 19 MiB and t=2 by default,
+    /// tens to hundreds of milliseconds of CPU plus that memory, per attempt.
+    /// That cost is the point. It is synchronous and blocking.
+    ///
+    /// \throws NetworkError if the tenant has SRP disabled (the endpoint answers
+    ///         404 — a property of the tenant, not of any user), or if this build
+    ///         cannot perform the group or KDF the server named. Deliberately not
+    ///         AuthError: reporting a client capability gap as a credential
+    ///         failure would send a user off to reset a password that works.
+    /// \throws AuthError for a wrong password, and for a server whose `M2` does
+    ///         not verify — in the latter case nothing is returned, because an
+    ///         endpoint that cannot prove it holds the verifier is not the server
+    ///         it claims to be (§23.3 rule 6).
+    LoginResult login_srp(const std::string& username_or_email, const std::string& password);
+
+    /// Computes a verifier for `password`, to send with any request that sets
+    /// one: `POST /api/v1/users`, `/auth/password/change`,
+    /// `/auth/reset/confirm` and `/admin/bootstrap` (§23.3 rule 11).
+    ///
+    /// The server cannot compute this — it never sees the plaintext — so it has
+    /// to arrive with the request or not at all. The salt is 32 fresh bytes from
+    /// the platform CSPRNG on every call. Performs no I/O; it is a method on the
+    /// client only so it sits beside \ref login_srp in the API.
+    ///
+    /// \param identity The account's **username** — the canonical identity the
+    ///        challenge endpoint hands back. An email here produces a verifier no
+    ///        login can ever satisfy.
+    /// \param group The tenant's group, from `GET /api/v1/auth/me` or the reset
+    ///        context; `std::nullopt` means AXIAM's default.
+    /// \param params The tenant's KDF and costs; any zero cost is filled in with
+    ///        AXIAM's default for that KDF.
+    SrpEnrollment srp_enrollment(const std::string& identity, const std::string& password,
+                                 std::optional<std::string> group = std::nullopt,
+                                 std::optional<SrpKdfParams> params = std::nullopt);
+
+    /// Whether this build can perform SRP (§23.1).
+    ///
+    /// Unconditional here. It exists because §23.1 puts the probe in every SDK's
+    /// vocabulary, and because a `true` is **not** a promise that every tenant
+    /// will work: Argon2id needs OpenSSL >= 3.2 — see `srp::argon2_available()`.
+    bool srp_available() const;
+
     TokenPair refresh();
     void logout();
     AccessDecision check_access(const std::string& action, const std::string& resource_id,
