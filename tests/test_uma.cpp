@@ -598,3 +598,112 @@ AXIAM_TEST("uma: a failed exchange never echoes the ticket or claim token") {
     }
     AXIAM_REQUIRE(seen);
 }
+
+// ---------------------------------------------------------------------------
+// §20.6 — the Protection API's malformed-body refusals.
+//
+// Each of these is a 2xx: the server said the call succeeded and then sent back
+// something this SDK cannot honestly turn into the promised type. The failure
+// mode being closed off is the quiet one — a ResourceSet with an empty name, a
+// resource list that is actually an object, a ticket that is the empty string —
+// because every one of those keeps flowing and only surfaces later, somewhere
+// that cannot explain itself. A NetworkError carrying "malformed_body" at the
+// boundary is the whole point.
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("uma: a ResourceSet with no name is refused rather than silently unnamed") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    // A 200 whose body is a well-formed JSON object that simply lacks `name`.
+    // Defaulting it to "" would hand the caller a resource it can neither
+    // display nor match, and the mistake would surface far from here.
+    r->rreg_body = R"({"_id":"99999999-8888-7777-6666-555555555555","resource_scopes":["view"]})";
+    auto client = make_client(st, r);
+
+    AXIAM_REQUIRE_THROWS_AS(
+        client.uma_read_resource(axiam::Sensitive<std::string>(kPat), kResourceId),
+        axiam::NetworkError);
+}
+
+AXIAM_TEST("uma: a name of the wrong JSON type is refused, not coerced") {
+    // The neighbouring failure: `name` is present, so a `contains` check alone
+    // passes, and only the type check catches it. nlohmann's get<std::string>()
+    // on a number throws a type error rather than a NetworkError, so without
+    // the explicit is_string() this would escape as an exception the SDK's
+    // §2 error taxonomy does not name.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    r->rreg_body = R"({"_id":"99999999-8888-7777-6666-555555555555","name":7})";
+    auto client = make_client(st, r);
+
+    AXIAM_REQUIRE_THROWS_AS(
+        client.uma_read_resource(axiam::Sensitive<std::string>(kPat), kResourceId),
+        axiam::NetworkError);
+}
+
+AXIAM_TEST("uma: a resource listing that is not a JSON array is refused") {
+    // The Protection API's list endpoint returns a bare array of ids. An object
+    // here means the server answered a different question; returning an empty
+    // vector would read to the caller as "this tenant has no resources", which
+    // is the one answer that must never be invented.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    r->rreg_body = R"({"resources":[]})";
+    auto client = make_client(st, r);
+
+    AXIAM_REQUIRE_THROWS_AS(client.uma_list_resources(axiam::Sensitive<std::string>(kPat)),
+                            axiam::NetworkError);
+}
+
+AXIAM_TEST("uma: a PermissionTicketResponse with no usable ticket is refused") {
+    // §20.2: the ticket IS the credential that converts into an RPT. A missing,
+    // mistyped or empty one must not become a Sensitive<std::string>("") that
+    // the caller then spends a round trip discovering is worthless.
+    const char* kUnusable[] = {
+        R"({})",                     // absent
+        R"({"ticket":123})",         // present, wrong type
+        R"({"ticket":""})",          // present, right type, empty
+    };
+    for (const char* body : kUnusable) {
+        auto st = std::make_shared<axtest::FakeState>();
+        auto r = std::make_shared<Replies>();
+        r->perm_status = 201;
+        r->perm_body = body;
+        auto client = make_client(st, r);
+
+        AXIAM_REQUIRE_THROWS_AS(
+            client.uma_request_ticket(axiam::Sensitive<std::string>(kPat),
+                                      {{kResourceId, {"view"}}}),
+            axiam::NetworkError);
+    }
+}
+
+AXIAM_TEST("uma: challenge parameters are accepted unquoted as well as quoted") {
+    // RFC 7235 auth-param values are `token / quoted-string`, so a server is
+    // entitled to send either and real ones send both. Only stripping quotes
+    // when they are actually there is what makes the unquoted form work — an
+    // unconditional substr(1, size-2) would silently eat the first and last
+    // character of every unquoted value, turning `ticket=abc` into `b`, which
+    // then fails redemption somewhere far away with no sign of where it was
+    // corrupted.
+    const auto bare = axiam::uma_parse_challenge(
+        "UMA realm=example, as_uri=https://id.example, ticket=" + std::string(kTicket));
+    AXIAM_REQUIRE(bare.has_value());
+    AXIAM_REQUIRE(bare->realm.value_or("") == "example");
+    AXIAM_REQUIRE(bare->as_uri.value_or("") == "https://id.example");
+    AXIAM_REQUIRE(bare->ticket.has_value());
+    AXIAM_REQUIRE(axiam::detail::reveal(*bare->ticket) == kTicket);
+
+    // Mixed, which is what a proxy that rewrites one parameter produces.
+    const auto mixed =
+        axiam::uma_parse_challenge(R"(UMA realm="example", as_uri=https://id.example)");
+    AXIAM_REQUIRE(mixed.has_value());
+    AXIAM_REQUIRE(mixed->realm.value_or("") == "example");
+    AXIAM_REQUIRE(mixed->as_uri.value_or("") == "https://id.example");
+
+    // A one-character value has no quotes to strip and must survive intact —
+    // the boundary the `size() >= 2` guard exists for.
+    const auto tiny = axiam::uma_parse_challenge("UMA realm=x");
+    AXIAM_REQUIRE(tiny.has_value());
+    AXIAM_REQUIRE(tiny->realm.value_or("") == "x");
+}

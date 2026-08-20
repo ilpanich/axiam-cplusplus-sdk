@@ -422,3 +422,42 @@ AXIAM_TEST("§9 refresh guard: stress — one call on the wire, never a pre-sett
     AXIAM_CHECK(total_calls.load() < rounds * threads_per_round);
     AXIAM_CHECK_FALSE(g.slot_occupied());
 }
+
+// The Phase hook is a visible-for-testing seam, and `fire()` swallows anything
+// it throws. That is not politeness: the hook fires from OwnerScope's
+// DESTRUCTOR (Phase::owner_published) and from RunOnExit's (Phase::waiter_settled),
+// both of which can run while another exception is already propagating. A hook
+// that threw from there would cross a destructor during unwinding and call
+// std::terminate — turning a diagnostic seam into a process kill, and taking
+// down the guard's own bookkeeping (slot vacation) with it.
+//
+// So: a throwing hook must be survivable on BOTH the success and the failure
+// path, and must leave the slot correctly vacated either way.
+AXIAM_TEST("§9 a throwing test hook cannot break the guard's bookkeeping") {
+    {
+        RefreshGuard g;
+        g.set_test_hook([](RefreshGuard::Phase) { throw std::runtime_error("hook blew up"); });
+
+        TokenPair tp;
+        AXIAM_REQUIRE_NOTHROW(tp = g.run([] { return TokenPair{}; }));
+        // The slot is still vacated: the throw was contained inside fire(),
+        // never reaching OwnerScope's own bookkeeping.
+        AXIAM_CHECK_FALSE(g.slot_occupied());
+    }
+    {
+        // The failure path: the refresh itself throws AND the hook throws while
+        // the AuthError is unwinding. The AuthError must arrive intact — the
+        // hook's exception must neither replace it nor abort the process.
+        RefreshGuard g;
+        g.set_test_hook([](RefreshGuard::Phase) { throw std::runtime_error("hook blew up"); });
+
+        bool saw_auth_error = false;
+        try {
+            g.run([]() -> TokenPair { throw AuthError("refresh rejected"); });
+        } catch (const AuthError& e) {
+            saw_auth_error = std::string(e.what()).find("refresh rejected") != std::string::npos;
+        }
+        AXIAM_CHECK(saw_auth_error);
+        AXIAM_CHECK_FALSE(g.slot_occupied());
+    }
+}

@@ -885,35 +885,58 @@ AXIAM_TEST("§12.7.3 the remaining rules all reject") {
     const std::string events =
         std::string(",\"events\":{\"") + axiam::kBackchannelLogoutEvent + "\":{}}";
 
+    // Every rule below rejects with an AuthError, so the exception TYPE cannot
+    // tell them apart — and an earlier rule firing would satisfy a type-only
+    // assertion while leaving the named rule unexercised. (It did: these
+    // payloads once lacked their closing brace, so all four were rejected by
+    // the `iss` check at the top of the function and rules 2, 5 and 6 were
+    // never actually reached.) So each case asserts on the message, which names
+    // exactly one rule.
+    const auto rejects_with = [&client, &key](const std::string& claims,
+                                              const std::string& needle) {
+        try {
+            client.verify_logout_token(key.make_jwt("EdDSA", claims));
+            AXIAM_REQUIRE(false);  // must not be accepted
+        } catch (const axiam::AuthError& e) {
+            const std::string message = e.what();
+            AXIAM_REQUIRE(message.find(needle) != std::string::npos);
+        }
+    };
+
     // Rule 5: a token naming neither sid nor sub identifies nothing.
-    AXIAM_REQUIRE_THROWS_AS(
-        client.verify_logout_token(key.make_jwt(
-            "EdDSA", std::string("{\"iss\":\"") + kIssuer + "\",\"aud\":\"" + kClientId +
-                         "\",\"exp\":" + std::to_string(now() + 120) + events)),
-        axiam::AuthError);
+    rejects_with(std::string("{\"iss\":\"") + kIssuer + "\",\"aud\":\"" + kClientId +
+                     "\",\"exp\":" + std::to_string(now() + 120) + events + "}",
+                 "neither sid nor sub");
 
     // Rule 2: a token minted for another RP must not be accepted here.
-    AXIAM_REQUIRE_THROWS_AS(
-        client.verify_logout_token(key.make_jwt(
-            "EdDSA", std::string("{\"iss\":\"") + kIssuer +
-                         "\",\"aud\":\"other-rp\",\"sid\":\"s\",\"exp\":" +
-                         std::to_string(now() + 120) + events)),
-        axiam::AuthError);
+    rejects_with(std::string("{\"iss\":\"") + kIssuer +
+                     "\",\"aud\":\"other-rp\",\"sid\":\"s\",\"exp\":" +
+                     std::to_string(now() + 120) + events + "}",
+                 "aud does not name this client");
 
     // ...and one minted by another OP.
-    AXIAM_REQUIRE_THROWS_AS(
-        client.verify_logout_token(key.make_jwt(
-            "EdDSA", std::string("{\"iss\":\"https://evil.test\",\"aud\":\"") + kClientId +
-                         "\",\"sid\":\"s\",\"exp\":" + std::to_string(now() + 120) + events)),
-        axiam::AuthError);
+    rejects_with(std::string("{\"iss\":\"https://evil.test\",\"aud\":\"") + kClientId +
+                     "\",\"sid\":\"s\",\"exp\":" + std::to_string(now() + 120) + events + "}",
+                 "iss does not match");
 
     // Rule 6: AXIAM issues a 120 s lifetime, and a stale one is a replay
     // candidate rather than a late delivery.
-    AXIAM_REQUIRE_THROWS_AS(
-        client.verify_logout_token(key.make_jwt(
-            "EdDSA", std::string("{\"iss\":\"") + kIssuer + "\",\"aud\":\"" + kClientId +
-                         "\",\"sid\":\"s\",\"exp\":" + std::to_string(now() - 1800) + events)),
-        axiam::AuthError);
+    rejects_with(std::string("{\"iss\":\"") + kIssuer + "\",\"aud\":\"" + kClientId +
+                     "\",\"sid\":\"s\",\"exp\":" + std::to_string(now() - 1800) + events + "}",
+                 "expired");
+
+    // Rule 6's other half: an exp that is absent altogether is not "no expiry",
+    // it is a token this SDK cannot age out at all.
+    rejects_with(std::string("{\"iss\":\"") + kIssuer + "\",\"aud\":\"" + kClientId +
+                     "\",\"sid\":\"s\"" + events + "}",
+                 "expired or carries no usable exp");
+
+    // A payload that is well-formed JSON but not an OBJECT parses cleanly and
+    // then answers every claim lookup with "absent". Refuse it as its own case
+    // rather than letting it surface as whichever claim check happens to run
+    // first, which would report a missing `iss` on a token that has no claims
+    // at all.
+    rejects_with("[1,2,3]", "not a JSON object");
 }
 
 AXIAM_TEST("§12.7.3 rule 1 a bad signature is rejected through the same §12.4 verifier") {
@@ -931,5 +954,37 @@ AXIAM_TEST("§12.7.3 rule 1 a bad signature is rejected through the same §12.4 
         // No second key-fetching path, so it fails the same way an ID token
         // would.
         AXIAM_REQUIRE(e.reason() == axiam::OidcValidationReason::kInvalidSignature);
+    }
+}
+
+// §14.2 rule 3 through the COMPOSED helper. device_poll's own terminal-code
+// behaviour is pinned above; this pins that device_login's polling loop
+// propagates a terminal refusal instead of swallowing it into another round.
+// The loop's `continue` arms (authorization_pending, slow_down) and its
+// rethrow arm sit in the same catch block, so a helper that mishandled the
+// last one would poll a denied grant until expires_in — telling the user
+// nothing, and hammering the token endpoint for ten minutes after a human
+// already pressed "no".
+AXIAM_TEST("§14.3 device_login propagates a terminal refusal instead of polling on") {
+    for (const char* terminal : {"access_denied", "expired_token", "invalid_grant"}) {
+        Fixture f;
+        f.replies->device_body = device_body(R"(,"interval":1)", 600);
+        f.replies->token_script = {{400, R"({"error":"authorization_pending"})"},
+                                   {400, std::string(R"({"error":")") + terminal + R"("})"}};
+        auto client = make_client(f);
+
+        bool saw = false;
+        try {
+            client.device_login([](const axiam::DeviceAuthorization&) {});
+        } catch (const axiam::OAuthProtocolError& e) {
+            // Rule 3: the code arrives INTACT. Collapsing these into one
+            // "login failed" would lose the only distinction a device can act
+            // on — "a human said no" versus "nobody answered in time".
+            AXIAM_REQUIRE(e.error_code() == terminal);
+            saw = true;
+        }
+        AXIAM_REQUIRE(saw);
+        // It stopped at the terminal answer rather than continuing to poll.
+        AXIAM_REQUIRE(f.replies->token_calls == 2);
     }
 }

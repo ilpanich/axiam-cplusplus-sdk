@@ -58,6 +58,36 @@ jobs:
       # sender-constrained authenticator cases took it to 97.36%, so 96 restores
       # a real margin against a number this job computes. Ratchet it the same
       # way: only ever to a value measured here, never to an estimate.
+      #
+      # 96 -> 96.5 against a measured 97.13%. The refusal-path pass that earned
+      # it added the UMA Protection API malformed-body arms, the §14 device
+      # grant's three failure arms, the §12.7.3 logout-token rules, the JWKS
+      # failed-refetch path, the §11.5 AuthzError rethrow and the unquoted
+      # `WWW-Authenticate` parameter form.
+      #
+      # MIND THE MARGIN — this number is not perfectly reproducible. The §9
+      # single-flight tests are genuinely concurrent, so which of the
+      # owner/waiter arms execute depends on scheduling: over repeated local
+      # runs the figure sat at 97.13% but dropped to 96.98% roughly one run in
+      # twelve. The floor therefore keeps ~0.5pp under the WORST observed value,
+      # not under the best. A gate that flaps teaches people to re-run CI until
+      # it passes, which is worse than no gate.
+      #
+      # Do not expect to reach 100 here. What is left is, in order:
+      #   * src/srp.cpp argon2id (~25 lines) — OpenSSL only ships the ARGON2ID
+      #     EVP_KDF from 3.2, and ubuntu-latest is still 3.0.x, so the fetch
+      #     fails and the derivation body cannot execute. Reachable only by
+      #     building CI against a newer libcrypto.
+      #   * src/client_impl.hpp execute()'s 401-refresh branch (16 lines) —
+      #     dead: every call site passes allow_refresh=false. The live
+      #     refresh-on-401 path is the telemetry-instrumented one above it.
+      #   * three `resp.transport_error` guards in src/oidc.cpp (8 lines) —
+      #     dead: Impl::send_raw already throws NetworkError on a transport
+      #     error, so those responses never reach the guards.
+      #   * OpenSSL/RAND_bytes/HMAC failure arms and OwnerScope's
+      #     abort-before-publish destructor — defensive, unreachable without
+      #     fault injection.
+      # Cover the reachable ones before touching this number again.
       - name: Enforce coverage floor
         working-directory: build
         run: |
@@ -67,8 +97,8 @@ jobs:
             END { printf "%.2f", (t ? 100*c/t : 0) }
           ' coverage.lcov)
           echo "Line coverage: ${total}%"
-          awk -v t="$total" 'BEGIN { exit (t+0 >= 96) ? 0 : 1 }' || {
-            echo "::error::coverage ${total}% is below the 96% floor"; exit 1;
+          awk -v t="$total" 'BEGIN { exit (t+0 >= 96.5) ? 0 : 1 }' || {
+            echo "::error::coverage ${total}% is below the 96.5% floor"; exit 1;
           }
 
       - name: Upload to Coveralls

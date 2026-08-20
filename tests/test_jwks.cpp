@@ -81,3 +81,80 @@ AXIAM_TEST("JWKS caches keys across verifications (single fetch)") {
     AXIAM_CHECK(v.verify_signature_only_unchecked(jwt).has_value());
     AXIAM_CHECK(st->count_path("/oauth2/jwks") == 1);
 }
+
+// §12.3 rule 3 — a JWKS fetch that FAILS must not evict what is already cached.
+//
+// The rotation path deliberately drops `have_keys_` and re-fetches when an
+// unknown `kid` shows up. If a failed re-fetch were allowed to leave the cache
+// empty, one blip at the JWKS endpoint would turn every subsequent verification
+// into an unknown-kid failure until the cooldown expired — an outage amplified
+// into a total authentication outage. So the fetch returns early and keeps
+// whatever it had.
+AXIAM_TEST("JWKS: a failed refetch keeps the previously cached keys") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    auto fail_now = std::make_shared<bool>(false);
+    const std::string doc = key.jwks_json();
+
+    st->router = [doc, fail_now](const axiam::HttpRequest& req, FakeState&) {
+        axiam::HttpResponse r;
+        if (req.url.find("/oauth2/jwks") == std::string::npos) {
+            r.status = 404;
+            return r;
+        }
+        if (*fail_now) {
+            // The transport itself failed — the arm that is NOT a status code.
+            r.transport_error = "connection refused";
+            return r;
+        }
+        r.status = 200;
+        r.body = doc;
+        return r;
+    };
+
+    JwksVerifier v(axtest::make_fake(st), "https://api.example.test");
+    const std::string jwt = key.make_jwt("EdDSA", R"({"sub":"user-1"})");
+    AXIAM_REQUIRE(v.verify_signature_only_unchecked(jwt).has_value());
+    AXIAM_REQUIRE(v.cached_key_count() == 1);
+
+    // From here the endpoint is down. A token signed by the key already cached
+    // must keep verifying.
+    *fail_now = true;
+    AXIAM_REQUIRE(v.verify_signature_only_unchecked(jwt).has_value());
+    AXIAM_REQUIRE(v.cached_key_count() == 1);
+}
+
+AXIAM_TEST("JWKS: a first fetch that fails leaves no keys rather than a bad one") {
+    // The same early return, reached with nothing cached behind it. The
+    // verification must fail — but as unknown-kid, not by trusting an unfetched
+    // key, and not by throwing out of a function whose contract is to return a
+    // reason.
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const axiam::HttpRequest&, FakeState&) {
+        axiam::HttpResponse r;
+        r.status = 503;  // the other arm of the same guard: a non-200 status
+        r.body = "upstream unavailable";
+        return r;
+    };
+    JwksVerifier v(axtest::make_fake(st), "https://api.example.test");
+    AXIAM_CHECK_FALSE(v.verify_signature_only_unchecked(key.make_jwt("EdDSA", "{}")).has_value());
+    AXIAM_CHECK(v.cached_key_count() == 0);
+}
+
+AXIAM_TEST("JWKS: a key whose x is not valid base64url fails as a bad signature") {
+    // A JWKS the SDK cannot decode is not an unknown kid — the kid matched. It
+    // is a key that cannot verify anything, and reporting it as unknown-kid
+    // would send the caller into the rotation/re-fetch path over a document
+    // that will never improve.
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    const std::string bad_doc =
+        std::string("{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"kid\":\"") + key.kid +
+        "\",\"x\":\"not*valid*base64url\"}]}";
+    JwksVerifier v(jwks_transport(st, bad_doc), "https://api.example.test");
+
+    const auto res = v.verify_with_reason(key.make_jwt("EdDSA", R"({"sub":"user-1"})"));
+    AXIAM_REQUIRE_FALSE(res.ok);
+    AXIAM_CHECK(res.reason == std::string("invalid_signature"));
+}

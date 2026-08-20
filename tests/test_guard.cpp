@@ -121,3 +121,28 @@ AXIAM_TEST("AxiamGuard functor yields user or throws") {
     AXIAM_CHECK(guard(std::string("good")).user_id == "u-1");
     AXIAM_REQUIRE_THROWS_AS(guard(std::string("bad")), AuthError);
 }
+
+// §11.5's other arm. The guard has two catch clauses and they must NOT collapse
+// into one: a NetworkError is translated to `authz_unavailable` (fail closed on
+// something the server never decided), while an AuthzError the server actually
+// returned is rethrown UNCHANGED. Rewriting the server's 403 into
+// `authz_unavailable` would tell an operator their authorization service is
+// down when it is up and deliberately saying no — and it would hide a real
+// policy denial behind a transient-looking code that callers retry.
+AXIAM_TEST("require_access rethrows a server AuthzError unchanged, not as authz_unavailable") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) {
+        // §2 maps 403 to AuthzError, with the server's detail attached.
+        return json_response(403, R"({"action":"read","resource":"res-1"})");
+    };
+    Client c = guard_client(st);
+    std::optional<AxiamUser> u = AxiamUser{"u-1", "t-1", {}};
+    try {
+        require_access(c, u, "read", "res-1");
+        AXIAM_REQUIRE(false);
+    } catch (const AuthzError& e) {
+        // The fail-closed branch's marker must be absent: this denial came from
+        // the server, and the distinction is the whole point of the two arms.
+        AXIAM_REQUIRE(std::string(e.what()).find("authz_unavailable") == std::string::npos);
+    }
+}
