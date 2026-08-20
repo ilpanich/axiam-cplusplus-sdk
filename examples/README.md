@@ -8,6 +8,7 @@ build them offline and run them against a real server when you have one.
 | Example | Shows |
 |---------|-------|
 | [`login_mfa.cpp`](login_mfa.cpp)   | Two-phase login + MFA verify (CONTRACT.md §1, §5, §5.1) |
+| [`opaque_login.cpp`](opaque_login.cpp) | The §23 OPAQUE (RFC 9807) exchange: which failures may fall back to `login()` and which must not, and the registration record the server cannot build for itself |
 | [`rest_authz.cpp`](rest_authz.cpp) | `check_access` / `can` / `batch_check` (CONTRACT.md §1) |
 | [`telemetry_hook.cpp`](telemetry_hook.cpp) | Metrics without a metrics dependency: §19 hooks, the §16 retry signal, the §19.2 rule 6 clamp warning, and §18 `close()` |
 | [`uma_resource_server.cpp`](uma_resource_server.cpp) | UMA 2.0 (§20), emit half: register a resource, guard it, answer a denial with `WWW-Authenticate: UMA` |
@@ -37,7 +38,10 @@ Configuration is read from the environment (defaults in parentheses):
 | `AXIAM_ORG_SLUG`    | `acme` | Organization slug (§5.1 — mandatory for login/refresh) |
 | `AXIAM_EMAIL`       | `user@example.com` | Login username / email |
 | `AXIAM_PASSWORD`    | `changeme` | Login password |
-| `AXIAM_TOTP_CODE`   | `000000` | TOTP code (login_mfa only) |
+| `AXIAM_TOTP_CODE`   | `000000` | TOTP code (login_mfa, opaque_login) |
+| `AXIAM_USERNAME`    | `alice` | Account name (opaque_login) |
+| `AXIAM_NEW_PASSWORD` | unset | Set it to make `opaque_login` also build a registration record |
+| `AXIAM_OPAQUE_LIBRARY` | unset | Full path to `libaxiam_opaque_ffi` when it is not already on the loader path (opaque_login) |
 | `AXIAM_RESOURCE_ID` | all-zero UUID | Resource id to check (rest_authz only) |
 
 ```bash

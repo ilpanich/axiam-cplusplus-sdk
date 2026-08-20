@@ -16,7 +16,7 @@
 #include "axiam/errors.hpp"
 #include "axiam/jwks.hpp"
 #include "axiam/oidc.hpp"
-#include "axiam/srp.hpp"
+#include "axiam/opaque.hpp"
 #include "axiam/telemetry.hpp"
 #include "axiam/transport.hpp"
 #include "axiam/types.hpp"
@@ -170,62 +170,96 @@ public:
     /// front end). Prefer the Sensitive overload.
     LoginResult verify_mfa(const std::string& challenge_token, const std::string& totp_code);
 
-    // ---- §23 Secure Remote Password ----
+    // ---- §23 OPAQUE, RFC 9807 ----
 
-    /// `POST /api/v1/auth/srp/challenge` then `/verify` — SRP-6a login (§23).
+    /// `POST /api/v1/auth/opaque/login/start` then `/finish` — OPAQUE login
+    /// (§23).
     ///
     /// A sibling of \ref login, not a replacement. It takes the same arguments
     /// and returns the same LoginResult, MFA branch included, so an application
-    /// can switch a tenant to SRP without touching its own code (§23.1).
+    /// can switch a tenant to OPAQUE without touching its own code (§23.1).
     ///
     /// **What this does that \ref login does not.** The password never leaves
-    /// this process. What crosses the wire is `A` and a proof, neither of which
-    /// is useful without the account's verifier — so a TLS-terminating proxy, an
-    /// accidentally verbose request log, or a heap dump on the server cannot
-    /// capture a plaintext password, because the server never has one. It does
-    /// **not** protect against a compromised AXIAM server.
+    /// this process. What crosses the wire is a blinded group element and a MAC,
+    /// neither useful without the account's registration record **and** the
+    /// tenant's OPRF seed — so a TLS-terminating proxy, an accidentally verbose
+    /// request log, or a heap dump on the server cannot capture a plaintext
+    /// password, because the server never has one. It also means a stolen record
+    /// database is not offline-crackable on its own, which is the pre-computation
+    /// resistance SRP could not offer. It does **not** protect against a
+    /// compromised AXIAM server.
     ///
-    /// **Cost.** Runs the tenant's KDF: Argon2id at 19 MiB and t=2 by default,
-    /// tens to hundreds of milliseconds of CPU plus that memory, per attempt.
-    /// That cost is the point. It is synchronous and blocking.
+    /// **This SDK no longer needs OpenSSL 3.2.** The SRP client refused an
+    /// `argon2id` tenant on an older libcrypto, because Argon2id arrives as an
+    /// `EVP_KDF` only in 3.2 — so AXIAM's *default* KDF was unreachable and
+    /// operators had to weaken the tenant to `pbkdf2_sha256`. Key stretching now
+    /// happens inside `libaxiam_opaque_ffi`, so the only remaining condition is
+    /// having that library, which \ref opaque_available reports.
     ///
-    /// \throws NetworkError if the tenant has SRP disabled (the endpoint answers
-    ///         404 — a property of the tenant, not of any user), or if this build
-    ///         cannot perform the group or KDF the server named. Deliberately not
-    ///         AuthError: reporting a client capability gap as a credential
-    ///         failure would send a user off to reset a password that works.
-    /// \throws AuthError for a wrong password, and for a server whose `M2` does
-    ///         not verify — in the latter case nothing is returned, because an
-    ///         endpoint that cannot prove it holds the verifier is not the server
-    ///         it claims to be (§23.3 rule 6).
-    LoginResult login_srp(const std::string& username_or_email, const std::string& password);
+    /// **One round trip, and no server-proof step.** SRP had to guess a group
+    /// before the server named one and restart the exchange if it guessed wrong;
+    /// `KE1` does not depend on the key-stretching function. And where the old
+    /// §23.3 rule 6 had to mandate an `M2` check in capitals, RFC 9807's AKE
+    /// authenticates the server during the handshake, so opening `KE2` *is* the
+    /// proof that it holds the record.
+    ///
+    /// **Cost.** Runs the tenant's key-stretching function: Argon2id at 19 MiB
+    /// and t=2 by default, tens to hundreds of milliseconds of CPU plus that
+    /// memory, per attempt. That cost is the point — it is what makes a stolen
+    /// record expensive to attack even by someone holding the OPRF seed. It is
+    /// synchronous and blocking.
+    ///
+    /// \throws NetworkError if the tenant has OPAQUE disabled (the endpoint
+    ///         answers 404 — a property of the tenant, not of any user), if
+    ///         `libaxiam_opaque_ffi` is not installed, if the server names a
+    ///         key-stretching function this SDK cannot ask for, or if the
+    ///         response is not the shape §23 defines. Deliberately not
+    ///         AuthError: reporting a configuration gap as a credential failure
+    ///         would send a user off to reset a password that works, and would
+    ///         stop a caller falling back to \ref login.
+    /// \throws AuthError when the envelope does not open — a wrong password, an
+    ///         account that does not exist, and a server that does not hold the
+    ///         record, indistinguishable by design. **Nothing is sent to
+    ///         `login/finish` in that case** (§23.4 rule 7), and a caller must
+    ///         not retry over \ref login: that hands the plaintext to an
+    ///         endpoint that just failed to prove itself.
+    LoginResult login_opaque(const std::string& username_or_email, const std::string& password);
 
-    /// Computes a verifier for `password`, to send with any request that sets
-    /// one: `POST /api/v1/users`, `/auth/password/change`,
-    /// `/auth/reset/confirm` and `/admin/bootstrap` (§23.3 rule 11).
+    /// Builds a registration record for `password`, to send with any request
+    /// that sets one: `POST /api/v1/users`, `/auth/password/change`,
+    /// `/auth/reset/confirm` and `/admin/bootstrap`.
     ///
-    /// The server cannot compute this — it never sees the plaintext — so it has
-    /// to arrive with the request or not at all. The salt is 32 fresh bytes from
-    /// the platform CSPRNG on every call. Performs no I/O; it is a method on the
-    /// client only so it sits beside \ref login_srp in the API.
+    /// The server cannot build this — it never sees the plaintext — so it has to
+    /// arrive with the request or not at all.
     ///
-    /// \param identity The account's **username** — the canonical identity the
-    ///        challenge endpoint hands back. An email here produces a verifier no
-    ///        login can ever satisfy.
-    /// \param group The tenant's group, from `GET /api/v1/auth/me` or the reset
-    ///        context; `std::nullopt` means AXIAM's default.
-    /// \param params The tenant's KDF and costs; any zero cost is filled in with
-    ///        AXIAM's default for that KDF.
-    SrpEnrollment srp_enrollment(const std::string& identity, const std::string& password,
-                                 std::optional<std::string> group = std::nullopt,
-                                 std::optional<SrpKdfParams> params = std::nullopt);
+    /// Unlike the `srp_enrollment` it replaces this performs I/O: one
+    /// `register/start` round trip. OPAQUE's envelope is sealed under the
+    /// server's oblivious PRF, so there is no offline computation that produces
+    /// a valid record.
+    ///
+    /// Note the parameters that are gone. There is no `identity`: the SRP
+    /// version required the account's **username**, and an email there produced
+    /// a verifier no login could ever satisfy, whereas a record binds to a
+    /// credential identifier the server chooses — so a later rename cannot
+    /// invalidate a credential. And there is no `group` or `params`, because
+    /// those come from the `register/start` response; a caller cannot pick a
+    /// cost the server will not honour.
+    ///
+    /// \throws NetworkError in the same cases as \ref login_opaque.
+    OpaqueEnrollment opaque_enrollment(const std::string& password);
 
-    /// Whether this build can perform SRP (§23.1).
+    /// Whether this installation can perform OPAQUE (§23.2).
     ///
-    /// Unconditional here. It exists because §23.1 puts the probe in every SDK's
-    /// vocabulary, and because a `true` is **not** a promise that every tenant
-    /// will work: Argon2id needs OpenSSL >= 3.2 — see `srp::argon2_available()`.
-    bool srp_available() const;
+    /// Genuinely able to answer `false`: the protocol comes from
+    /// `libaxiam_opaque_ffi`, a per-platform release asset rather than a package
+    /// dependency, resolved with `dlopen` at run time so a consumer who never
+    /// uses OPAQUE is not made to link it.
+    ///
+    /// Unlike the `srp_available` it replaces, a `true` here **is** a promise
+    /// that every tenant will work: `srp_available` was unconditional while an
+    /// `argon2id` tenant still failed at login, because this SDK's OpenSSL might
+    /// have no Argon2 to offer.
+    bool opaque_available() const;
 
     TokenPair refresh();
     void logout();
