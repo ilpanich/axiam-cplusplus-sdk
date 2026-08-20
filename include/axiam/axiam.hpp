@@ -13,7 +13,7 @@
 #include "axiam/sensitive.hpp"
 #include "axiam/transport.hpp"
 #include "axiam/types.hpp"
-#include "axiam/srp.hpp"
+#include "axiam/opaque.hpp"
 #include "axiam/uma.hpp"
 #include "axiam/webhook.hpp"
 

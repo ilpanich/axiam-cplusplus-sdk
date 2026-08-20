@@ -4,6 +4,51 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [Unreleased]
+
+### Added
+
+- OPAQUE (RFC 9807) login and enrolment (CONTRACT §23): `Client::login_opaque`
+  and `Client::opaque_enrollment`, plus `Client::opaque_available` for choosing
+  the password path up front. `login_opaque` returns the same `LoginResult` as
+  `login`, MFA branch included.
+- `include/axiam/opaque.hpp`, `src/opaque.cpp`, `examples/opaque_login.cpp`,
+  `tests/test_opaque_binding.cpp` and `tests/test_opaque_login.cpp`.
+
+### Removed
+
+- **BREAKING** — SRP-6a. `Client::login_srp`, `Client::srp_enrollment`,
+  `Client::srp_available`, `include/axiam/srp.hpp`, `src/srp.cpp` and
+  `srp-test-vectors.json` are all gone. AXIAM's server-side SRP endpoints are
+  removed in the same release, so keeping the client would leave a method that
+  only ever returns 404.
+
+### Changed
+
+- **BREAKING** — the OPAQUE protocol is NOT implemented in this SDK. CONTRACT
+  §23.1 forbids it, so `src/opaque.cpp` is a `dlopen`/`dlsym` binding to
+  `libaxiam_opaque_ffi` — the same implementation the AXIAM server links,
+  published as a per-platform asset on the axiam-opaque release page. It is
+  resolved at RUN time, so a consumer who never uses OPAQUE needs nothing extra
+  at build time and `opaque_available()` can honestly answer `false`. Put the
+  library on the loader path or point `AXIAM_OPAQUE_LIBRARY` at it.
+- **Your OpenSSL version no longer decides which tenants work.** Argon2id
+  arrives as an `EVP_KDF` only in OpenSSL 3.2, so the SRP path had to refuse a
+  default-configured (`argon2id`) tenant on anything older — operators either
+  upgraded OpenSSL or weakened the tenant to `pbkdf2_sha256`. Key stretching now
+  happens inside the native library, so OpenSSL 1.1.1 serves every tenant and
+  `srp::argon2_available()` has no successor.
+- `opaque_enrollment()` performs I/O — one `register/start` round trip — where
+  `srp_enrollment()` was pure. OPAQUE's envelope is sealed under the server's
+  oblivious PRF, so there is no offline computation that produces a valid
+  record. It also loses the `identity`, `group` and `params` arguments: a record
+  binds to a credential identifier the server chooses, so passing an email where
+  a username was wanted can no longer produce an unusable credential, **renaming
+  a user no longer invalidates it**, and the costs are the server's.
+- Every cost in `OpaqueKsfParams` is a `std::optional<unsigned>` rather than a
+  zero-defaulted `unsigned`: a field that does not apply to the named function
+  is absent on the wire, not zero (§23.4 rule 5).
+
 ## [1.0.0-alpha31] - 2026-08-20
 
 ### Changed

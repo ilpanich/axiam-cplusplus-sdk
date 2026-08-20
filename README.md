@@ -10,7 +10,7 @@ Idiomatic C++17 client for [AXIAM](https://github.com/ilpanich/axiam) (Access
 eXtended Identity and Authorization Management) — authentication, authorization
 checks, JWKS verification, and framework-agnostic route guards.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §16–§19, §20, §21 and §23 (including §6.1 mTLS, §12.7 logout, the §11 rule 9 decision reason codes, and the §23 SRP-6a login path — conditional on OpenSSL ≥ 3.2 for Argon2id, see below).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §16–§19, §20, §21 and §23 (including §6.1 mTLS, §12.7 logout, the §11 rule 9 decision reason codes, and the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below).**
 
 > Scope note: this v1 covers the REST surface. **gRPC** — including the gRPC-only
 > `get_user_info` operation (CONTRACT §1.1, contract 1.3) — and **§8 AMQP HMAC** are
@@ -334,137 +334,236 @@ no temporary files touch disk. The mTLS private key is held behind
 
 ---
 
-## Secure Remote Password (§23)
+## OPAQUE — RFC 9807 (§23)
 
-`login_srp()` proves the password to the server without the password — or
+`login_opaque()` proves the password to the server without the password — or
 anything from which it can be cheaply recovered — ever crossing the wire. The
-server stores a **verifier** `v = g^x mod N` instead of a password hash, and
-what travels is `A` and a proof, neither of which is useful without that
-verifier.
+server stores a **registration record** sealed under a tenant-scoped oblivious
+PRF instead of a password hash, and what travels is a blinded group element and
+a MAC, neither of which is useful without that record *and* the tenant's OPRF
+seed.
 
 ```cpp
-axiam::LoginResult result = client.login_srp("alice", password);
+axiam::LoginResult result = client.login_opaque("alice", password);
 ```
 
 It takes the same arguments as `login()` and returns the same `LoginResult`,
-MFA branch included, so switching a tenant to SRP needs no change to how the
+MFA branch included, so switching a tenant to OPAQUE needs no change to how the
 result is handled. A runnable end-to-end example, including the fallback and the
-enrolment call, is [`examples/srp_login.cpp`](examples/srp_login.cpp).
+enrolment call, is [`examples/opaque_login.cpp`](examples/opaque_login.cpp).
 
 ### What this buys, and what it does not
 
-SRP closes holes TLS 1.3 does not:
+OPAQUE closes holes TLS 1.3 does not:
 
 - a TLS-terminating reverse proxy, ingress controller, CDN or service mesh sees
-  every plaintext password today; under SRP it sees `A` and `M1`;
+  every plaintext password today; under OPAQUE it sees `KE1` and `KE3`;
 - an accidental request-body log, a heap dump or a crash reporter can no longer
   capture a plaintext password, because the server never has one;
-- a leaked verifier database still costs a full KDF evaluation per candidate
-  password, exactly as a leaked Argon2id database does.
+- **a stolen record database is not offline-crackable on its own.** This is the
+  substantive gain over the SRP-6a this replaces. An SRP verifier is
+  `g^x mod N` with a public salt: anyone holding the database can grind
+  candidate passwords locally, at one KDF evaluation each. An OPAQUE record is
+  sealed under the tenant's OPRF seed, so an attacker who takes the records and
+  not the seed has nothing to grind against at all. The property is called
+  pre-computation resistance and SRP does not have it.
 
 It does **not** protect against a compromised AXIAM server, and this SDK does
 not claim it does.
 
-### Conditional on your OpenSSL: Argon2id needs 3.2
+### This SDK does not implement OPAQUE, and that is the design
 
-The arithmetic is `BN_mod_exp`, available in every OpenSSL this SDK links
-against, and PBKDF2-HMAC-SHA256 comes from `PKCS5_PBKDF2_HMAC`, likewise. But
-**Argon2id arrives as an `EVP_KDF` only in OpenSSL 3.2**, and it is what a
-default-configured AXIAM tenant names.
+CONTRACT.md §23.1 forbids it. OPAQUE needs an oblivious PRF, `hash_to_curve`,
+`expand_message_xmd`, an envelope construction and a three-message authenticated
+key exchange; eleven independent implementations of that is eleven chances to be
+subtly and silently wrong, in a way test vectors do not catch because the wrong
+answer is still a well-formed group element.
 
-```cpp
-if (!axiam::srp::argon2_available()) { /* cannot serve an argon2id tenant */ }
+So this SDK binds **`libaxiam_opaque_ffi`**, the C ABI of the same audited
+`opaque-ke` core the AXIAM server runs. There is no cryptography in
+`src/opaque.cpp`.
+
+The library is a **per-platform release asset** of
+[`ilpanich/axiam-opaque`](https://github.com/ilpanich/axiam-opaque), resolved
+with `dlopen` at **run time** rather than linked. A consumer who never uses
+OPAQUE therefore needs nothing extra at build time — and
+`Client::opaque_available()` can honestly answer `false`. Install the library
+where the dynamic loader looks, or point `AXIAM_OPAQUE_LIBRARY` at it:
+
+```sh
+export AXIAM_OPAQUE_LIBRARY=/usr/local/lib/libaxiam_opaque_ffi.so
 ```
 
-`srp::argon2_available()` fetches the KDF rather than reading a version macro,
-because a macro answers for the headers this was *compiled* against rather than
-the libcrypto it is *running* against, and those differ routinely where OpenSSL
-is shared. When the KDF is absent, `login_srp()` throws `NetworkError` naming it
-— it never substitutes PBKDF2, which would derive a different `x` and surface as
-"invalid password", the single most misleading failure this code could produce.
+```cpp
+if (!client.opaque_available()) { /* ask BEFORE collecting a password */ }
+```
 
-`Client::srp_available()` is the §23.1 capability probe and is unconditional
-here; the Argon2 probe is the one that can say no.
+### Your OpenSSL version no longer decides which tenants work
+
+SRP was **conditional** here, and awkwardly so. The arithmetic was `BN_mod_exp`,
+available everywhere, but **Argon2id arrives as an `EVP_KDF` only in OpenSSL
+3.2** — and it is what a default-configured AXIAM tenant names. A build against
+an older libcrypto had to refuse such a tenant outright (substituting PBKDF2
+would derive a different `x` and surface as "invalid password"), so operators
+either upgraded OpenSSL or weakened the tenant to `pbkdf2_sha256`.
+
+That is gone. Key stretching happens inside `libaxiam_opaque_ffi`, so this SDK
+serves `argon2id` and `scrypt` tenants against any OpenSSL it links, and
+`srp::argon2_available()` has no successor because it has no question left to
+answer.
+
+One condition remains, and it is honest rather than hidden:
+`Client::opaque_available()` reports whether the shared library is present.
+Unlike the `Client::srp_available()` it replaces — which returned `true`
+unconditionally while an `argon2id` tenant still failed at login — a `true` here
+**is** a promise that every tenant will work.
+
+### The server names the cost, every time
+
+The `*/start` response names the key-stretching function and its parameters for
+**that exchange**. This SDK never caches them across exchanges and never
+defaults them locally:
+
+| rule | what it means here |
+|---|---|
+| §23.4 rule 2 | costs come from the server per exchange — a credential enrolled under one cost keeps working after a tenant raises its policy, so a client that guessed would derive a different randomized password and report "invalid password" for a correct one |
+| §23.4 rule 3 | an unrecognised `ksf` is **refused**, never substituted |
+| §23.4 rule 5 | a cost field that does not apply to the named function is **absent, not zero** — which is why every cost in `OpaqueKsfParams` is a `std::optional<unsigned>` rather than a zero-defaulted `unsigned` |
+| §23.4 rule 7 | nothing is sent to `login/finish` once the envelope fails to open |
+
+Costs are additionally range-checked here, so a refusal names the field:
+
+| field | accepted band |
+|---|---|
+| `memory_kib` | 8192 – 1048576 (8 MiB – 1 GiB) |
+| `iterations` | 1 – 10 |
+| `parallelism` | 1 – 16 |
+| `log_n` | 14 – 20 |
+| `r`, `p` | 1 – 16 |
+
+A server is trusted to name its own policy, not to name a cost that would wedge
+every device an account owns. The library range-checks too; doing it here as
+well means the error says which field.
+
+### One round trip, and no server-proof step
+
+SRP had to guess a group before the server named one, and restart the exchange
+if it guessed wrong. `KE1` does not depend on the key-stretching function, so
+there is no such dance.
+
+And where the old §23.3 rule 6 had to mandate an `M2` check **in capitals** —
+because an SDK that skipped it implemented only half the protocol and no test
+would notice — RFC 9807's AKE authenticates the server during the handshake.
+Opening `KE2` *is* the proof that the server holds the record. Mutual
+authentication is no longer something a client can forget.
 
 ### Tenant policy, and the errors that are not credential failures
 
-`srp_mode` is an organization baseline a tenant may tighten:
+`opaque_mode` is an organization baseline a tenant may tighten:
 
-| mode | `login()` | `login_srp()` |
+| mode | `login()` | `login_opaque()` |
 |---|---|---|
-| `disabled` (default) | works | `NetworkError` — the endpoint answers `404` |
+| `disabled` (default) | works | `NetworkError` — the start endpoints answer `404` |
 | `optional` | works | works |
-| `required` | `AuthzError` (`srp_required`) | works |
+| `required` | `AuthzError` (`opaque_required`) | works |
 
 Neither is an `AuthError`:
 
-- `NetworkError` from `login_srp()` means *this tenant does not offer SRP*, or
-  *this build cannot do the KDF it named* — a property of the tenant or the
-  build, never of any user. Fall back to `login()`.
+- `NetworkError` from `login_opaque()` means *this tenant does not offer
+  OPAQUE*, *`libaxiam_opaque_ffi` is not installed*, *the server named a
+  key-stretching function this SDK cannot ask for*, or *the response was not the
+  shape §23 defines* — a property of the tenant, the build or the deployment,
+  never of any user. Fall back to `login()`.
 - `AuthzError` from `login()` means *this tenant refuses password login*. The
   credentials were never examined. Telling a user their perfectly good password
   is invalid is the failure this mapping exists to prevent.
 
+`AuthError` from `login_opaque()` means the envelope did not open: a wrong
+password, an account that does not exist, or a server that does not hold the
+record — indistinguishable by design, and the whole credential check now that
+both halves of mutual authentication live in it. **Do not retry it over
+`login()`**: that hands the plaintext to an endpoint that has just failed to
+prove itself.
+
 `required` refuses **every** principal in the tenant, not only the enrolled
-ones. Splitting the response on whether an account has a verifier would turn
+ones. Splitting the response on whether an account has a record would turn
 `/auth/login` into an enumeration oracle costing one junk password per name. It
-also means `required` locks out anyone not yet enrolled: a verifier needs the
+also means `required` locks out anyone not yet enrolled: a record needs the
 plaintext password, and a stored Argon2id hash is not invertible, so nobody can
 be enrolled retroactively. Operators turn it on last, after a password-reset
 campaign.
 
 ### Enrolment
 
-The server cannot compute a verifier, so any request that **sets** a password
-has to carry one. `srp_enrollment()` produces the `srp` object for
-`POST /api/v1/users`, `/auth/password/change`, `/auth/reset/confirm` and
+The server cannot build a registration record, so any request that **sets** a
+password has to carry one. `opaque_enrollment()` produces the `opaque` object
+for `POST /api/v1/users`, `/auth/password/change`, `/auth/reset/confirm` and
 `/admin/bootstrap`:
 
 ```cpp
-axiam::SrpEnrollment enrolment = client.srp_enrollment(
-    "alice",                       // the USERNAME, not an email — see below
-    new_password,
-    std::nullopt,                  // nullopt = the tenant default group
-    axiam::SrpKdfParams{axiam::SrpKdfParams::kPbkdf2Sha256, 0, 0, 0});  // 0 = AXIAM's costs
+axiam::OpaqueEnrollment enrolment = client.opaque_enrollment(new_password);
+// ... attach opaque_session + registration_record as the request's `opaque` member
 ```
 
-The identity must be the account's **username**: `x` is derived over
-`identity ":" password` using the identity the challenge endpoint hands back, so
-a verifier enrolled against an email address can never satisfy a login. For the
-same reason, **renaming a user invalidates their verifier** — the server clears
-it, and the user re-enrols at their next password change.
+Three things differ from the `srp_enrollment()` it replaces, and all three are
+improvements:
 
-The salt is 32 fresh bytes from `RAND_bytes` on every call.
+- **It performs I/O** — one `register/start` round trip. OPAQUE's envelope is
+  sealed under the server's oblivious PRF, so there is no offline computation
+  that produces a valid record. The SRP version was pure.
+- **There is no `identity` argument.** SRP derived `x` over
+  `identity ":" password` using the identity the challenge endpoint handed back,
+  so passing an email where a username was wanted produced a verifier no login
+  could ever satisfy — and **renaming a user invalidated their verifier**, which
+  the server had to clear. An OPAQUE record binds to a credential identifier the
+  server chooses. A rename is now just a rename.
+- **There is no `group` and no `params`.** Those come from the `register/start`
+  response, so a caller cannot pick a cost the server will not honour.
+
+`registration_record` is credential material: never log it.
 
 ### Cost
 
-`login_srp()` runs the tenant's KDF: Argon2id at 19 MiB and t=2 by default,
-which is tens to hundreds of milliseconds of CPU plus that memory, per login
-attempt. That cost is the point — it is what makes a leaked verifier no cheaper
-to attack than a leaked Argon2id hash. It is synchronous and blocking; size your
-request handling accordingly, since `login()` has no such cost.
+`login_opaque()` runs the tenant's key-stretching function: Argon2id at 19 MiB
+and t=2 by default, which is tens to hundreds of milliseconds of CPU plus that
+memory, per login attempt. That cost is the point — it is what makes a stolen
+record expensive to attack even by someone holding the OPRF seed. It is
+synchronous and blocking; size your request handling accordingly, since
+`login()` has no such cost.
 
 ### Cryptographic parameters
 
-RFC 5054 Appendix A groups `rfc5054_2048`, `rfc5054_3072` and `rfc5054_4096`
-(the AXIAM default), embedded as constants. A modulus is **never** accepted from
-the server — a server-supplied `N` is a server-supplied trapdoor — and a group
-this SDK does not recognise is refused rather than guessed.
+`OPAQUE-3DH` over **ristretto255**, with **SHA-512**, **HKDF-SHA-512** and
+**HMAC-SHA-512**. The ciphersuite is fixed in `libaxiam_opaque_ffi`; it is not
+negotiated and is deliberately **not** read from the server, because a
+server-selected ciphersuite is a downgrade channel.
 
-Two deliberate divergences from RFC 5054, both AXIAM-wide: `H` is **SHA-256**,
-not SHA-1; and `x` is a **memory-hard KDF output**, not a bare hash, because RFC
-5054's bare-hash `x` would make a leaked verifier *cheaper* to attack offline
-than the Argon2id hashes AXIAM already stores.
+The bundled RFC 5054 group constants are gone with the arithmetic, and so is the
+"never accept a modulus from the server" rule they needed.
+
+### Handle lifetime
+
+`opaque::Exchange` owns one native allocation and is move-only. It is
+single-use — a `finish` spends it — and `close()` is idempotent, so the
+destructor is a backstop rather than the mechanism: an exchange abandoned on any
+failure path (a refused key-stretching function, a malformed response, a non-200
+start) is released when it goes out of scope.
+
+The key-stretching handle is built **before** the exchange state is spent, and
+the order is load-bearing: built the other way round, a server that names a cost
+outside the accepted band would leave the state unreachable — a leaked native
+allocation once per login attempt, and the steady state for a misconfigured
+tenant. Two tests pin the ordering, and two more pin that moving either handle
+type releases exactly once.
 
 ### Zeroization
 
-§23.3 rule 8 requires clearing what can be cleared, and C++ is a language where
-it can be. `x`, `S`, `K` and the joined `identity ":" password` are
-`OPENSSL_cleanse`d before their buffers are released; every `BIGNUM` uses
-`BN_clear_free`; the session's ephemeral `a` is wiped in the destructor **and**
-in the move operations, because a move of a short string is a copy and the
-moved-from buffer would otherwise still hold it. The suite runs clean under ASan
-and UBSan with leak detection on.
+§23.4 rule 8 requires clearing what can be cleared, and C++ is a language where
+it can be. `KE1` and the `RegistrationRequest` are `OPENSSL_cleanse`d before
+their buffers are released, including on the move paths, because a move of a
+short string is a copy and the moved-from buffer would otherwise still hold it.
+The sensitive derivations themselves happen and are cleared on the Rust side of
+the ABI. The suite runs clean under ASan and UBSan with leak detection on.
 
 The one thing this SDK cannot clear is the `const std::string&` you hand it —
 that memory is yours.
