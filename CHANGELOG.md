@@ -48,6 +48,10 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 - Every cost in `OpaqueKsfParams` is a `std::optional<unsigned>` rather than a
   zero-defaulted `unsigned`: a field that does not apply to the named function
   is absent on the wire, not zero (§23.4 rule 5).
+- Re-vendor `openapi.json` at **1.0.0-alpha32**, matching the server. The
+  content was already byte-identical in every path and schema; only
+  `info.version` differed, which is what the cross-repo artifact-drift gate
+  reports as `STALE`.
 
 ## [1.0.0-alpha31] - 2026-08-20
 
