@@ -97,28 +97,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 - §20 UMA 2.0 — Protection API and ticket grant (#18)
 - §16 retry, §17 decision memo, §18 close(), §19 telemetry (D5)
 - §11 rule 9 decision reason codes; contract 1.7 re-sync (D6) (#15)
-
-### Changed
-
-- Build and run the §22.11 reactor example as a conformance gate
-- Docs+examples: CONTRACT.md §22.11 — README pointer and the non-normative reactor sample (#28)
-- Re-vendor CONTRACT.md 1.19 and openapi.json from main (R5.8) (#27)
-- Contract 1.15 — §10.1 rule 9, sender-constrained access tokens (#25)
-- Retire the "measured residual" justification (contract 1.14)
-- Re-sync to contract 1.14 (#302 closed)
-- Make the §9 single-flight tests wait for arrivals, not a clock
-- Runnable §16–§19 example for the C++ SDK (F3) (#17)
-- Stop the concurrency test's keep-alive server hanging on shutdown
-
-### Fixed
-
-- Refuse both-bound tokens; document the §21.7.3 declining posture (#26)
-- Serve concurrent callers in parallel, not one at a time (D2/J6)
-
-## [Unreleased]
-
-### Added
-
 - **A NON-NORMATIVE §22 reactor sample — `examples/reactor/` (CONTRACT.md
   §22.11).** §22.11 plans exactly this sample for the C++ SDK and is explicit
   about its standing: "It is an example, not a contract surface: this section
@@ -145,66 +123,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
   Built behind the existing `AXIAM_BUILD_EXAMPLES` option, like every other
   example here.
-
-### Changed
-
-- Re-vendor `openapi.json` at 1.0.0-alpha27 — the copy was pinned at alpha26 and
-  failing the cross-repo artifact-drift gate
-- **README now points at CONTRACT.md §22.11 (the deferred reactor runtime).**
-  §22.11 carries a SHOULD that these READMEs point at it "so an integrator finds
-  the wire chapter rather than concluding reactors are unavailable" — the
-  "Deferred / follow-ups" section listed §8 AMQP and said nothing about §22, which
-  is exactly where a reader would draw that wrong conclusion. Documentation only,
-  and **no §22 conformance claim**.
-
-- **Re-vendored `CONTRACT.md` (1.17 → 1.19) and `openapi.json` from
-  `ilpanich/axiam@main`.** The vendored copies had drifted; both are now
-  byte-identical to the upstream artifacts. **No code change** — nothing in
-  1.18 or 1.19 binds this SDK's implemented surface.
-  - **§22 Reactors — AMQP extension actors (contract 1.18).** A new chapter
-    describing external allow/deny/mutate actors on the AMQP bus.
-    [§22.11](CONTRACT.md) defers the *runtime helper* (`reactor_serve`) in
-    Swift, C and C++ for the same reason [§8](CONTRACT.md) has never listed
-    them among the SDKs that speak AMQP: no maintained AMQP client for these
-    targets this project is willing to vendor. §22.1–§22.8 remain a wire
-    protocol that binds a hand-rolled integrator in full, and the §22.13
-    vectors are the conformance surface for one. This SDK ships no reactor
-    runtime and is exactly as conformant as it was under 1.17.
-  - **SDK-Q10 closed (contract 1.19)** — the gRPC decision gains `reason`
-    (field 4) and deprecates `deny_reason`, converging on the REST shape this
-    SDK already speaks. This SDK is REST-only, so nothing moves:
-    `axiam::AccessDecision` already exposes exactly `allowed` + `reason` +
-    `reason_code` and has never carried a `resource_type`, which is the shape
-    [§11.2](CONTRACT.md) rule 9's amendment now makes canonical for both
-    transports.
-  - `openapi.json` picks up the X5.1 server surface (`dpop_bound_access_tokens`,
-    `dpop_require_nonce`, `jwks`/`jwks_uri` on client registration,
-    `private_key_jwt` as a client-auth method, `CnfClaim.jkt`) and the reactor
-    registration health counters (`recent_timeout_count`, `recent_veto_count`).
-    No paths added or removed, no schemas added or removed.
-
-### Fixed
-
-- **CONTRACT.md §10.1 rule 9 conjunction fix, and the §21.7.3 declining posture
-  documented (contract 1.16).**
-
-  A `cnf` naming **both** a certificate and a DPoP `jkt` was previously accepted
-  on the matching certificate alone, ignoring the `jkt` entirely. Two named
-  constraints are a **conjunction**, and this SDK declines §21.7.2 proof
-  verification — so it can establish one half and must not answer for the whole.
-  Such a token is now refused. The old behaviour would let a caller holding the
-  certificate but **not** the DPoP key through a door the operator bolted twice.
-
-  Pure `jkt`-bound tokens were already refused and remain so. The README now
-  documents the declining posture, completing §21.7.3's three obligations
-  (reject, document, test).
-
-  Not a breaking change for certificate-only deployments: a token naming only
-  `x5t#S256` behaves exactly as before, and an unbound token is still accepted
-  with or without a certificate.
-
-### Added
-
 - **CONTRACT.md §10.1 rule 9 — sender-constrained (certificate-bound) access tokens**
   (contract 1.15, RFC 8705 §3 / RFC 7800). A token carrying `cnf` is **not** a bearer
   token; accepting one without proving the caller holds the named key converts it back
@@ -226,49 +144,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 - **CONTRACT.md §21** — the FAPI 2.0 posture as an SDK sees it. Only rule 9 is normative
   for this SDK.
-
-### Changed
-
-- **Re-sync vendored `CONTRACT.md` / `openapi.json` to contract 1.15.**
-
-
-### Changed
-
-- **Re-sync vendored `CONTRACT.md` to contract 1.14** — documentation only, no code change.
-  §20.2 rule 6 (a permission ticket MUST NOT be retried) cited a "measured residual
-  (ilpanich/axiam#302) … roughly 1 in 640" as its second reason. That residual is closed: the
-  server now decides the ticket race with a transaction its storage engine arbitrates plus a
-  redemption nonce read back after the commit. **The rule is unchanged, and this SDK's
-  behaviour is unchanged** — `uma_exchange_ticket` stays excluded from every automatic retry
-  path. What changed is the reasoning: the first reason (a spent ticket makes the retry
-  useless) always stood alone, and the second now rests on what an SDK can actually know —
-  it is talking to a server whose storage engine it cannot attest, and the guarantee is
-  conditional on that engine being persistent.
-- **BREAKING (contract 1.13): `TokenExchangeParams::subject_token_type` is now required**, and
-  its type narrows from `std::optional<std::string>` to `std::string`. It shipped optional,
-  defaulting to `kAccessTokenType` when unset — which satisfied §15.7's "never inspect the
-  subject token" while leaving the rule it serves unenforced: an optional member with a default
-  *is* a default the SDK applies whenever the caller says nothing. §15.1 now makes it required.
-
-  C++ cannot make an aggregate member mandatory, so the demand lands at the call: an empty
-  `subject_token_type` throws `AuthError` **client-side, with no wire call**, naming both
-  constants. A test asserts zero token calls.
-
-  **Migration** — one line, naming what you were previously getting by silence:
-
-  ```cpp
-  axiam::TokenExchangeParams params;
-  params.subject_token      = axiam::Sensitive<std::string>(user_token);
-  params.subject_token_type = axiam::kAccessTokenType;  // <- add this
-  ```
-
-  This closes a gap rather than opening one: `subject_token_type` has always been required *on
-  the wire*, and the SDK was covering for that with a constant which stopped being the only
-  legal value when X4 landed. For a caller who actually held a refresh token, the old default
-  traded the `invalid_request` that names the type for a generic `invalid_grant`.
-
-### Added
-
 - **§15.7 external-IdP subject tokens (X4).** `token_exchange()` can now exchange a token minted
   by a trusted external IdP — a partner's Entra, Okta or Keycloak — for an AXIAM token scoped to
   what the resolved AXIAM user may actually do. No new operation: the same call, plus
@@ -472,39 +347,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   `ReasonCode` is a struct of `static constexpr` members rather than a
   namespace, so `ReasonCode::kAllowed` still resolves in a scope holding a local
   named `reason_code`.
-
-### Changed
-
-- Re-vendored `CONTRACT.md` at **1.10** and `openapi.json` (the server's `/uma2/*` surface).
-
-- **Re-vendored `CONTRACT.md` and `openapi.json`** from `ilpanich/axiam` at
-  contract 1.7. Of the sections 1.7 adds, only §11 rule 9 is implemented here;
-  §12.7 (logout), §14 (device grant) and §15 (token exchange) all build on a §12
-  OIDC relying-party layer this SDK does not have, and are recorded under
-  Deferred / follow-ups in the README rather than half-shipped.
-
-### Fixed
-
-- **The transport now performs requests concurrently (D2).** Benchmark runs 4
-  and 5 both measured `check_access` at p50 3.2 ms against p95 280 ms — a tail
-  this SDK's own acceptance bar (p95 ≤ 3× p50) rejects, and one the run-4
-  connection-lifetime work (`MAXAGE_CONN`, Happy-Eyeballs, TCP keepalive) did
-  not move. It was never the wire. `CurlTransport::perform` held a mutex over a
-  **single** libcurl easy handle, so a `Client` shared across threads served
-  requests strictly one at a time: p50 was the uncontended service time, p95
-  was fifteen callers queueing — and because `std::mutex` barges rather than
-  queues fairly, the tail was heavy rather than merely 16× the median, which is
-  why the shape reproduced identically across runs.
-
-  The transport now keeps a pool of easy handles, one per in-flight request,
-  each with its own hot connection. Cookies, DNS and TLS session state are
-  shared across them through libcurl's `CURLSH`, so the §4 session semantics
-  are preserved exactly — a request served by any handle carries the same
-  session. Connections are deliberately *not* shared: a shared connection cache
-  would put every handle back behind one lock at acquisition time.
-
-### Added
-
 - **`Client::Builder::max_concurrent_requests(unsigned)`** (default 16) — how
   many requests a client may have in flight. Callers beyond the cap wait for a
   handle rather than opening unbounded connections to the server. Ignored when
@@ -517,6 +359,89 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Changed
 
+- Build and run the §22.11 reactor example as a conformance gate
+- Docs+examples: CONTRACT.md §22.11 — README pointer and the non-normative reactor sample (#28)
+- Re-vendor CONTRACT.md 1.19 and openapi.json from main (R5.8) (#27)
+- Contract 1.15 — §10.1 rule 9, sender-constrained access tokens (#25)
+- Retire the "measured residual" justification (contract 1.14)
+- Re-sync to contract 1.14 (#302 closed)
+- Make the §9 single-flight tests wait for arrivals, not a clock
+- Runnable §16–§19 example for the C++ SDK (F3) (#17)
+- Stop the concurrency test's keep-alive server hanging on shutdown
+- Re-vendor `openapi.json` at 1.0.0-alpha27 — the copy was pinned at alpha26 and
+  failing the cross-repo artifact-drift gate
+- **README now points at CONTRACT.md §22.11 (the deferred reactor runtime).**
+  §22.11 carries a SHOULD that these READMEs point at it "so an integrator finds
+  the wire chapter rather than concluding reactors are unavailable" — the
+  "Deferred / follow-ups" section listed §8 AMQP and said nothing about §22, which
+  is exactly where a reader would draw that wrong conclusion. Documentation only,
+  and **no §22 conformance claim**.
+
+- **Re-vendored `CONTRACT.md` (1.17 → 1.19) and `openapi.json` from
+  `ilpanich/axiam@main`.** The vendored copies had drifted; both are now
+  byte-identical to the upstream artifacts. **No code change** — nothing in
+  1.18 or 1.19 binds this SDK's implemented surface.
+  - **§22 Reactors — AMQP extension actors (contract 1.18).** A new chapter
+    describing external allow/deny/mutate actors on the AMQP bus.
+    [§22.11](CONTRACT.md) defers the *runtime helper* (`reactor_serve`) in
+    Swift, C and C++ for the same reason [§8](CONTRACT.md) has never listed
+    them among the SDKs that speak AMQP: no maintained AMQP client for these
+    targets this project is willing to vendor. §22.1–§22.8 remain a wire
+    protocol that binds a hand-rolled integrator in full, and the §22.13
+    vectors are the conformance surface for one. This SDK ships no reactor
+    runtime and is exactly as conformant as it was under 1.17.
+  - **SDK-Q10 closed (contract 1.19)** — the gRPC decision gains `reason`
+    (field 4) and deprecates `deny_reason`, converging on the REST shape this
+    SDK already speaks. This SDK is REST-only, so nothing moves:
+    `axiam::AccessDecision` already exposes exactly `allowed` + `reason` +
+    `reason_code` and has never carried a `resource_type`, which is the shape
+    [§11.2](CONTRACT.md) rule 9's amendment now makes canonical for both
+    transports.
+  - `openapi.json` picks up the X5.1 server surface (`dpop_bound_access_tokens`,
+    `dpop_require_nonce`, `jwks`/`jwks_uri` on client registration,
+    `private_key_jwt` as a client-auth method, `CnfClaim.jkt`) and the reactor
+    registration health counters (`recent_timeout_count`, `recent_veto_count`).
+    No paths added or removed, no schemas added or removed.
+- **Re-sync vendored `CONTRACT.md` / `openapi.json` to contract 1.15.**
+- **Re-sync vendored `CONTRACT.md` to contract 1.14** — documentation only, no code change.
+  §20.2 rule 6 (a permission ticket MUST NOT be retried) cited a "measured residual
+  (ilpanich/axiam#302) … roughly 1 in 640" as its second reason. That residual is closed: the
+  server now decides the ticket race with a transaction its storage engine arbitrates plus a
+  redemption nonce read back after the commit. **The rule is unchanged, and this SDK's
+  behaviour is unchanged** — `uma_exchange_ticket` stays excluded from every automatic retry
+  path. What changed is the reasoning: the first reason (a spent ticket makes the retry
+  useless) always stood alone, and the second now rests on what an SDK can actually know —
+  it is talking to a server whose storage engine it cannot attest, and the guarantee is
+  conditional on that engine being persistent.
+- **BREAKING (contract 1.13): `TokenExchangeParams::subject_token_type` is now required**, and
+  its type narrows from `std::optional<std::string>` to `std::string`. It shipped optional,
+  defaulting to `kAccessTokenType` when unset — which satisfied §15.7's "never inspect the
+  subject token" while leaving the rule it serves unenforced: an optional member with a default
+  *is* a default the SDK applies whenever the caller says nothing. §15.1 now makes it required.
+
+  C++ cannot make an aggregate member mandatory, so the demand lands at the call: an empty
+  `subject_token_type` throws `AuthError` **client-side, with no wire call**, naming both
+  constants. A test asserts zero token calls.
+
+  **Migration** — one line, naming what you were previously getting by silence:
+
+  ```cpp
+  axiam::TokenExchangeParams params;
+  params.subject_token      = axiam::Sensitive<std::string>(user_token);
+  params.subject_token_type = axiam::kAccessTokenType;  // <- add this
+  ```
+
+  This closes a gap rather than opening one: `subject_token_type` has always been required *on
+  the wire*, and the SDK was covering for that with a constant which stopped being the only
+  legal value when X4 landed. For a caller who actually held a refresh token, the old default
+  traded the `invalid_request` that names the type for a generic `invalid_grant`.
+- Re-vendored `CONTRACT.md` at **1.10** and `openapi.json` (the server's `/uma2/*` surface).
+
+- **Re-vendored `CONTRACT.md` and `openapi.json`** from `ilpanich/axiam` at
+  contract 1.7. Of the sections 1.7 adds, only §11 rule 9 is implemented here;
+  §12.7 (logout), §14 (device grant) and §15 (token exchange) all build on a §12
+  OIDC relying-party layer this SDK does not have, and are recorded under
+  Deferred / follow-ups in the README rather than half-shipped.
 - **The JWKS verifier now re-fetches at most once per cooldown window on an
   unknown `kid`** (§12.4 rule 2). It previously re-fetched on EVERY unknown
   `kid`, which is the fetch-amplification vector that rule names: an attacker
@@ -538,27 +463,50 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   a FAILING flight shares its failure with every waiter — §9 rule 2 says one
   outcome, not one success.
 
+### Fixed
+
+- Refuse both-bound tokens; document the §21.7.3 declining posture (#26)
+- Serve concurrent callers in parallel, not one at a time (D2/J6)
+- **CONTRACT.md §10.1 rule 9 conjunction fix, and the §21.7.3 declining posture
+  documented (contract 1.16).**
+
+  A `cnf` naming **both** a certificate and a DPoP `jkt` was previously accepted
+  on the matching certificate alone, ignoring the `jkt` entirely. Two named
+  constraints are a **conjunction**, and this SDK declines §21.7.2 proof
+  verification — so it can establish one half and must not answer for the whole.
+  Such a token is now refused. The old behaviour would let a caller holding the
+  certificate but **not** the DPoP key through a door the operator bolted twice.
+
+  Pure `jkt`-bound tokens were already refused and remain so. The README now
+  documents the declining posture, completing §21.7.3's three obligations
+  (reject, document, test).
+
+  Not a breaking change for certificate-only deployments: a token naming only
+  `x5t#S256` behaves exactly as before, and an unbound token is still accepted
+  with or without a certificate.
+- **The transport now performs requests concurrently (D2).** Benchmark runs 4
+  and 5 both measured `check_access` at p50 3.2 ms against p95 280 ms — a tail
+  this SDK's own acceptance bar (p95 ≤ 3× p50) rejects, and one the run-4
+  connection-lifetime work (`MAXAGE_CONN`, Happy-Eyeballs, TCP keepalive) did
+  not move. It was never the wire. `CurlTransport::perform` held a mutex over a
+  **single** libcurl easy handle, so a `Client` shared across threads served
+  requests strictly one at a time: p50 was the uncontended service time, p95
+  was fifteen callers queueing — and because `std::mutex` barges rather than
+  queues fairly, the tail was heavy rather than merely 16× the median, which is
+  why the shape reproduced identically across runs.
+
+  The transport now keeps a pool of easy handles, one per in-flight request,
+  each with its own hot connection. Cookies, DNS and TLS session state are
+  shared across them through libcurl's `CURLSH`, so the §4 session semantics
+  are preserved exactly — a request served by any handle carries the same
+  session. Connections are deliberately *not* shared: a shared connection cache
+  would put every handle back behind one lock at acquisition time.
+
 ## [1.0.0-alpha24] - 2026-08-04
 
 ### Added
 
 - Safe-by-default authenticator, webhook verifier, https-only base URL, keep-alive transport
-
-### Changed
-
-- Add the §10.1 rule-8 guardrail regression tests (#13)
-- Device (mTLS) tokens now carry aud=axiam:m2m (#12)
-- Service accounts can use login_client_credentials (#11)
-- Add ASan+UBSan and valgrind gates (§13.4 observation 10 / §12.6.1) (#10)
-
-### Fixed
-
-- Bound the verification clock skew and fix base64url UB (§10.1)
-
-## [Unreleased]
-
-### Added
-
 - **ASan+UBSan and valgrind CI job (§13.4 observation 10 / §12.6.1).** `OBS-4`
   was a signed-integer overflow — undefined behaviour — in **this repository's**
   base64url decoder, on the token-decode path, and it survived three security
@@ -595,8 +543,35 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   TCP connection, a GET following a POST must keep both the connection and its own verb,
   and a large POST body must not carry `Expect: 100-continue`.
 
+### Changed
+
+- Add the §10.1 rule-8 guardrail regression tests (#13)
+- Device (mTLS) tokens now carry aud=axiam:m2m (#12)
+- Service accounts can use login_client_credentials (#11)
+- Add ASan+UBSan and valgrind gates (§13.4 observation 10 / §12.6.1) (#10)
+- **Source-breaking:** `LoginResult::challenge_token` is now `Sensitive<std::string>` rather
+  than `std::string` (SEC-076). CONTRACT §7 classes the MFA challenge token as secret
+  material, so it now gets the same redaction safety-net as every other secret in this SDK.
+  `verify_mfa()` gained a `Sensitive<std::string>` overload, so the common
+  `client.verify_mfa(login.challenge_token, code)` call site is unchanged; code that read the
+  token as a bare string must go through `axiam::detail::reveal()` or keep it wrapped.
+- **Source-breaking:** `JwksVerifier::verify()` is renamed
+  `JwksVerifier::verify_signature_only_unchecked()` (SEC-074). The behaviour is unchanged —
+  the name and the docs now say what it does. It validates the signature and no claims, so
+  it must not be wired into a request guard; use `TokenAuthenticator` instead.
+- **Behaviour-breaking:** `AuthenticatorOptions::clock_skew` is now **bounded**
+  (CONTRACT §10.1 rule 7). It must lie in `[0, axiam::kMaxClockSkew]` (60 s, the
+  value §10.1 recommends); a larger leeway now throws `std::invalid_argument` from
+  the `TokenAuthenticator` constructor instead of being honoured. An unbounded
+  leeway would let an operator re-open the expiry window indefinitely, defeating
+  rule 2. Deployments that set a skew above 60 s must lower it or fix their clock
+  synchronisation. The default is unchanged: `axiam::kDefaultClockSkew` (30 s),
+  now a named `constexpr` rather than an inline literal, and deliberately stricter
+  than the ceiling.
+
 ### Fixed
 
+- Bound the verification clock skew and fix base64url UB (§10.1)
 - **Plaintext `http://` base URL is rejected at construction (SEC-073, §6).**
   `Client::Builder::build()` previously validated only that `base_url` was non-empty, so a
   misconfigured `http://` base sent login credentials, the httpOnly cookie jar, the CSRF
@@ -627,28 +602,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   against libcurl 8.5 its threshold is 1 MiB rather than the widely-cited 1 KiB, so it is not
   the cause of the observed tail, but it still matters for very large batch payloads and for
   consumers linking an older libcurl.
-
-### Changed
-
-- **Source-breaking:** `LoginResult::challenge_token` is now `Sensitive<std::string>` rather
-  than `std::string` (SEC-076). CONTRACT §7 classes the MFA challenge token as secret
-  material, so it now gets the same redaction safety-net as every other secret in this SDK.
-  `verify_mfa()` gained a `Sensitive<std::string>` overload, so the common
-  `client.verify_mfa(login.challenge_token, code)` call site is unchanged; code that read the
-  token as a bare string must go through `axiam::detail::reveal()` or keep it wrapped.
-- **Source-breaking:** `JwksVerifier::verify()` is renamed
-  `JwksVerifier::verify_signature_only_unchecked()` (SEC-074). The behaviour is unchanged —
-  the name and the docs now say what it does. It validates the signature and no claims, so
-  it must not be wired into a request guard; use `TokenAuthenticator` instead.
-- **Behaviour-breaking:** `AuthenticatorOptions::clock_skew` is now **bounded**
-  (CONTRACT §10.1 rule 7). It must lie in `[0, axiam::kMaxClockSkew]` (60 s, the
-  value §10.1 recommends); a larger leeway now throws `std::invalid_argument` from
-  the `TokenAuthenticator` constructor instead of being honoured. An unbounded
-  leeway would let an operator re-open the expiry window indefinitely, defeating
-  rule 2. Deployments that set a skew above 60 s must lower it or fix their clock
-  synchronisation. The default is unchanged: `axiam::kDefaultClockSkew` (30 s),
-  now a named `constexpr` rather than an inline literal, and deliberately stricter
-  than the ceiling.
 
 ### Conformance
 
@@ -693,8 +646,9 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 ### Changed
 
 - Adopt CONTRACT 1.3; defer gRPC get_user_info
-
-## [Unreleased]
+- Adopt CONTRACT.md 1.3: the new gRPC-only `get_user_info` operation (CONTRACT §1.1) is
+  documented as a deferred follow-up (this SDK ships no gRPC transport in v1) and the
+  vendored contract copy is re-synced. Per §1.1 the REST `/oauth2/userinfo` endpoint is not substituted.
 
 ### Fixed
 
@@ -710,12 +664,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   vacates, and only its own generation) and liveness (not mere occupancy) deciding
   whether a caller may join. Failures still reach every contending caller once, with
   no automatic retry (§9.3), and no lock is held across the wire call.
-
-### Changed
-
-- Adopt CONTRACT.md 1.3: the new gRPC-only `get_user_info` operation (CONTRACT §1.1) is
-  documented as a deferred follow-up (this SDK ships no gRPC transport in v1) and the
-  vendored contract copy is re-synced. Per §1.1 the REST `/oauth2/userinfo` endpoint is not substituted.
 
 ## [1.0.0-alpha15] - 2026-07-21
 
@@ -736,16 +684,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 - Maintenance release — no notable changes since v1.0.0-alpha10.
 
 ## [1.0.0-alpha10] - 2026-07-18
-
-### Changed
-
-- Resolve org_id from access-token claim for the refresh body (D-14) (#2)
-- Publish API docs to gh-pages branch
-- Drop configure-pages step, mirror C SDK template
-- Auto-enable GitHub Pages (enablement: true)
-- Add docs publish workflow to GitHub Pages
-
-## [Unreleased]
 
 ### Added
 
@@ -771,6 +709,14 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   for tests). Unit + real-libcurl integration tests; logic-layer coverage > 90%.
 - Packaging: CMake install/export + package config, CPack `.tar.gz`, in-repo
   vcpkg port, Conan recipe, Doxygen config, and GitHub Actions CI + coverage.
+
+### Changed
+
+- Resolve org_id from access-token claim for the refresh body (D-14) (#2)
+- Publish API docs to gh-pages branch
+- Drop configure-pages step, mirror C SDK template
+- Auto-enable GitHub Pages (enablement: true)
+- Add docs publish workflow to GitHub Pages
 
 ### Deferred
 
