@@ -4,6 +4,17 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha34] - 2026-08-21
+
+### Added
+
+- Replace SRP-6a with OPAQUE (RFC 9807)
+
+### Changed
+
+- Link to the AXIAM platform documentation site
+- Re-vendor openapi.json at alpha32 (#36)
+
 ## [Unreleased]
 
 ### Added
