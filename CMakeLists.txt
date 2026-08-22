@@ -25,12 +25,14 @@ find_package(OpenSSL REQUIRED)
 # Library target
 # ---------------------------------------------------------------------------
 add_library(axiam_cpp
+  src/account.cpp
   src/authenticator.cpp
   src/client.cpp
   src/http_curl.cpp
   src/jwks.cpp
   src/oidc.cpp
   src/opaque.cpp
+  src/webauthn.cpp
   src/webhook.cpp
 )
 add_library(axiam::axiam_cpp ALIAS axiam_cpp)

@@ -403,6 +403,8 @@ OidcConfiguration Client::oidc_discover() {
     cfg.revocation_endpoint = opt_string(j, "revocation_endpoint");
     cfg.end_session_endpoint = opt_string(j, "end_session_endpoint");
     cfg.device_authorization_endpoint = opt_string(j, "device_authorization_endpoint");
+    cfg.pushed_authorization_request_endpoint =
+        opt_string(j, "pushed_authorization_request_endpoint");
     cfg.scopes_supported = string_array(j, "scopes_supported");
     cfg.response_types_supported = string_array(j, "response_types_supported");
     cfg.id_token_signing_alg_values_supported =
@@ -1349,6 +1351,130 @@ ExchangedToken Client::token_exchange(const TokenExchangeParams& params) {
     //
     // §15.2 rule 5: NOT adopted. This is a MUST NOT where adoption elsewhere is
     // a MAY — nothing above touches client state.
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// §26 Pushed Authorization Requests (RFC 9126)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// §12.1 rule 4, applied to the push exactly as oidc_begin applies it: the scope
+/// MUST contain `openid`, whole-token matched so "openid_extra" does not
+/// accidentally satisfy the rule. Otherwise the two halves of one authorization
+/// request ask for different scopes.
+std::string normalize_scope(const std::optional<std::string>& scope) {
+    const std::string requested = scope.value_or(std::string{});
+    std::size_t at = 0;
+    while (at <= requested.size()) {
+        const std::size_t sp = requested.find(' ', at);
+        const std::size_t end = (sp == std::string::npos) ? requested.size() : sp;
+        if (requested.compare(at, end - at, "openid") == 0) return requested;
+        if (sp == std::string::npos) break;
+        at = sp + 1;
+    }
+    return requested.empty() ? std::string("openid") : ("openid " + requested);
+}
+
+/// §26.2 rule 2: the redirect URL carries EXACTLY `client_id` and `request_uri`.
+///
+/// The server REFUSES a request carrying both a request_uri and any inline
+/// authorization parameter rather than merging them: an attacker supplies the
+/// inline value they want and lets the pushed copy satisfy whichever check reads
+/// the other one. Re-adding them "for compatibility" restores the attack — which
+/// is why any query the discovered endpoint already carried is DROPPED here
+/// rather than merged, the one place in this file where with_tenant()'s
+/// preserve-the-query behaviour would be wrong.
+std::string par_redirect_url(const std::string& authorization_endpoint,
+                             const std::string& client_id, const std::string& request_uri) {
+    const std::size_t q = authorization_endpoint.find('?');
+    std::string base = (q == std::string::npos) ? authorization_endpoint
+                                                : authorization_endpoint.substr(0, q);
+    return base + "?client_id=" + pct(client_id) + "&request_uri=" + pct(request_uri);
+}
+
+}  // namespace
+
+PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
+                                            const AuthorizationRequest& request,
+                                            const std::string& redirect_uri,
+                                            std::optional<std::string> scope,
+                                            std::optional<std::string> tenant_id) {
+    p_->ensure_open();
+    if (redirect_uri.empty()) throw AuthError("oidc_par needs a redirect_uri");
+    if (!config.pushed_authorization_request_endpoint ||
+        config.pushed_authorization_request_endpoint->empty()) {
+        // §12.7.2 rule 1's discipline: never synthesise the URL from the issuer.
+        // Client-side, with no wire call — a server that does not advertise the
+        // endpoint does not have it, and guessing `/oauth2/par` produces a 404
+        // that reads like a broken request.
+        throw AuthError(
+            "the authorization server's discovery document advertises no "
+            "pushed_authorization_request_endpoint: this server does not support RFC 9126 "
+            "(CONTRACT.md §26.1)");
+    }
+
+    const std::string& client_id = require_client_id(*p_, "oidc_par");
+    const std::string tenant = require_tenant_uuid(*p_, tenant_id, "oidc_par");
+    const std::string scopes = normalize_scope(scope);
+    const std::string verifier = detail::reveal(request.code_verifier);
+    if (verifier.empty()) {
+        throw AuthError("oidc_par: the authorization request carries no code_verifier");
+    }
+
+    // §26.2 rule 1: everything below was computed by oidc_begin. There is no
+    // second generator here, and there must not be — two sources for `state` or
+    // the PKCE pair are two things that can disagree, and when they do the
+    // failure surfaces at the exchange as an opaque `invalid_grant` a long way
+    // from the code that caused it.
+    Form form;
+    form.add("response_type", "code");
+    form.add("redirect_uri", redirect_uri);
+    form.add("scope", scopes);
+    form.add("state", request.state);
+    form.add("nonce", request.nonce);
+    form.add("code_challenge", s256_challenge(verifier));
+    form.add("code_challenge_method", "S256");
+    add_client_auth(*p_, form, client_id);
+
+    HttpRequest req;
+    req.method = "POST";
+    req.url = with_tenant(*config.pushed_authorization_request_endpoint, tenant);
+    req.headers["X-Tenant-ID"] = p_->tenant_header;  // §5 rule 2, unconditional
+    req.headers["Accept"] = "application/json";
+    req.headers["Content-Type"] = "application/x-www-form-urlencoded";
+    req.body = form.str();
+
+    // Exactly one attempt (§26.2 rule 4). A POST that creates server state falls
+    // outside §16.2's read-only eligibility exactly as oidc_exchange does, and
+    // the safe recovery is a fresh push — one round trip, and it cannot
+    // double-consume anything.
+    const HttpResponse resp = p_->send_raw(req);
+    // The 2xx RANGE, not `== 200`: RFC 9126 §2.2 answers 201 Created, and a
+    // success predicate written `== 200` treats every successful push as a
+    // failure while passing every other assertion.
+    if (resp.status < 200 || resp.status >= 300) {
+        raise_grant_error(resp, "pushed authorization request failed");
+    }
+
+    const json j = parse_or_object(resp.body);
+    const auto request_uri = opt_string(j, "request_uri");
+    if (!request_uri) {
+        // A 201 with no handle is not a successful push with a missing field;
+        // there is nothing to redirect with, and returning normally would hand
+        // the caller a URL naming an empty request_uri.
+        throw NetworkError("pushed authorization response carried no request_uri",
+                           "malformed_body");
+    }
+
+    PushedAuthorizationRequest out;
+    out.url = par_redirect_url(config.authorization_endpoint, client_id, *request_uri);
+    out.request_uri = Sensitive<std::string>(*request_uri);
+    out.expires_in = opt_int(j, "expires_in").value_or(0);
+    out.state = request.state;
+    out.nonce = request.nonce;
+    out.code_verifier = request.code_verifier;
     return out;
 }
 

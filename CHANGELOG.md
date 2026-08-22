@@ -25,6 +25,59 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Added
 
+- **WebAuthn / passkeys (CONTRACT §24).** `include/axiam/webauthn.hpp`,
+  `src/webauthn.cpp`: the six relying-party wire operations
+  (`webauthn_register_start` / `_finish`, `_authenticate_start` / `_finish`,
+  `_discoverable_start` / `_finish`) plus §24.6a's JSON bridge —
+  `WebauthnChallenge::request_json()` hands out the challenge in the exact form
+  the platform authenticator APIs take, and every `*_finish` accepts the
+  platform's response JSON back as a string, byte for byte. §24.6b's linked-API
+  ceremony helper is deliberately absent: a C++ program has no authenticator on
+  these targets, and rule 2 forbids emulating one in software.
+- §24.6b rule 5's failure classification, which is required of every SDK claiming
+  §24 whether or not it ships a ceremony helper: `axiam::webauthn_classify()` and
+  `axiam::webauthn_failure_message()`. The classifier never fails — an
+  unrecognised name, including an empty one, is `WebauthnFailure::kUnknown`.
+- **Account lifecycle and MFA enrolment (CONTRACT §25).**
+  `include/axiam/account.hpp`, `src/account.cpp`: nine operations — voluntary
+  enrolment (`mfa_enroll` / `mfa_confirm`), forced enrolment
+  (`mfa_setup_enroll` / `mfa_setup_confirm`), email verification
+  (`verify_email`, `resend_verification`) and the password-reset triple
+  (`request_password_reset`, `password_reset_context`, `confirm_password_reset`).
+  Six of the nine are unauthenticated by design.
+- **Pushed Authorization Requests, RFC 9126 (CONTRACT §26).** `Client::oidc_par`
+  and `PushedAuthorizationRequest`. `OidcConfiguration` gained
+  `pushed_authorization_request_endpoint`; when the discovery document does not
+  advertise it the call throws `AuthError` client-side with no wire request,
+  rather than synthesising `/oauth2/par` from the issuer.
+- `examples/webauthn_passkeys.cpp`, `examples/account_lifecycle.cpp` and
+  `examples/par_login.cpp`; `tests/test_webauthn.cpp` (31),
+  `tests/test_account.cpp` (29) and `tests/test_oidc_par.cpp` (22).
+
+### Changed
+
+- `LoginResult` gained `mfa_setup_required` and `setup_token` (§25.2 rule 1): a
+  `403` carrying `mfa_setup_required` now fills them instead of throwing a
+  generic `AuthzError` with the body discarded. **Additive**, because this type
+  is a flags struct rather than a discriminated union — an existing caller that
+  checks `mfa_required` and otherwise assumes success still compiles.
+- `Client::login` routes through `send_raw` rather than `execute` so that body is
+  readable; every other status still goes through the same §2 mapping.
+- The WebAuthn challenge is lifted out of the response body as **raw text**
+  rather than as a `json` node. `nlohmann::json` stores object members in a
+  `std::map`, so a parse-then-dump round trip comes back sorted — the server's
+  member order gone, numbers through a double — and what the caller hands the
+  authenticator would no longer be what the server sent (§24.0). The
+  authenticator's response travels the same way, spliced into the request body as
+  text.
+- Both halves of an MFA enrolment are `Sensitive<std::string>` (§25.3). The
+  `otpauth://` URI *contains* the secret, so wrapping `secret_base32` and leaving
+  the URI a plain string would wrap nothing — the URI is the field that actually
+  gets logged, because it is the one a caller passes to a QR renderer.
+- Re-vendored `CONTRACT.md` at 1.28 and `openapi.json`.
+
+### Added (§23, earlier in this cycle)
+
 - OPAQUE (RFC 9807) login and enrolment (CONTRACT §23): `Client::login_opaque`
   and `Client::opaque_enrollment`, plus `Client::opaque_available` for choosing
   the password path up front. `login_opaque` returns the same `LoginResult` as

@@ -4,6 +4,7 @@
 // See README.md.
 #pragma once
 
+#include "axiam/account.hpp"
 #include "axiam/authenticator.hpp"
 #include "axiam/client.hpp"
 #include "axiam/errors.hpp"
@@ -15,6 +16,7 @@
 #include "axiam/types.hpp"
 #include "axiam/opaque.hpp"
 #include "axiam/uma.hpp"
+#include "axiam/webauthn.hpp"
 #include "axiam/webhook.hpp"
 
 namespace axiam {

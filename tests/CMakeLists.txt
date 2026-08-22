@@ -41,6 +41,13 @@ add_executable(axiam_cpp_tests
   # §23 OPAQUE: the two HTTP calls around it — what goes on the wire, what does
   # NOT, and which failures may fall back to login().
   test_opaque_login.cpp
+  # Contract 1.28: §24 WebAuthn, §25 account lifecycle, §26 PAR. All three are
+  # wire-shape suites — what §24.0 is about is that the server's options and the
+  # authenticator's response cross this SDK unchanged, and the only way to
+  # assert that is to look at the bytes that went out.
+  test_webauthn.cpp
+  test_account.cpp
+  test_oidc_par.cpp
   test_integration_curl.cpp
   test_transport_concurrency.cpp
   test_transport_reuse.cpp
