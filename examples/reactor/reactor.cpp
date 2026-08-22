@@ -151,8 +151,9 @@ int main(int argc, char** argv) {
     // And there is no loopback exception (§8b rule 8): §6's `http://localhost`
     // dev carve-out does not extend to the broker, and the server has no
     // plaintext listener for such an exception to reach.
+    const std::string plaintext = "amqp://localhost:5672";  // refused below — §8b rules 1 and 8
     try {
-        axiam::amqps_endpoint("amqp://localhost:5672");
+        axiam::amqps_endpoint(plaintext);
         check(false, "plaintext localhost must be refused");
     } catch (const axiam::AxiamError&) {
         check(true, "amqp://localhost is refused — no loopback exception");
