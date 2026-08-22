@@ -4,6 +4,18 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha38] - 2026-08-22
+
+### Added
+
+- The §22 reactor protocol core over a caller-supplied transport
+- WebAuthn (§24), account lifecycle (§25) and PAR (§26)
+
+### Changed
+
+- Re-vendor CONTRACT.md at 1.28
+- Keep the reactor sample's plaintext demo scan-safe
+
 ## [1.0.0-alpha37] - 2026-08-21
 
 ### Changed
