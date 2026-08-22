@@ -166,6 +166,11 @@ struct OidcConfiguration {
     std::optional<std::string> end_session_endpoint;
     /// §14.1: where device_authorize() starts the grant.
     std::optional<std::string> device_authorization_endpoint;
+    /// §26.1: where oidc_par() pushes the authorization request. ABSENT means
+    /// this server does not support RFC 9126 — oidc_par() then refuses
+    /// client-side rather than synthesising `/oauth2/par` from the issuer, which
+    /// would produce a 404 that reads like a broken request.
+    std::optional<std::string> pushed_authorization_request_endpoint;
     std::vector<std::string> scopes_supported;
     std::vector<std::string> response_types_supported;
     /// Advertised ID-token algorithms. INFORMATIONAL ONLY: §12.4 rule 1 pins
@@ -196,6 +201,36 @@ struct AuthorizationRequest {
     std::string nonce;
     /// The PKCE verifier whose S256 challenge went out in the URL. Secret for
     /// its WHOLE lifetime, including while it sits here (§12.5).
+    Sensitive<std::string> code_verifier;
+};
+
+/// What Client::oidc_par returns (§26.1).
+///
+/// Carries the correlation values back out alongside the handle, so the caller
+/// has ONE object to persist across the redirect rather than two to keep in
+/// step. §12.3 rule 1 still applies: this SDK stores none of them, and the
+/// caller must also remember its own `redirect_uri`.
+struct PushedAuthorizationRequest {
+    /// Where to send the user agent. Carries EXACTLY `client_id` and
+    /// `request_uri` — the server refuses a request that mixes a `request_uri`
+    /// with inline authorization parameters rather than merging them, because
+    /// merging is where parameter confusion lives (§26.2 rule 2). Any query the
+    /// discovered authorization endpoint already carried is DROPPED for the same
+    /// reason.
+    std::string url;
+    /// The opaque, single-use handle. Wrapped per §26.5: between the push and
+    /// the redirect it is a bearer handle to a fully-formed authorization
+    /// request, and a log line is the wrong place for it to sit for the length
+    /// of that window.
+    Sensitive<std::string> request_uri;
+    /// The handle's lifetime in seconds; not advisory (§26.2 rule 3).
+    std::int64_t expires_in = 0;
+    /// Compare against the `state` the IdP returns. Not a secret (§12.3 rule 2).
+    std::string state;
+    /// Must equal the ID token's `nonce` claim. Not a secret, for the same
+    /// reason.
+    std::string nonce;
+    /// The PKCE verifier to pass into oidc_exchange().
     Sensitive<std::string> code_verifier;
 };
 

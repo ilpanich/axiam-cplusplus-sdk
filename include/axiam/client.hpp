@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "axiam/account.hpp"
 #include "axiam/errors.hpp"
 #include "axiam/jwks.hpp"
 #include "axiam/oidc.hpp"
@@ -21,6 +22,7 @@
 #include "axiam/transport.hpp"
 #include "axiam/types.hpp"
 #include "axiam/uma.hpp"
+#include "axiam/webauthn.hpp"
 
 namespace axiam {
 
@@ -581,6 +583,182 @@ public:
     /// collapses them because distinguishing them is a tenant-enumeration
     /// signal.
     ExchangedToken token_exchange(const TokenExchangeParams& params);
+
+    // ---- §24 WebAuthn / passkeys ----
+    //
+    // The six wire operations. See <axiam/webauthn.hpp> for what is deliberately
+    // absent (§24.6b's ceremony helper — a C++ program has no authenticator) and
+    // for the JSON bridge that stands in its place.
+    //
+    // THE SERVER OWNS THE OPTIONS AND VERIFIES THE RESPONSE (§24.0). Every
+    // `response` argument below is the platform's own response JSON, forwarded
+    // VERBATIM: it is spliced into the request body as text rather than parsed
+    // into a model and printed back out, because re-encoding a signed buffer is
+    // three chances to corrupt it in service of nothing. A string that is not a
+    // JSON object is refused client-side, with no wire call.
+
+    /// `POST /api/v1/auth/webauthn/register/start` (§24.1) — begin enrolling a
+    /// passkey for the signed-in user.
+    ///
+    /// Requires a session, and refuses CLIENT-SIDE WITH NO WIRE CALL when there
+    /// is none: a passkey is enrolled BY a signed-in user, for themselves.
+    ///
+    /// A `503` here means the tenant's attestation policy needs FIDO metadata
+    /// the server cannot reach — a configuration state, not a transient one —
+    /// and §24.4 rule 2 deliberately does not retry it.
+    WebauthnChallenge webauthn_register_start();
+
+    /// `POST /api/v1/auth/webauthn/register/finish` (§24.1) — hand the
+    /// authenticator's answer back and store the credential.
+    ///
+    /// A `403` here is the one error whose BODY matters (§24.4 rule 1): the
+    /// tenant's attestation policy rejected THIS authenticator, and the server's
+    /// message is the only place that says which one would be accepted, so it is
+    /// surfaced in the thrown AuthzError.
+    WebauthnCredential webauthn_register_finish(const Sensitive<std::string>& state_token,
+                                                const std::string& credential_name,
+                                                const std::string& response);
+
+    /// `POST /api/v1/auth/webauthn/authenticate/start` (§24.1) — begin the
+    /// SECOND-FACTOR ceremony.
+    ///
+    /// Continues a login() that answered `mfa_required` with `"webauthn"` among
+    /// its available methods; `challenge_token` is that login's token. A
+    /// DIFFERENT FLOW from webauthn_discoverable_start(), not the same one with
+    /// a flag (§24.2) — which is why the token is required here and absent
+    /// there.
+    WebauthnChallenge webauthn_authenticate_start(const Sensitive<std::string>& challenge_token);
+
+    /// `POST /api/v1/auth/webauthn/authenticate/finish` (§24.1).
+    ///
+    /// On success this client is signed in: the server sets the same cookie
+    /// triple `POST /api/v1/auth/login` sets, and the §17 decision memo is
+    /// cleared because the subject changed (§24.3).
+    WebauthnLoginResult webauthn_authenticate_finish(const Sensitive<std::string>& state_token,
+                                                     const std::string& response);
+
+    /// `POST /api/v1/auth/webauthn/authenticate/discoverable/start` (§24.1) —
+    /// begin the usernameless ceremony.
+    ///
+    /// A PRIMARY FACTOR: nothing precedes it, `allowCredentials` comes back
+    /// empty, and the assertion itself identifies the user. Pass no workspace to
+    /// have it filled from this client's own configured identity.
+    ///
+    /// Unlike authenticate/finish, discoverable/finish fires the
+    /// `login.post_auth` reactor hook (§22.5) — the former continues a login
+    /// already gated at its password step, and this one has no such step.
+    WebauthnChallenge webauthn_discoverable_start(
+        std::optional<WebauthnWorkspace> workspace = std::nullopt);
+
+    /// `POST /api/v1/auth/webauthn/authenticate/discoverable/finish` (§24.1).
+    /// Adopts credentials exactly as webauthn_authenticate_finish() does.
+    WebauthnLoginResult webauthn_discoverable_finish(const Sensitive<std::string>& state_token,
+                                                     const std::string& response);
+
+    // ---- §25 account lifecycle and MFA enrolment ----
+    //
+    // See <axiam/account.hpp>. Six of the nine are unauthenticated by design.
+
+    /// `POST /api/v1/auth/mfa/enroll` (§25.1) — start voluntary TOTP enrolment
+    /// for the signed-in user.
+    ///
+    /// Changes nothing about the current session. In particular it does NOT
+    /// clear the §17 decision memo: the subject has not changed, and discarding
+    /// a warm memo on an unrelated profile action costs a round trip on every
+    /// check that follows (§25.2 rule 3).
+    ///
+    /// ENROLMENT IS TWO CALLS AND THIS IS ONLY THE FIRST. The factor is not
+    /// active until mfa_confirm() accepts a code derived from the returned
+    /// secret, and §25.2 rule 4 forbids a composed one-call helper here — the
+    /// human step in the middle is not something a helper can wait for.
+    MfaEnrollment mfa_enroll();
+
+    /// `POST /api/v1/auth/mfa/confirm` (§25.1) — activate the factor
+    /// mfa_enroll() offered. Returns the server's own `mfa_enabled` answer.
+    bool mfa_confirm(const std::string& totp_code);
+
+    /// `POST /api/v1/auth/mfa/setup/enroll` (§25.1) — start the enrolment a
+    /// login() demanded.
+    ///
+    /// Reached when LoginResult::mfa_setup_required is set: the tenant requires
+    /// MFA and this account has none. There is no session yet — the setup token
+    /// IS the credential.
+    MfaEnrollment mfa_setup_enroll(const Sensitive<std::string>& setup_token);
+
+    /// `POST /api/v1/auth/mfa/setup/confirm` (§25.1) — finish forced enrolment
+    /// and, with it, the login that was interrupted.
+    ///
+    /// Adopts credentials exactly as login() does, because it IS the completion
+    /// of a login (§25.2 rule 2) — including clearing the §17 memo.
+    LoginResult mfa_setup_confirm(const Sensitive<std::string>& setup_token,
+                                  const std::string& totp_code);
+
+    /// `POST /api/v1/auth/verify-email` (§25.1). Unauthenticated; the tenant is
+    /// a BODY field.
+    void verify_email(const Sensitive<std::string>& token, const std::string& tenant_id);
+
+    /// `POST /api/v1/auth/resend-verification` (§25.1). Unauthenticated; the
+    /// tenant is a BODY field.
+    void resend_verification(const std::string& email, const std::string& tenant_id);
+
+    /// `POST /api/v1/auth/reset` (§25.1) — ask for a reset mail.
+    ///
+    /// RETURNS NORMALLY WHETHER OR NOT THE ADDRESS EXISTS, and this SDK exposes
+    /// no way to tell the two apart. That is not an omission to improve on: a
+    /// client that surfaced a "no such user" state — even one inferred from
+    /// timing — would turn the endpoint into the account-enumeration oracle its
+    /// uniform response exists to prevent (§25.4).
+    void request_password_reset(const PasswordResetRequest& request);
+
+    /// `GET /api/v1/auth/reset/context?token=…` (§25.1) — the OPAQUE policy for
+    /// the account a reset token belongs to.
+    ///
+    /// Call this before confirm_password_reset() on any tenant that might have
+    /// §23 enabled: the client has to build a registration record, and building
+    /// one needs parameters it cannot know before it has a token to ask with.
+    /// Sending a plaintext password to a tenant in `opaque_mode: required` is
+    /// refused, and refused late (§25.4 rule 1).
+    ///
+    /// A `404` means unknown, expired OR already-consumed, deliberately without
+    /// distinguishing them; this SDK does not distinguish them either (§25.4
+    /// rule 3).
+    PasswordResetContext password_reset_context(const Sensitive<std::string>& token);
+
+    /// `POST /api/v1/auth/reset/confirm` (§25.1) — set the new password.
+    void confirm_password_reset(const PasswordResetConfirmation& confirmation);
+
+    // ---- §26 Pushed Authorization Requests (RFC 9126) ----
+
+    /// `POST /oauth2/par?tenant_id=<uuid>` (§26.1) — push the authorization
+    /// request over the back channel and get an opaque handle to redirect with.
+    ///
+    /// PAR moves the authorization request off the browser. Instead of putting
+    /// `scope`, `redirect_uri`, `state` and the PKCE challenge into a URL the
+    /// user agent carries, the client POSTs them straight to AXIAM over an
+    /// authenticated channel and puts an opaque `request_uri` in the redirect.
+    /// What travels through the browser is then a random string that cannot be
+    /// edited into meaning something else.
+    ///
+    /// REQUIRED FOR A FAPI 2.0 CLIENT: `profile: "fapi2"` refuses a registration
+    /// that does not set `require_par`, so such a client cannot authorize any
+    /// other way (§21.1).
+    ///
+    /// NOT RETRIED on a 5xx or a transport failure — it is a POST that creates
+    /// server state, so it falls outside §16.2's read-only eligibility exactly
+    /// as oidc_exchange() does. The safe recovery is a fresh push, which costs
+    /// one round trip and cannot double-consume anything (§26.2 rule 4).
+    ///
+    /// @param request what oidc_begin() returned. Its state, nonce and PKCE
+    ///                verifier are pushed as-is (§26.2 rule 1) — there is no
+    ///                second generator here, and there must not be.
+    /// @throws AuthError, client-side with NO wire call, when the discovery
+    ///         document advertises no PAR endpoint. §12.7.2 rule 1's discipline:
+    ///         never synthesise the URL from the issuer.
+    PushedAuthorizationRequest oidc_par(const OidcConfiguration& config,
+                                        const AuthorizationRequest& request,
+                                        const std::string& redirect_uri,
+                                        std::optional<std::string> scope = std::nullopt,
+                                        std::optional<std::string> tenant_id = std::nullopt);
 
     // ---- Accepted per-language async twins (§1, C++ row: std::future) ----
     std::future<LoginResult> login_async(std::string username_or_email, std::string password);

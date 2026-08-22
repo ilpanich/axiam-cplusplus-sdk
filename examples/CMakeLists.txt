@@ -33,6 +33,18 @@ target_link_libraries(axiam_example_device_login PRIVATE axiam::axiam_cpp)
 add_executable(axiam_example_token_exchange token_exchange.cpp)
 target_link_libraries(axiam_example_token_exchange PRIVATE axiam::axiam_cpp)
 
+# Contract 1.28: §24 WebAuthn (the wire operations plus §24.6a's JSON bridge —
+# a C++ program has no authenticator, so there is no ceremony helper), §25
+# account lifecycle and MFA enrolment, and §26 pushed authorization requests.
+add_executable(axiam_example_webauthn_passkeys webauthn_passkeys.cpp)
+target_link_libraries(axiam_example_webauthn_passkeys PRIVATE axiam::axiam_cpp)
+
+add_executable(axiam_example_account_lifecycle account_lifecycle.cpp)
+target_link_libraries(axiam_example_account_lifecycle PRIVATE axiam::axiam_cpp)
+
+add_executable(axiam_example_par_login par_login.cpp)
+target_link_libraries(axiam_example_par_login PRIVATE axiam::axiam_cpp)
+
 # CONTRACT.md §22.11 — a NON-NORMATIVE reactor sample.
 #
 # This SDK ships no reactor runtime and this target adds none: nothing here is

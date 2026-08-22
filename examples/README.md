@@ -13,7 +13,10 @@ build them offline and run them against a real server when you have one.
 | [`telemetry_hook.cpp`](telemetry_hook.cpp) | Metrics without a metrics dependency: §19 hooks, the §16 retry signal, the §19.2 rule 6 clamp warning, and §18 `close()` |
 | [`uma_resource_server.cpp`](uma_resource_server.cpp) | UMA 2.0 (§20), emit half: register a resource, guard it, answer a denial with `WWW-Authenticate: UMA` |
 | [`uma_client.cpp`](uma_client.cpp) | The other half: parse the challenge, make the **trust decision** §20.3 keeps in the caller's hands, then exchange the ticket for an RPT |
-| [`reactor/`](reactor/README.md) | **NON-NORMATIVE** (§22.11): a hand-rolled §22 reactor — this SDK ships no runtime, but §22.1–§22.8 still binds an integrator, and the sample checks itself against the committed §22.13 vectors |
+| [`webauthn_passkeys.cpp`](webauthn_passkeys.cpp) | Passkeys (§24): the six wire operations and §24.6a's JSON bridge — and why there is no ceremony helper here, since a C++ program has no authenticator and §24.6b rule 2 forbids emulating one |
+| [`account_lifecycle.cpp`](account_lifecycle.cpp) | The calls a user makes about their own account (§25): voluntary and forced TOTP enrolment, email verification, and a password reset that discloses nothing about whether the address exists |
+| [`par_login.cpp`](par_login.cpp) | Pushed authorization requests (§26, RFC 9126): the push answers **201**, and the redirect carries exactly `client_id` and `request_uri` |
+| [`reactor/`](reactor/README.md) | A §22 reactor on the SDK's protocol core (§22.11): the §8b broker-URL guard, the §22.14 binder, and the runtime driven over a transport skeleton you replace with your own AMQP client — checked against the committed §22.13 vectors |
 
 ## Build
 
@@ -42,6 +45,11 @@ Configuration is read from the environment (defaults in parentheses):
 | `AXIAM_USERNAME`    | `alice` | Account name (opaque_login) |
 | `AXIAM_NEW_PASSWORD` | unset | Set it to make `opaque_login` also build a registration record |
 | `AXIAM_OPAQUE_LIBRARY` | unset | Full path to `libaxiam_opaque_ffi` when it is not already on the loader path (opaque_login) |
+| `AXIAM_TENANT_ID`   | all-zero UUID | Tenant UUID — a **body** field for §25, a query parameter for §26 (account_lifecycle, par_login) |
+| `AXIAM_RESET_TOKEN` | unset | Set it to carry `account_lifecycle` past the reset request into `reset/context` |
+| `AXIAM_OIDC_CLIENT_ID` / `AXIAM_OIDC_CLIENT_SECRET` | `example-rp` / `example-secret` | Relying-party identity (oidc_login, device_login, par_login) |
+| `AXIAM_REDIRECT_URI` | `https://app.example.com/callback` | Replayed byte-identically at exchange time (par_login) |
+| `AXIAM_AUTH_CODE`   | unset | Set it to make `par_login` also run the exchange |
 | `AXIAM_RESOURCE_ID` | all-zero UUID | Resource id to check (rest_authz only) |
 
 ```bash

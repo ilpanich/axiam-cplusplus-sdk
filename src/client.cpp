@@ -320,10 +320,30 @@ LoginResult Client::login(const std::string& username_or_email, const std::strin
     if (p_->org_slug) body["org_slug"] = *p_->org_slug;
     if (p_->org_id) body["org_id"] = *p_->org_id;
 
-    HttpResponse resp = p_->execute("POST", "/api/v1/auth/login", body.dump(), /*allow_refresh=*/false);
+    // send_raw rather than execute(): §25.2 rule 1 gives the 403 from this
+    // endpoint a specific, non-error meaning when its body says
+    // `mfa_setup_required`, and execute()'s raise_for_status would collapse it
+    // into an AuthzError with the body discarded — leaving the caller with a
+    // generic denial and no setup token to act on. Every other status still goes
+    // through the same mapping, below.
+    HttpResponse resp = p_->send_raw(p_->build_request("POST", "/api/v1/auth/login", body.dump()));
     auto j = json::parse(resp.body, nullptr, false);
 
     LoginResult result;
+    if (resp.status == 403 && !j.is_discarded() && j.is_object() &&
+        j.value("mfa_setup_required", false)) {
+        // §25.2 rule 1: the tenant requires MFA and this account has none, so
+        // the login stopped short of a session. Before §25 an SDK either
+        // reported this as a generic failure or, worse, as a successful login
+        // with no session — both leave the caller with nothing to do next. The
+        // setup token IS the credential for mfa_setup_enroll /
+        // mfa_setup_confirm.
+        result.mfa_setup_required = true;
+        result.setup_token = Sensitive<std::string>(j.value("setup_token", std::string{}));
+        return result;
+    }
+    if (resp.status < 200 || resp.status >= 300) Client::Impl::raise_for_status(resp);
+
     if (resp.status == 202 || (!j.is_discarded() && j.value("mfa_required", false))) {
         result.mfa_required = true;
         if (!j.is_discarded()) {

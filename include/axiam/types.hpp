@@ -38,6 +38,18 @@ struct LoginResult {
     /// Pass it straight back to Client::verify_mfa(), which takes the wrapper.
     Sensitive<std::string> challenge_token;
     std::vector<std::string> available_methods;
+
+    // MFA-setup-required branch (§25.2 rule 1).
+    /// The tenant requires MFA and this account has none, so the login stopped
+    /// short of a session. ADDITIVE rather than breaking, because this type is a
+    /// flags struct: an existing caller that checks `mfa_required` and otherwise
+    /// assumes success still compiles, and now has a third state it can learn
+    /// about rather than a fourth failure mode it cannot name.
+    bool mfa_setup_required = false;
+    /// The credential for mfa_setup_enroll() and mfa_setup_confirm(). There is
+    /// no session yet — this token IS the credential — so §7 wraps it exactly as
+    /// it wraps the MFA challenge token above.
+    Sensitive<std::string> setup_token;
 };
 
 /// Result of a token refresh (§9). Access/refresh tokens themselves live in the
