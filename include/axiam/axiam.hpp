@@ -15,6 +15,7 @@
 #include "axiam/transport.hpp"
 #include "axiam/types.hpp"
 #include "axiam/opaque.hpp"
+#include "axiam/reactor.hpp"
 #include "axiam/uma.hpp"
 #include "axiam/webauthn.hpp"
 #include "axiam/webhook.hpp"

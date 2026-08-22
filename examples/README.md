@@ -16,7 +16,7 @@ build them offline and run them against a real server when you have one.
 | [`webauthn_passkeys.cpp`](webauthn_passkeys.cpp) | Passkeys (§24): the six wire operations and §24.6a's JSON bridge — and why there is no ceremony helper here, since a C++ program has no authenticator and §24.6b rule 2 forbids emulating one |
 | [`account_lifecycle.cpp`](account_lifecycle.cpp) | The calls a user makes about their own account (§25): voluntary and forced TOTP enrolment, email verification, and a password reset that discloses nothing about whether the address exists |
 | [`par_login.cpp`](par_login.cpp) | Pushed authorization requests (§26, RFC 9126): the push answers **201**, and the redirect carries exactly `client_id` and `request_uri` |
-| [`reactor/`](reactor/README.md) | **NON-NORMATIVE** (§22.11): a hand-rolled §22 reactor — this SDK ships no runtime, but §22.1–§22.8 still binds an integrator, and the sample checks itself against the committed §22.13 vectors |
+| [`reactor/`](reactor/README.md) | A §22 reactor on the SDK's protocol core (§22.11): the §8b broker-URL guard, the §22.14 binder, and the runtime driven over a transport skeleton you replace with your own AMQP client — checked against the committed §22.13 vectors |
 
 ## Build
 

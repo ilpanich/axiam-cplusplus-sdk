@@ -32,6 +32,7 @@ add_library(axiam_cpp
   src/jwks.cpp
   src/oidc.cpp
   src/opaque.cpp
+  src/reactor.cpp
   src/webauthn.cpp
   src/webhook.cpp
 )

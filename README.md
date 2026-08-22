@@ -12,12 +12,15 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §16–§19, §20, §21, §23 and §24–§26 (including §6.1 mTLS, §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — and §24's six wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §16–§19, §20, §21, §22, §23 and §24–§26 (including §6.1 mTLS, §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — and §24's six wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets).**
 
-> Scope note: this v1 covers the REST surface. **gRPC** — including the gRPC-only
-> `get_user_info` operation (CONTRACT §1.1, contract 1.3) — and **§8 AMQP HMAC** are
-> intentionally out of scope for v1 (the cross-language contract does not require
-> AMQP of C++); see [Deferred / follow-ups](#deferred--follow-ups). Per §1.1 the REST
+> **§22 note, and it matters at integration time:** "conforms to … §22" is the claim; **"ships an AMQP client" is not**. The reactor *protocol* — verification, canonical signing, the registry, the runtime and the §22.14 binder — is in the library. The *transport* is caller-supplied (§22.11): this SDK vendors no AMQP dependency, and you implement `axiam::ReactorTransport` over whichever client you already trust.
+
+> Scope note: this v1 covers the REST surface plus the §22 reactor protocol core.
+> **gRPC** — including the gRPC-only `get_user_info` operation (CONTRACT §1.1,
+> contract 1.3) — and the **§8 AMQP HMAC consumer** are intentionally out of scope
+> for v1 (the cross-language contract does not require AMQP of C++); see
+> [Deferred / follow-ups](#deferred--follow-ups). Per §1.1 the REST
 > `/oauth2/userinfo` endpoint is not substituted for the gRPC operation.
 
 - Namespace: `axiam` — library target `axiam_cpp` (CMake `axiam::axiam_cpp`).
@@ -978,25 +981,91 @@ producing a 404 that reads like a broken request.
 
 Worked example: [`examples/par_login.cpp`](examples/par_login.cpp).
 
+## §22 Reactors — the protocol core over your own transport
+
+A **reactor** is an external service AXIAM consults synchronously at five points
+in its own flows: it may veto a login, enrich a token, or adjust a user before
+creation. This SDK ships §22.1–§22.8 and §22.14 in full — the §8 v2 verification
+set on the event, the canonical serialization and MAC in both directions, the
+§22.5 registry and its allow-lists, §22.8's strictest-wins default, the runtime,
+and the declarative binder.
+
+**What it does not ship is a connection.** §22.11 defers the transport, and only
+the transport:
+
+> the convenience that genuinely needed a vendored dependency was the
+> **connection**, and the runtime around it needed none.
+
+Until contract 1.28 this SDK shipped nothing from §22 at all while the section
+still bound an integrator to §22.1–§22.8. The half deferred for want of a
+*dependency* was the transport; the half every integrator was left to hand-roll
+from prose was the **protocol** — v2 HMAC over a canonical serialization with a
+`null` signature placeholder, freshness in both directions, nonce and correlation
+binding, the per-event allow-lists. That is the half with the sharp edges, none
+of them AMQP-shaped, and asking every integrator to reimplement it is how a
+signing bug ships.
+
+```cpp
+// §8b rules 1–5, BEFORE anything opens a socket. A public, tested function
+// rather than a doc comment — §22.11 rule 3.
+const auto endpoint = axiam::amqps_endpoint(broker_url, ca_pem);
+
+// §22.14: one handler per event. An unregistered name is refused AT BIND TIME.
+axiam::ReactorRouter router;
+router.on(axiam::kReactorEventLoginPostAuth, [](const axiam::ReactorEvent& e) -> axiam::ReactorAnswer {
+    return suspicious(e.payload_json) ? axiam::ReactorDecision::allow_with_step_up()
+                                      : axiam::ReactorDecision::allow();
+});
+
+axiam::ReactorConfig config{tenant_id, reactor_id, axiam::Sensitive<std::string>(subkey)};
+axiam::reactor_serve(config, your_transport, router.build());
+```
+
+**The transport interface has exactly two capabilities** (§22.11 rule 1): take
+the next delivery, and publish a reply to a named destination. It is not wider
+than that on purpose — an interface that also exposed declare, bind or queue-name
+derivation would hand you the tools §22.1 forbids using. A reactor that can bind
+is a reactor that can bind itself to `*.token.pre_issue` and read another
+tenant's issuance events.
+
+**It fails closed on its own errors** (§22.10 rule 2). A handler that throws, a
+body it cannot verify, or a window that has closed all produce **no reply**, and
+the registration's `failure_policy` decides. A runtime that answered `allow` for a
+handler that crashed would have overridden the operator's `fail_closed` setting
+from inside the library — which is exactly the defect §22.14 exists to keep out
+of *user* code too, where a `default:` arm returning `allow()` does the same thing
+from a file nobody reads. An unbound event abstains.
+
+**It does not filter a patch** (§22.4 rule 1). One forbidden key rejects the
+whole patch server-side, including the fields that would have been fine — and
+dropping the offender to rescue the rest would leave the author believing a field
+was set when it was dropped. `reactor_patch_field_allowed()` will *tell* you what
+the registry admits; nothing in this SDK calls it to prune anything.
+
+**The three hot-path decision operations are not hookable** (§22.7), and they
+appear in no constant here. A reactor round trip is milliseconds; the check path's
+budget is microseconds. An application needing external input on an authorization
+decision writes a **deny grant**, which the engine evaluates in the hot path at
+hot-path cost.
+
+Correctness is not asserted against this implementation's own opinion: the suite
+runs the committed **§22.13 reference vectors**, generated by the server's own
+sign path, in both directions. Worked example, including a transport skeleton:
+[`examples/reactor/`](examples/reactor/README.md).
+
 ## Deferred / follow-ups
 
 - **gRPC transport** (Tonic-parity authz checks). The §6.1 "both transports" rule
   applies once gRPC lands; the REST client already isolates TLS material for reuse.
 - **§8 AMQP HMAC consumer** (not required of C++ by the contract).
-- **§22 reactor runtime.** No `reactor_serve` here, for the same reason: §22.11
-  defers the *runtime helper* on Swift, C and C++ because there is no vendorable
-  AMQP client for these targets. **That is a scope decision about the helper, not
-  a statement that reactors are unavailable to you.** §22.1–§22.8 is a wire
-  protocol, so an integrator hand-rolling a reactor against a third-party AMQP
-  client MUST satisfy every normative rule in it — the §8 v2 verification set on
-  the event, the signed reply shape with its omission rules (note that
-  `hmac_signature` serializes as **`null`** inside a reactor body rather than
-  being omitted as it is in §8's own two message types), the per-event
-  mutable-field allow-lists, and §22.7's hot-path exclusion. The §22.13 vectors
-  are the conformance surface and need no SDK to run against. Start from
-  [§22 and §22.11 of `CONTRACT.md`](CONTRACT.md) and the non-normative sample in
-  [`examples/reactor/`](examples/reactor/README.md), which checks itself against
-  those vectors.
+- **A bundled AMQP client**, and only that. §22.11 keeps the transport deferred:
+  there is no maintained AMQP client for these targets this project is willing to
+  vendor, which is the same reason §8 has never listed C++ among the SDKs that
+  speak AMQP. The **protocol** is no longer deferred with it — see
+  [§22 Reactors](#22-reactors-the-protocol-core-over-your-own-transport) — so what
+  remains is implementing `axiam::ReactorTransport` over the client you choose.
+  Revisit when a vendorable client exists; the wire protocol will not need to
+  change for it, and now neither will the runtime.
 - **The optional `OidcStateStore`** (§12.3 rule 1). The core §12 operations are
   usable without one and the store is a MAY; a C++ reference implementation with
   the mandated 10-minute TTL, single-use `consume`, and lazy (never

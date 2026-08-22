@@ -40,12 +40,14 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
-      # CONTRACT.md §22.11/§22.13: this sample is a non-normative reactor
-      # that self-checks against the committed §22.13 reference vectors and
-      # exits non-zero on any byte mismatch. Running it here turns the
-      # sample into a real conformance gate instead of resting on a single
-      # local run that can rot silently as the contract evolves.
-      - name: Run reactor conformance sample (CONTRACT.md §22.11/§22.13)
+      # CONTRACT.md §22.11/§22.13: the sample drives the LIBRARY's reactor
+      # runtime over a transport that replays the committed §22.13 reference
+      # vectors, and exits non-zero on any byte mismatch. The suite already
+      # covers those vectors directly; running the sample too is what keeps the
+      # example itself from rotting silently as the contract evolves — an
+      # example that no longer compiles or no longer agrees with the server is
+      # the one artifact people copy into their own service.
+      - name: Run reactor sample against the §22.13 vectors (CONTRACT.md §22.11)
         run: ./build/examples/axiam_example_reactor
 
   sanitizers:
