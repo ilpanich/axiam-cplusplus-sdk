@@ -4,6 +4,14 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha39] - 2026-08-23
+
+### Changed
+
+- Name the conformance sections individually
+- Re-vendor CONTRACT.md for the §14.1 anchor repair
+- Re-vendor openapi.json at 1.0.0-alpha38
+
 ## [1.0.0-alpha38] - 2026-08-22
 
 ### Added
