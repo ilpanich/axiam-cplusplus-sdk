@@ -88,6 +88,14 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Changed
 
+- Re-vendor `openapi.json` at **1.0.0-alpha38**. The server registered the four
+  GDPR data-subject endpoints (`POST /api/v1/account/export`,
+  `GET /api/v1/account/export/{token}`, `POST /api/v1/account/delete`,
+  `GET /api/v1/auth/account/delete/cancel`), taking the document to 181
+  operations across 121 paths. Purely additive, and no SDK surface changes with
+  it: nothing in this repo is generated from the spec, so the cross-repo
+  artifact-drift gate was the only thing reporting `STALE`.
+
 - `LoginResult` gained `mfa_setup_required` and `setup_token` (§25.2 rule 1): a
   `403` carrying `mfa_setup_required` now fills them instead of throwing a
   generic `AuthzError` with the body discarded. **Additive**, because this type
