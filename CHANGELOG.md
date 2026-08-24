@@ -4,6 +4,17 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [1.0.0-alpha41] - 2026-08-24
+
+### Added
+
+- Fall back to /auth/login when a KE2 fails under opaque_mode optional
+
+### Changed
+
+- Re-vendor openapi.json for the vault_pki CA custodian (axiam#368)
+- Re-vendor CONTRACT.md 1.29 and openapi.json 1.0.0-alpha40
+
 ## [1.0.0-alpha40] - 2026-08-23
 
 ### Changed
