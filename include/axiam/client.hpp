@@ -211,6 +211,28 @@ public:
     /// record expensive to attack even by someone holding the OPRF seed. It is
     /// synchronous and blocking.
     ///
+    /// **A failed exchange under `opaque_mode: optional` falls back to \ref
+    /// login, here, once** (§23.4 rule 7, contract 1.29). `login/start` reports
+    /// the tenant's mode, and under `optional` an account with no registration
+    /// record is the ordinary case rather than an error: every account has none
+    /// the moment an operator enables OPAQUE, and they acquire one only as they
+    /// next set a password. So when the envelope does not open and the tenant
+    /// said `optional`, this method retries the same credentials over
+    /// `POST /api/v1/auth/login` and returns that call's outcome — its success
+    /// on success, its error on failure. Without it, enabling `optional` would
+    /// lock out every user of a tenant mid-migration, which is the state
+    /// `optional` exists to serve. Under `required`, and against any server too
+    /// old to report a mode at all, there is no retry: `required` answers
+    /// `403 opaque_required` for every principal, so the attempt would put a
+    /// plaintext password on the wire for nothing. An unrecognised mode is
+    /// treated as `required` — fail closed.
+    ///
+    /// That reported mode is **not** downgrade protection and must not be
+    /// presented as such: a hostile server that wanted the plaintext could
+    /// simply answer `404` and get the fallback whatever mode it claims.
+    /// `required` is what closes that, server-side, by refusing `/auth/login`
+    /// before any credential is examined.
+    ///
     /// \throws NetworkError if the tenant has OPAQUE disabled (the endpoint
     ///         answers 404 — a property of the tenant, not of any user), if
     ///         `libaxiam_opaque_ffi` is not installed, if the server names a
@@ -220,11 +242,14 @@ public:
     ///         would send a user off to reset a password that works, and would
     ///         stop a caller falling back to \ref login.
     /// \throws AuthError when the envelope does not open — a wrong password, an
-    ///         account that does not exist, and a server that does not hold the
-    ///         record, indistinguishable by design. **Nothing is sent to
-    ///         `login/finish` in that case** (§23.4 rule 7), and a caller must
-    ///         not retry over \ref login: that hands the plaintext to an
-    ///         endpoint that just failed to prove itself.
+    ///         account that does not exist, an account with no registration
+    ///         record, and a server that does not hold one, indistinguishable by
+    ///         design. **Nothing is sent to `login/finish` in that case**
+    ///         (§23.4 rule 7). Under `opaque_mode: required`, and against a
+    ///         server that reports no mode, that is the end of it and a caller
+    ///         must **not** retry over \ref login by hand; under `optional` this
+    ///         method has already retried, so an AuthError from it is
+    ///         `/auth/login`'s own answer.
     LoginResult login_opaque(const std::string& username_or_email, const std::string& password);
 
     /// Builds a registration record for `password`, to send with any request

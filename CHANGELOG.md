@@ -102,6 +102,32 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Changed
 
+- **`login_opaque()` falls back to `login()` when the tenant reports
+  `opaque_mode: optional` and the envelope does not open (CONTRACT §23.4 rule 7,
+  contract 1.29).** `login/start` now returns a `mode` field, and that field —
+  and nothing else — decides what a failed `KE2` does next: under `optional` the
+  same username and password are retried once over `POST /api/v1/auth/login` and
+  the caller gets that call's outcome, its success on success and its error on
+  failure; under `required`, against a server that reports no `mode` at all, and
+  for any value that is not exactly `optional`, the failure stays an `AuthError`
+  and no plaintext password leaves the process. `KE3` still never reaches
+  `login/finish` on any of those paths, and the `404` "this tenant has OPAQUE
+  disabled" mapping is untouched. Without the `optional` branch, enabling that
+  mode would lock out every user of a tenant: every account has no registration
+  record the moment an operator turns OPAQUE on and acquires one only as it next
+  sets a password, so a failed exchange there is the ordinary case rather than an
+  error. `mode` is **not** downgrade protection and is not documented as such — a
+  hostile server wanting the plaintext could answer `404` and get the fallback
+  whatever it claims; `required` closes that server-side. `tests/test_opaque_login.cpp`
+  gains seven cases covering both `optional` outcomes, `required`, an absent
+  `mode`, an unrecognised one, and the two failures that are *not* rule 7's (a
+  `404` and a refused key-stretching function) staying non-fallback.
+- Re-vendor `CONTRACT.md` at **1.29** and `openapi.json` at **1.0.0-alpha40**,
+  matching the server. The one normative change is §23.4 rule 7 and the `mode`
+  field §23.5 adds to the `login/start` response, above.
+- README documents the fallback where it previously said "do not retry it over
+  `login()`" without qualification — true under `required`, and the advice that
+  locks out a migrating tenant under `optional`.
 - Re-vendor `CONTRACT.md`. Repairs §14.1's link to the `device_login` heading,
   which dropped a hyphen the em dash leaves behind and so rendered as a link
   that went nowhere; the same heading's other two links were already correct.

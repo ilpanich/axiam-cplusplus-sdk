@@ -69,6 +69,16 @@ struct Script {
     bool omit_registration_response = false;
     bool malformed_start_body = false;
     std::string ksf = OpaqueKsfParams::kArgon2id;
+
+    /// The tenant's `opaque_mode`, as login/start reports it (§23.5, contract
+    /// 1.29). An EMPTY string omits the field entirely, which is what a server
+    /// older than the field does — and is deliberately not the same script as
+    /// `"required"`, because §23.4 rule 7 has to reach the same answer by two
+    /// different routes and only a test that drives both proves it.
+    std::string mode;
+
+    /// What `POST /api/v1/auth/login` — the §23.4 rule 7 fallback — answers.
+    long password_login_status = 200;
 };
 
 std::string ksf_fields(const Script& s) {
@@ -97,6 +107,7 @@ void install_router(std::shared_ptr<FakeState> st, Script script) {
             if (script.malformed_start_body) return json_response(200, "not json at all");
             std::string body = R"({"opaque_session":"handle-42")";
             if (!script.omit_ke2) body += R"(,"ke2":")" + std::string(kWireKe2) + R"(")";
+            if (!script.mode.empty()) body += R"(,"mode":")" + script.mode + R"(")";
             body += "," + ksf_fields(script) + "}";
             return json_response(200, body);
         }
@@ -132,6 +143,19 @@ void install_router(std::shared_ptr<FakeState> st, Script script) {
             }
             body += "," + ksf_fields(script) + "}";
             return json_response(200, body);
+        }
+
+        // The plaintext endpoint §23.4 rule 7's `optional` clause falls back to.
+        // Its user id differs from the OPAQUE one on purpose: that is how a test
+        // sees WHICH path produced the result rather than only that one did.
+        if (req.url.find("/auth/login") != std::string::npos) {
+            if (script.password_login_status != 200) {
+                return json_response(script.password_login_status, "{}");
+            }
+            return json_response(200,
+                                 R"({"session_id":"sess-pw","expires_in":900,)"
+                                 R"("user":{"id":"u-pw","username":"alice",)"
+                                 R"("email":"a@x.io","tenant_id":"t-1"}})");
         }
 
         return json_response(404, R"({"message":"not found"})");
@@ -371,6 +395,167 @@ AXIAM_TEST("login_opaque: a wrong password never reaches login/finish") {
     AXIAM_CHECK(st->count_path("/auth/opaque/login/start") == 1);
     AXIAM_CHECK(st->count_path("/auth/opaque/login/finish") == 0);
     AXIAM_CHECK_FALSE(c.has_session());
+    AXIAM_CHECK_FALSE(fake.leaked());
+}
+
+// ---------------------------------------------------------------------------
+// §23.4 rule 7 — what a failed KE2 does next, decided by `mode` and only by it
+//
+// The mid-migration case is the one that matters: under `optional` every
+// account has no registration record until it next sets a password, so an
+// exchange that fails is the ORDINARY case and treating it as final locks out
+// the whole tenant. Under `required` — and against any server too old to report
+// a mode — the opposite is true and a retry would put a plaintext password on
+// the wire for an endpoint that answers 403 to everyone. Every test here also
+// pins that KE3 never reaches login/finish, because that is the invariant a
+// fallback could plausibly break.
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("login_opaque: optional + a failed KE2 falls back to /auth/login") {
+    FakeNative fake;
+    ScopedFakeNative native(fake);
+    fake.fail(FakeEntry::kLoginFinish);
+    auto st = std::make_shared<FakeState>();
+    Script script;
+    script.mode = "optional";
+    install_router(st, script);
+    const std::string password = mint_password();
+
+    Client c = make_client(st);
+    LoginResult res = c.login_opaque(kUser, password);
+
+    // The caller gets a login, not an error — and the id proves it came from the
+    // plaintext endpoint rather than from the OPAQUE one.
+    AXIAM_REQUIRE(res.user.has_value());
+    AXIAM_CHECK(res.user->id == "u-pw");
+    AXIAM_CHECK(res.session_id == "sess-pw");
+    AXIAM_CHECK(c.has_session());
+
+    AXIAM_CHECK(st->count_path("/auth/opaque/login/finish") == 0);
+    AXIAM_REQUIRE(st->count_path("/auth/login") == 1);
+
+    // The SAME credentials, over the SDK's own login path.
+    const json body = body_of(st, "/auth/login");
+    AXIAM_CHECK(body.value("username_or_email", "") == kUser);
+    AXIAM_CHECK(body.value("password", "") == password);
+    AXIAM_CHECK(body.value("tenant_slug", "") == "acme");
+    AXIAM_CHECK_FALSE(fake.leaked());
+}
+
+AXIAM_TEST("login_opaque: optional + a failed fallback reports /auth/login's own answer") {
+    FakeNative fake;
+    ScopedFakeNative native(fake);
+    fake.fail(FakeEntry::kLoginFinish);
+    auto st = std::make_shared<FakeState>();
+    Script script;
+    script.mode = "optional";
+    script.password_login_status = 401;
+    install_router(st, script);
+
+    Client c = make_client(st);
+    AXIAM_REQUIRE_THROWS_AS((void)c.login_opaque(kUser, mint_password()), AuthError);
+    AXIAM_CHECK(st->count_path("/auth/login") == 1);
+    AXIAM_CHECK(st->count_path("/auth/opaque/login/finish") == 0);
+    AXIAM_CHECK_FALSE(c.has_session());
+    AXIAM_CHECK_FALSE(fake.leaked());
+}
+
+AXIAM_TEST("login_opaque: required + a failed KE2 never touches /auth/login") {
+    // `required` answers 403 opaque_required for every principal, so a retry
+    // would hand a plaintext password to an endpoint that cannot accept it.
+    FakeNative fake;
+    ScopedFakeNative native(fake);
+    fake.fail(FakeEntry::kLoginFinish);
+    auto st = std::make_shared<FakeState>();
+    Script script;
+    script.mode = "required";
+    install_router(st, script);
+
+    Client c = make_client(st);
+    const std::string message =
+        message_of<AuthError>([&] { (void)c.login_opaque(kUser, mint_password()); });
+    AXIAM_CHECK(message.find("invalid credentials") != std::string::npos);
+    AXIAM_CHECK(st->count_path("/auth/login") == 0);
+    AXIAM_CHECK(st->count_path("/auth/opaque/login/finish") == 0);
+    AXIAM_CHECK_FALSE(c.has_session());
+    AXIAM_CHECK_FALSE(fake.leaked());
+}
+
+AXIAM_TEST("login_opaque: no mode field at all is treated as required") {
+    // A server older than contract 1.29 sends no `mode`. Absence must not draw
+    // a plaintext password out of this SDK — the field is not a promise, and
+    // reading its absence as permission would be the one bug §23.4 rule 7's
+    // wording exists to prevent.
+    FakeNative fake;
+    ScopedFakeNative native(fake);
+    fake.fail(FakeEntry::kLoginFinish);
+    auto st = std::make_shared<FakeState>();
+    Script script;
+    script.mode.clear();  // omitted entirely
+    install_router(st, script);
+
+    Client c = make_client(st);
+    AXIAM_REQUIRE_THROWS_AS((void)c.login_opaque(kUser, mint_password()), AuthError);
+    AXIAM_CHECK(st->count_path("/auth/login") == 0);
+    AXIAM_CHECK(st->count_path("/auth/opaque/login/finish") == 0);
+    AXIAM_CHECK_FALSE(fake.leaked());
+}
+
+AXIAM_TEST("login_opaque: an unrecognised mode fails closed") {
+    // Anything that is not exactly `optional` is `required`. A future value read
+    // as permission to fall back would be a downgrade this SDK performed on
+    // itself.
+    FakeNative fake;
+    ScopedFakeNative native(fake);
+    fake.fail(FakeEntry::kLoginFinish);
+    auto st = std::make_shared<FakeState>();
+    Script script;
+    script.mode = "Optional";  // not the wire value; case matters
+    install_router(st, script);
+
+    Client c = make_client(st);
+    AXIAM_REQUIRE_THROWS_AS((void)c.login_opaque(kUser, mint_password()), AuthError);
+    AXIAM_CHECK(st->count_path("/auth/login") == 0);
+    AXIAM_CHECK(st->count_path("/auth/opaque/login/finish") == 0);
+    AXIAM_CHECK_FALSE(fake.leaked());
+}
+
+AXIAM_TEST("login_opaque: optional does not turn a 404 into a fallback") {
+    // §23.4 rule 7 governs a failed KE2 only. A 404 is the tenant saying it does
+    // not offer OPAQUE at all, and stays the distinguishable NetworkError a
+    // caller decides about — mode never even arrives on that path.
+    FakeNative fake;
+    ScopedFakeNative native(fake);
+    auto st = std::make_shared<FakeState>();
+    Script script;
+    script.mode = "optional";
+    script.login_start_status = 404;
+    install_router(st, script);
+
+    Client c = make_client(st);
+    const std::string message =
+        message_of<NetworkError>([&] { (void)c.login_opaque(kUser, mint_password()); });
+    AXIAM_CHECK(message.find("opaque_mode is disabled") != std::string::npos);
+    AXIAM_CHECK(st->count_path("/auth/login") == 0);
+    AXIAM_CHECK_FALSE(fake.leaked());
+}
+
+AXIAM_TEST("login_opaque: optional does not turn a refused ksf into a fallback") {
+    // A key-stretching function this SDK cannot ask for is a configuration
+    // fault, not a failed credential check — the exchange never reaches KE2, so
+    // rule 7 does not apply and no plaintext may leave.
+    FakeNative fake;
+    ScopedFakeNative native(fake);
+    auto st = std::make_shared<FakeState>();
+    Script script;
+    script.mode = "optional";
+    script.ksf = "bcrypt";
+    install_router(st, script);
+
+    Client c = make_client(st);
+    AXIAM_REQUIRE_THROWS_AS((void)c.login_opaque(kUser, mint_password()), NetworkError);
+    AXIAM_CHECK(st->count_path("/auth/login") == 0);
+    AXIAM_CHECK(st->count_path("/auth/opaque/login/finish") == 0);
     AXIAM_CHECK_FALSE(fake.leaked());
 }
 
