@@ -629,7 +629,17 @@ AXIAM_TEST("opaque: a non-ASCII password survives the round trip") {
     // Written as characters rather than \x escapes: a hex escape swallows every
     // following hex digit, so "\xaf" immediately before a 'c' is one escape of
     // 0xafc, not two bytes.
-    const std::string accented = u8"pàsswörd-ünïcøde";
+    //
+    // The cast is what makes this compile under every standard the SDK supports.
+    // `u8"..."` is `const char[]` in C++17 but `const char8_t[]` from C++20
+    // onwards, and `char8_t` does not convert to `std::string` — so this line was
+    // a hard error on any C++20-or-later build. Keeping the `u8` prefix and
+    // casting, rather than dropping the prefix, preserves the explicit UTF-8
+    // encoding guarantee: a plain literal would instead depend on the compiler's
+    // execution character set, which is not UTF-8 everywhere (MSVC without
+    // `/utf-8`, notably). Under C++17 the cast is a no-op.
+    const std::string accented =
+        reinterpret_cast<const char *>(u8"pàsswörd-ünïcøde");
 
     auto exchange = axiam::opaque::start_login(accented);
     AXIAM_CHECK(exchange.ke1() == "ke1:" + accented);

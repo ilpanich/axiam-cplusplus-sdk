@@ -38,6 +38,48 @@ This one is.
 
 ---
 
+## Supported C++ standards
+
+| | Standard | Why this one |
+|---|---|---|
+| **Floor** | C++17 | `CMAKE_CXX_STANDARD` in `CMakeLists.txt`, and what every consumer inherits by default. Exposed as `axiam::kMinCxxStandard`. Deliberately not newer — raising it would exclude long-lived-distro toolchains for nothing the SDK needs. |
+| **Newest** | C++23 | The newest published standard. Exposed as `axiam::kNewestTestedCxxStandard`. |
+
+C++20 sits between the two.
+
+**The SDK is built at the floor and additionally compiled and tested at C++23**, on
+**both g++ and clang++** — four legs in `sdk-ci-cpp.yml`.
+
+That second axis is not cosmetic, and this repo is the proof: adding it immediately
+caught a `u8""` literal assigned to a `std::string` in the test suite. That is
+perfectly legal C++17, and a **hard error from C++20**, where such a literal is
+`const char8_t[]`. Every consumer building this SDK at C++20 or later hit it, and
+nothing in CI ever did. A C++ standard can *remove* things, and the removals land on
+exactly the kind of code an SDK writes.
+
+Nothing changes for you if you build at C++17: it is still the default, and
+`cmake -S . -B build` with no flags produces exactly the build it always did. To
+compile against a newer standard, pass it:
+
+```bash
+cmake -S . -B build -DCMAKE_CXX_STANDARD=23
+```
+
+`<axiam/axiam.hpp>` refuses a toolchain below the floor with an `#error` at the point
+of inclusion — one message naming the problem rather than a cascade of errors that
+reads like a broken SDK. MSVC is checked through `_MSVC_LANG`, since it reports
+`199711L` in `__cplusplus` unless `/Zc:__cplusplus` is passed.
+
+> **`__cplusplus` is not the same on both compilers for a C++23 build.** g++ 13
+> reports the pre-ratification `202100L` for `-std=c++23`; clang 18 reports
+> `202302L`. Both are correct C++23 builds. Test `__cplusplus > 202002L` — "past
+> C++20" — when what you mean is "C++23 or later", and never compare
+> `kNewestTestedCxxStandard` for equality.
+
+See [`examples/version_compatibility.cpp`](./examples/version_compatibility.cpp) for
+a runnable check, and `tests/test_version_policy.cpp` for the gate that fails the
+build when `CMakeLists.txt`, the header constants and the CI matrix stop agreeing.
+
 ## Install
 
 ### CMake (FetchContent)

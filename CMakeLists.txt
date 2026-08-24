@@ -4,9 +4,28 @@ cmake_minimum_required(VERSION 3.16)
 # conanfile.py / README per the packaging conventions.
 project(axiam_cpp_sdk VERSION 1.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# C++17 is the DECLARED FLOOR: the standard the SDK promises to compile under, and
+# what every consumer inherits by default. It is deliberately not the newest —
+# raising it would exclude long-lived-distro toolchains for nothing the SDK needs.
+#
+# Overridable from the command line (`-DCMAKE_CXX_STANDARD=23`) rather than
+# hardcoded, so CI can compile these exact sources under a newer standard too.
+# That matters here in a way it does not in most languages: a C++ standard can
+# REMOVE things, and the removals land on exactly the kind of code an SDK writes.
+# C++20 made `u8""` literals `char8_t` rather than `char`, C++17 had already
+# removed `std::auto_ptr` and `std::random_shuffle`, and `std::char_traits`
+# specialisations were narrowed. A consumer whose own project sets
+# `-std=c++23` — entirely their prerogative — would otherwise be the first person
+# to compile this SDK that way.
+#
+# `if(NOT DEFINED ...)` rather than a CACHE entry so the default is unchanged for
+# every existing consumer: pass nothing and this is still a C++17 build.
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+message(STATUS "AXIAM C++ SDK: compiling against C++${CMAKE_CXX_STANDARD}")
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)

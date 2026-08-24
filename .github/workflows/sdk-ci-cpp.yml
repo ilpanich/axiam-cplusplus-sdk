@@ -12,14 +12,30 @@ permissions:
 
 jobs:
   build-test:
-    name: build + test (${{ matrix.cxx }})
+    name: build + test (${{ matrix.cxx }}, C++${{ matrix.std }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        # Two axes. The COMPILER axis (g++, clang++) was already here and is
+        # unchanged. The STANDARD axis is new, and is floor + newest: C++17 is
+        # what CMakeLists.txt declares and every consumer inherits by default,
+        # C++23 is the newest published standard. C++20 sits between two green
+        # legs.
+        #
+        # The standard axis is not cosmetic here — it found a real defect the
+        # moment it was added. tests/test_opaque_binding.cpp assigned a `u8""`
+        # literal to a std::string, which is fine in C++17 and a HARD ERROR from
+        # C++20, where such a literal is `const char8_t[]`. Every consumer
+        # building this SDK at C++20 or later hit it; nothing in CI did.
+        #
+        # tests/test_version_policy.cpp fails the build if this list,
+        # CMakeLists.txt and axiam::kMinCxxStandard stop agreeing.
         include:
-          - { cc: gcc,   cxx: g++ }
-          - { cc: clang, cxx: clang++ }
+          - { cc: gcc,   cxx: g++,     std: 17 }
+          - { cc: clang, cxx: clang++, std: 17 }
+          - { cc: gcc,   cxx: g++,     std: 23 }
+          - { cc: clang, cxx: clang++, std: 23 }
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +48,10 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAXIAM_BUILD_TESTS=ON -DAXIAM_BUILD_EXAMPLES=ON
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DAXIAM_BUILD_TESTS=ON -DAXIAM_BUILD_EXAMPLES=ON
+          -DCMAKE_CXX_STANDARD=${{ matrix.std }}
 
       - name: Build
         run: cmake --build build -j
