@@ -6,22 +6,11 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
-### Fixed
-
-- **A `u8""` literal assigned to a `std::string` made the SDK's test suite fail to
-  compile at C++20 and later.** `tests/test_opaque_binding.cpp` held
-  `const std::string accented = u8"pàsswörd-ünïcøde";`, which is fine in C++17 and a
-  **hard error from C++20**, where `u8""` is `const char8_t[]` and does not convert
-  to `std::string`. Both g++ and clang rejected it.
-
-  Fixed with `reinterpret_cast<const char *>` rather than by dropping the `u8`
-  prefix, which preserves the explicit UTF-8 encoding guarantee — a plain literal
-  would instead depend on the compiler's execution character set, which is not UTF-8
-  everywhere (MSVC without `/utf-8`). Under C++17 the cast is a no-op.
-
-  Found by the new C++23 CI leg, on its first run.
+## [1.0.0-alpha43] - 2026-08-24
 
 ### Added
+
+- Compile and test against C++23 alongside the C++17 floor (#43)
 
 - **C++23 is now a built and tested standard, on both g++ and clang++.** The CI
   matrix gains a standard axis: it was two compilers at one standard, so the compiler
@@ -56,6 +45,21 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   compilers — g++ 13 reports the pre-ratification `202100L` for `-std=c++23`, clang
   18 reports `202302L`. Comparisons are lower bounds, and "C++23 or later" is
   spelled `__cplusplus > 202002L`.
+
+### Fixed
+
+- **A `u8""` literal assigned to a `std::string` made the SDK's test suite fail to
+  compile at C++20 and later.** `tests/test_opaque_binding.cpp` held
+  `const std::string accented = u8"pàsswörd-ünïcøde";`, which is fine in C++17 and a
+  **hard error from C++20**, where `u8""` is `const char8_t[]` and does not convert
+  to `std::string`. Both g++ and clang rejected it.
+
+  Fixed with `reinterpret_cast<const char *>` rather than by dropping the `u8`
+  prefix, which preserves the explicit UTF-8 encoding guarantee — a plain literal
+  would instead depend on the compiler's execution character set, which is not UTF-8
+  everywhere (MSVC without `/utf-8`). Under C++17 the cast is a no-op.
+
+  Found by the new C++23 CI leg, on its first run.
 
 ## [1.0.0-alpha41] - 2026-08-24
 
