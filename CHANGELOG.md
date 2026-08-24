@@ -4,6 +4,59 @@ All notable changes to the AXIAM C++ SDK are documented here. The format is base
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
 semantic versioning (pre-release track `1.0.0-alpha*`).
 
+## [Unreleased]
+
+### Fixed
+
+- **A `u8""` literal assigned to a `std::string` made the SDK's test suite fail to
+  compile at C++20 and later.** `tests/test_opaque_binding.cpp` held
+  `const std::string accented = u8"pàsswörd-ünïcøde";`, which is fine in C++17 and a
+  **hard error from C++20**, where `u8""` is `const char8_t[]` and does not convert
+  to `std::string`. Both g++ and clang rejected it.
+
+  Fixed with `reinterpret_cast<const char *>` rather than by dropping the `u8`
+  prefix, which preserves the explicit UTF-8 encoding guarantee — a plain literal
+  would instead depend on the compiler's execution character set, which is not UTF-8
+  everywhere (MSVC without `/utf-8`). Under C++17 the cast is a no-op.
+
+  Found by the new C++23 CI leg, on its first run.
+
+### Added
+
+- **C++23 is now a built and tested standard, on both g++ and clang++.** The CI
+  matrix gains a standard axis: it was two compilers at one standard, so the compiler
+  axis was covered twice and the language axis not at all. It is now g++ and clang++
+  at **C++17 and C++23** — four legs. C++20 sits between two green legs.
+
+- **`axiam::kMinCxxStandard` and `axiam::kNewestTestedCxxStandard`**, plus an
+  `#error` guard in `<axiam/axiam.hpp>` that refuses a toolchain below the floor at
+  the point of inclusion. MSVC is checked through `_MSVC_LANG`, which is the only
+  correct way — it reports `199711L` in `__cplusplus` unless `/Zc:__cplusplus` is
+  passed, so reading `__cplusplus` alone would reject every MSVC build.
+
+- **`tests/test_version_policy.cpp`** — binds `CMAKE_CXX_STANDARD`, the header
+  constants and the CI matrix together. It also asserts the CMake default stays
+  *overridable*: a plain `set()` silently ignores `-DCMAKE_CXX_STANDARD=23`, and the
+  newest leg would compile C++17 while reporting green.
+
+- **`examples/version_compatibility.cpp`** — reports the standard in use against the
+  supported range.
+
+- **A "Supported C++ standards" section in the README.**
+
+### Changed
+
+- **`CMAKE_CXX_STANDARD` is now overridable rather than hardcoded.** It was
+  `set(CMAKE_CXX_STANDARD 17)`, which overrides anything passed on the command line;
+  it is now guarded by `if(NOT DEFINED ...)`. **The default is unchanged** —
+  `cmake -S . -B build` with no flags still produces exactly the C++17 build it
+  always did. The configure step also prints the standard in effect.
+
+  Documented alongside: a C++23 build does not report the same `__cplusplus` on both
+  compilers — g++ 13 reports the pre-ratification `202100L` for `-std=c++23`, clang
+  18 reports `202302L`. Comparisons are lower bounds, and "C++23 or later" is
+  spelled `__cplusplus > 202002L`.
+
 ## [1.0.0-alpha41] - 2026-08-24
 
 ### Added

@@ -17,6 +17,7 @@ set_target_properties(axiam_opaque_stub_incomplete PROPERTIES PREFIX "lib")
 add_executable(axiam_cpp_tests
   main.cpp
   test_sensitive.cpp
+  test_version_policy.cpp
   test_errors.cpp
   test_rule9_binding.cpp
   test_builder.cpp
@@ -59,6 +60,12 @@ add_executable(axiam_cpp_tests
   test_transport_concurrency.cpp
   test_transport_reuse.cpp
 )
+
+# test_version_policy.cpp reads CMakeLists.txt and the CI workflow, so it needs the
+# repository root as an absolute path rather than a guess at ctest's working
+# directory.
+target_compile_definitions(axiam_cpp_tests
+  PRIVATE AXIAM_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 
 target_compile_definitions(axiam_cpp_tests PRIVATE
   AXIAM_REACTOR_VECTORS="${CMAKE_SOURCE_DIR}/examples/reactor/reactor_v2_reference_vectors.json")

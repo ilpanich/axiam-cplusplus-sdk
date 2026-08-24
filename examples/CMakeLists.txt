@@ -11,6 +11,9 @@ target_link_libraries(axiam_example_opaque_login PRIVATE axiam::axiam_cpp)
 add_executable(axiam_example_rest_authz rest_authz.cpp)
 target_link_libraries(axiam_example_rest_authz PRIVATE axiam::axiam_cpp)
 
+add_executable(axiam_example_version_compatibility version_compatibility.cpp)
+target_link_libraries(axiam_example_version_compatibility PRIVATE axiam::axiam_cpp)
+
 add_executable(axiam_example_telemetry_hook telemetry_hook.cpp)
 target_link_libraries(axiam_example_telemetry_hook PRIVATE axiam::axiam_cpp)
 
