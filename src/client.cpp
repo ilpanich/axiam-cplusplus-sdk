@@ -418,6 +418,31 @@ OpaqueKsfParams read_ksf(const json& j) {
     return ksf;
 }
 
+/// The wire value of `opaque_mode` that makes a failed exchange non-final
+/// (§23.6). Every other value, and no value at all, is final.
+constexpr const char* kOpaqueModeOptional = "optional";
+
+/// The `POST /api/v1/auth/opaque/login/start` response (§23.5), in the terms the
+/// login path needs it.
+///
+/// `mode` carries the tenant's `opaque_mode` — `"optional"` or `"required"`,
+/// never `"disabled"` (that path answers 404). It is a `std::optional` because
+/// a server older than contract 1.29 does not send the field at all, and
+/// absence is not the same as any value it could send: §23.4 rule 7 treats
+/// absence as `required`, so an old server never draws a plaintext retry out of
+/// this SDK.
+///
+/// It is **not** downgrade protection, and this SDK must not present it as
+/// such: a hostile server that wanted the plaintext could answer `404` and get
+/// the fallback whatever it puts here. What closes that is `required` itself,
+/// server-side, by refusing `/auth/login` before examining any credential.
+struct OpaqueLoginStart {
+    std::string opaque_session;  ///< The handle to echo back verbatim.
+    std::string ke2;             ///< The hex `KE2`.
+    OpaqueKsfParams ksf;         ///< The cost named for THIS exchange.
+    std::optional<std::string> mode;  ///< The tenant's `opaque_mode`, if reported.
+};
+
 /// One `*/start` round trip, shared by both OPAQUE paths so the meaning of a
 /// failure cannot drift between them.
 ///
@@ -446,6 +471,21 @@ json opaque_start(Client::Impl& impl, const char* path, const json& body, const 
                            "opaque_malformed");
     }
     return parsed;
+}
+
+/// Parses a `login/start` body. A field the server omitted stays absent rather
+/// than becoming an empty string — `mode` in particular, where "" and "absent"
+/// would both read as "not optional" today but only one of them stays correct
+/// if a later contract gives the field another value.
+OpaqueLoginStart read_login_start(const json& j) {
+    OpaqueLoginStart out;
+    out.opaque_session = json_str(j, "opaque_session");
+    out.ke2 = json_str(j, "ke2");
+    out.ksf = read_ksf(j);
+    if (!j.is_discarded() && j.contains("mode") && j["mode"].is_string()) {
+        out.mode = j["mode"].get<std::string>();
+    }
+    return out;
 }
 
 /// The tenant/org resolution every login-shaped body shares, so the OPAQUE and
@@ -478,18 +518,42 @@ LoginResult Client::login_opaque(const std::string& username_or_email,
     body["ke1"] = exchange.ke1();
     add_scope_fields(*p_, body);
 
-    const json started =
-        opaque_start(*p_, "/api/v1/auth/opaque/login/start", body, "login/start");
+    const OpaqueLoginStart started = read_login_start(
+        opaque_start(*p_, "/api/v1/auth/opaque/login/start", body, "login/start"));
 
-    const std::string ke2 = json_str(started, "ke2");
-    if (ke2.empty()) {
+    if (started.ke2.empty()) {
         throw NetworkError("OPAQUE: login/start returned no `ke2`", "opaque_malformed");
     }
 
-    const std::string ke3 = exchange.finish(password, ke2, read_ksf(started));
+    // §23.4 rule 7. A KE2 that does not open ends the exchange: nothing goes to
+    // login/finish, and the exchange's own destructor clears what it holds. What
+    // happens next depends on the tenant's mode and ONLY on that.
+    std::string ke3;
+    bool retry_over_password_login = false;
+    try {
+        ke3 = exchange.finish(password, started.ke2, started.ksf);
+    } catch (const AuthError&) {
+        // `optional` is the mid-migration state: every account has no record the
+        // moment an operator enables OPAQUE and acquires one only as it next
+        // sets a password, so a failed exchange there is the ordinary case and
+        // treating it as final would lock out the whole tenant. Anything else —
+        // `required`, an unrecognised value, or no `mode` at all from a server
+        // older than the field — is final, and retrying would put a plaintext
+        // password on the wire for an endpoint that answers 403 to everyone.
+        if (!(started.mode && *started.mode == kOpaqueModeOptional)) throw;
+        retry_over_password_login = true;
+    }
+    // Outside the handler, so the fallback does not run with an in-flight
+    // exception and its own failure reaches the caller as itself.
+    if (retry_over_password_login) {
+        // login() rather than a second hand-rolled request: the fallback must be
+        // the SAME login, MFA branches, session adoption and error mapping the
+        // caller would have got from login() directly.
+        return login(username_or_email, password);
+    }
 
     json finish_body;
-    finish_body["opaque_session"] = json_str(started, "opaque_session");
+    finish_body["opaque_session"] = started.opaque_session;
     finish_body["ke3"] = ke3;
 
     HttpResponse resp = p_->execute("POST", "/api/v1/auth/opaque/login/finish",

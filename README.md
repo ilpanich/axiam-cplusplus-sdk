@@ -441,7 +441,7 @@ defaults them locally:
 | §23.4 rule 2 | costs come from the server per exchange — a credential enrolled under one cost keeps working after a tenant raises its policy, so a client that guessed would derive a different randomized password and report "invalid password" for a correct one |
 | §23.4 rule 3 | an unrecognised `ksf` is **refused**, never substituted |
 | §23.4 rule 5 | a cost field that does not apply to the named function is **absent, not zero** — which is why every cost in `OpaqueKsfParams` is a `std::optional<unsigned>` rather than a zero-defaulted `unsigned` |
-| §23.4 rule 7 | nothing is sent to `login/finish` once the envelope fails to open |
+| §23.4 rule 7 | nothing is sent to `login/finish` once the envelope fails to open — and what happens next is decided by the tenant's `mode`, below |
 
 Costs are additionally range-checked here, so a refusal names the field:
 
@@ -476,7 +476,7 @@ authentication is no longer something a client can forget.
 | mode | `login()` | `login_opaque()` |
 |---|---|---|
 | `disabled` (default) | works | `NetworkError` — the start endpoints answer `404` |
-| `optional` | works | works |
+| `optional` | works | works, and a failed exchange **falls back to `login()`** |
 | `required` | `AuthzError` (`opaque_required`) | works |
 
 Neither is an `AuthError`:
@@ -491,11 +491,42 @@ Neither is an `AuthError`:
   is invalid is the failure this mapping exists to prevent.
 
 `AuthError` from `login_opaque()` means the envelope did not open: a wrong
-password, an account that does not exist, or a server that does not hold the
-record — indistinguishable by design, and the whole credential check now that
-both halves of mutual authentication live in it. **Do not retry it over
-`login()`**: that hands the plaintext to an endpoint that has just failed to
-prove itself.
+password, an account that does not exist, an account with no registration
+record, or a server that does not hold one — indistinguishable by design, and
+the whole credential check now that both halves of mutual authentication live in
+it. Nothing is sent to `login/finish` after it.
+
+### The `optional` fallback, and why it is not yours to write (§23.4 rule 7)
+
+`login/start` reports the tenant's mode back to the client, and that field —
+**and nothing else** — decides what a failed exchange does next. `login_opaque()`
+handles both branches itself:
+
+| reported mode | a `KE2` that does not open |
+|---|---|
+| `optional` | retried once over `POST /api/v1/auth/login`, same username and password; you get that call's outcome — its `LoginResult` on success, its error on failure |
+| `required` | `AuthError`, and no retry |
+| no `mode` field (a server older than contract 1.29) | `AuthError`, and no retry |
+| anything else | `AuthError`, and no retry — fail closed |
+
+The `optional` branch is not a convenience. `optional` is the state a tenant
+lives in for the whole migration, and **every account has no registration record
+the moment an operator enables OPAQUE** — records accrue only as passwords are
+next set. A client that treated the failed exchange as final would lock out every
+user of the tenant, which is precisely the outcome `optional` exists to avoid.
+Under `required` the opposite holds: `/auth/login` answers `403 opaque_required`
+to every principal before looking at a credential, so a retry would put a
+plaintext password on the wire for nothing.
+
+So do **not** hand-roll a fallback of your own around `AuthError`. Under
+`required` it is exactly the mistake the mode exists to prevent, and under
+`optional` this SDK has already made the attempt — a second one is a second
+plaintext password on the wire and a second Argon2id cost.
+
+The reported mode is **not downgrade protection**, and this SDK does not present
+it as one: a hostile server that wanted the plaintext could answer `404` and get
+a fallback whatever mode it claims. What closes that is `required` itself,
+server-side.
 
 `required` refuses **every** principal in the tenant, not only the enrolled
 ones. Splitting the response on whether an account has a record would turn

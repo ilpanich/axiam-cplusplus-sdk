@@ -23,10 +23,14 @@
 //      404, which reaches the caller as NetworkError and NOT as a credential
 //      failure — so falling back to login() is correct and safe.
 //   3. AuthError means the envelope did not open. That is the whole credential
-//      check, and it is NOT a case to retry over login(): retrying would hand
-//      the plaintext to an endpoint that has just failed to prove it holds the
-//      record. RFC 9807's AKE authenticates the server during the handshake, so
-//      there is no separate M2 step of the kind SRP needed.
+//      check — RFC 9807's AKE authenticates the server during the handshake, so
+//      there is no separate M2 step of the kind SRP needed — and it is NOT a
+//      case for THIS code to retry over login(). Under opaque_mode: required a
+//      retry hands the plaintext to an endpoint that answers 403 to every
+//      principal; under optional the SDK has already retried internally
+//      (§23.4 rule 7), because an account with no registration record is the
+//      ordinary case mid-migration and treating it as final would lock out the
+//      whole tenant. Either way the AuthError that reaches here is final.
 //   4. A tenant with opaque_mode: required answers /auth/login with
 //      403 opaque_required, which is AuthzError. A user whose password is
 //      perfectly good must never be told it is invalid.
@@ -102,8 +106,10 @@ int main() {
                 // configuration facts, not credential facts — reporting them as
                 // a bad password would send a user off to reset one that works.
                 //
-                // AuthError is deliberately NOT caught here. See point 3 in the
-                // header: it is caught below, and never retried over login().
+                // AuthError is deliberately NOT caught here. See point 3 in
+                // the header: under `optional` login_opaque has already made
+                // the one retry §23.4 rule 7 allows, and under `required` a
+                // retry is exactly what the mode exists to prevent.
                 std::cout << "OPAQUE unavailable here (" << e.what()
                           << ") — falling back to password login\n";
                 return client.login(username, password);
@@ -146,8 +152,10 @@ int main() {
         }
     } catch (const axiam::AuthError& e) {
         // The envelope did not open: a wrong password, an account that does not
-        // exist, or a server that does not hold the record — indistinguishable
-        // by design. Nothing was sent to login/finish (§23.4 rule 7).
+        // exist, an account with no registration record, or a server that does
+        // not hold one — indistinguishable by design. Nothing was sent to
+        // login/finish (§23.4 rule 7), and under `optional` this is already
+        // /auth/login's own answer to the same credentials.
         std::cerr << "invalid credentials: " << e.what() << "\n";
         return 1;
     } catch (const axiam::AuthzError& e) {
