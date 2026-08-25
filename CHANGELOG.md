@@ -6,7 +6,11 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+## [1.0.0-alpha44] - 2026-08-25
+
 ### Changed
+
+- Re-vendor openapi.json at alpha43 for tenant signing CAs (axiam#379)
 
 - **Re-vendor `openapi.json` at 1.0.0-alpha43** for AXIAM server PR #379, which
   adds **tenant signing CAs**: an intermediate CA created beneath one of the
