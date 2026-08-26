@@ -158,6 +158,15 @@ std::vector<ManifestEntity> ManifestApi::ordered(const Manifest& manifest) {
 
 namespace {
 
+// Whether the SERVER stores a description for this kind.
+//
+// Three of the four do. A resource does not: `Resource` has no description property, so
+// read_existing() can only ever report an empty one, and drift must not be computed from
+// a field that does not exist.
+bool has_description(ManifestKind kind) {
+    return kind != ManifestKind::Resource;
+}
+
 // Read the tenant's current state for one kind. Only the kinds a manifest mentions are
 // scanned: a manifest declaring two permissions has no business listing every group in
 // the tenant, and on a large tenant that is one request instead of dozens.
@@ -278,7 +287,15 @@ Plan ManifestApi::plan(const Manifest& manifest) const {
             // Compare ONLY what the manifest names. A server object carries plenty a
             // manifest says nothing about, and treating that as drift would make every
             // plan report a change and every apply overwrite work nobody claimed.
-            const bool drifted = !e.description.empty() &&
+            //
+            // And only what the SERVER carries, which is why has_description() exists: a
+            // resource has no description field at all, so a manifest that gives one is
+            // documenting its own file. Comparing that against the empty string the read
+            // necessarily produced would mark the resource drifted, update it, and mark
+            // it drifted again on the next run -- §27.6 rule 6 says apply-then-plan is
+            // all-Unchanged, and a manifest that never converges is the exact failure it
+            // rules out.
+            const bool drifted = has_description(e.kind) && !e.description.empty() &&
                                  e.description != found->second.description;
             change.action = drifted ? ChangeAction::Update : ChangeAction::Unchanged;
         }

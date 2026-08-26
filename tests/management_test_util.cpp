@@ -3,6 +3,7 @@
 #include "management_test_util.hpp"
 
 #include <mutex>
+#include <utility>
 #include <vector>
 
 namespace axtest::mgmt {
@@ -88,6 +89,15 @@ Fixture signed_in(long status, const std::string& body) {
 Fixture signed_in_two(long first_status, const std::string& first_body,
                       long second_status, const std::string& second_body) {
     return make({{first_status, first_body}, {second_status, second_body}}, true, true);
+}
+
+Fixture signed_in_many(std::vector<std::pair<long, std::string>> replies) {
+    std::vector<Canned> canned;
+    canned.reserve(replies.size());
+    for (auto& reply : replies) {
+        canned.push_back(Canned{reply.first, std::move(reply.second)});
+    }
+    return make(std::move(canned), true, true);
 }
 
 Fixture signed_in_three(long a_status, const std::string& a_body,

@@ -65,17 +65,17 @@ enum class ChangeAction {
 /// One entity a manifest declares must exist.
 struct ManifestEntity {
     ManifestKind kind = ManifestKind::Permission;  ///< What sort of object this is.
-    std::string key;          ///< Manifest-local identity, unique within its kind.
-    std::string name;         ///< The name the server knows it by; also the match key.
-    std::string description;  ///< Human-readable description.
-    std::string resource_type;  ///< For a resource: its `resource_type`.
-    std::string action;         ///< For a permission: the action it names.
-    bool is_global = false;     ///< For a role: whether it applies tenant-wide.
+    std::string key{};          ///< Manifest-local identity, unique within its kind.
+    std::string name{};         ///< The name the server knows it by; also the match key.
+    std::string description{};  ///< Human-readable description.
+    std::string resource_type{};  ///< For a resource: its `resource_type`.
+    std::string action{};         ///< For a permission: the action it names.
+    bool is_global = false;       ///< For a role: whether it applies tenant-wide.
     /// Key of the entity this one must be applied after, beyond what `kind` already
     /// orders — a parent resource, or a permission a role grants.
     ///
     /// A KEY, never a UUID: a manifest describes a tenant that may not exist yet.
-    std::optional<std::string> depends_on;
+    std::optional<std::string> depends_on = std::nullopt;
 };
 
 /// A declarative description of the state a tenant must be in.
@@ -174,5 +174,60 @@ private:
 };
 
 }  // namespace axiam::management
+
+// ---------------------------------------------------------------------------
+// §27.7's C++ declarative form: designated-initializer aggregate specs plus an
+// AXIAM_MANIFEST(...) macro.
+//
+// ManifestEntity is an aggregate whose every member carries a default member
+// initializer, which is what makes `.key = "x", .name = "y"` legal without
+// naming the members you do not care about — and, less obviously, what keeps
+// -Wextra quiet, since -Wmissing-field-initializers fires on an omitted member
+// only when that member has no default.
+//
+// The macros fix `.kind` and nothing else. They are sugar over the aggregate,
+// not a second way to build one: each expands to a ManifestEntity value and
+// AXIAM_MANIFEST expands to a Manifest holding them, so a manifest written this
+// way and one deserialized from configuration are the same value and go through
+// the same plan()/apply(). §27.7 requires exactly that — "a declarative form
+// that talks to the network itself is a second implementation of §27.6, and the
+// two will disagree."
+//
+// Designated initializers must appear in DECLARATION order, which for
+// ManifestEntity is: key, name, description, resource_type, action, is_global,
+// depends_on.
+//
+//   const auto manifest = AXIAM_MANIFEST(
+//       AXIAM_PERMISSION(.key = "read", .name = "documents:read", .action = "read"),
+//       AXIAM_ROLE(.key = "editor", .name = "editor", .depends_on = "read"),
+//       AXIAM_RESOURCE(.key = "root", .name = "documents", .resource_type = "folder"),
+//       AXIAM_GROUP(.key = "editors", .name = "editors", .depends_on = "editor"));
+//
+// Unqualified in the axiam:: namespace on purpose: a macro has no namespace, so
+// the expansions below name their types fully instead.
+// ---------------------------------------------------------------------------
+
+/// A `ManifestEntity` of kind `Resource`; remaining members in declaration order.
+#define AXIAM_RESOURCE(...) \
+    ::axiam::management::ManifestEntity { .kind = ::axiam::management::ManifestKind::Resource, __VA_ARGS__ }
+
+/// A `ManifestEntity` of kind `Permission`; remaining members in declaration order.
+#define AXIAM_PERMISSION(...) \
+    ::axiam::management::ManifestEntity { .kind = ::axiam::management::ManifestKind::Permission, __VA_ARGS__ }
+
+/// A `ManifestEntity` of kind `Role`; remaining members in declaration order.
+#define AXIAM_ROLE(...) \
+    ::axiam::management::ManifestEntity { .kind = ::axiam::management::ManifestKind::Role, __VA_ARGS__ }
+
+/// A `ManifestEntity` of kind `Group`; remaining members in declaration order.
+#define AXIAM_GROUP(...) \
+    ::axiam::management::ManifestEntity { .kind = ::axiam::management::ManifestKind::Group, __VA_ARGS__ }
+
+/// A `Manifest` holding the entity specs given.
+///
+/// Declaration ORDER here carries no meaning: `ManifestApi::ordered()` derives apply order
+/// from kind and `depends_on`, so shuffling the arguments below yields the same plan.
+#define AXIAM_MANIFEST(...) \
+    ::axiam::management::Manifest { { __VA_ARGS__ } }
 
 #endif  // AXIAM_MANAGEMENT_MANIFEST_HPP

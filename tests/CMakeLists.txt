@@ -18,6 +18,7 @@ add_executable(axiam_cpp_tests
   main.cpp
   management_test_util.cpp
   test_management_generated.cpp
+  test_management_models_generated.cpp
   test_management_semantics.cpp
   test_management_manifest.cpp
   test_sensitive.cpp
@@ -81,6 +82,10 @@ target_include_directories(axiam_cpp_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/third_party/testing
   ${CMAKE_SOURCE_DIR}/third_party/nlohmann
+  # third_party/ itself, so the vendored header resolves as <nlohmann/json.hpp> --
+  # the spelling src/management_json.hpp uses, which tests/test_management_models_generated.cpp
+  # includes to reach the generated JSON hooks directly.
+  ${CMAKE_SOURCE_DIR}/third_party
 )
 
 target_link_libraries(axiam_cpp_tests PRIVATE

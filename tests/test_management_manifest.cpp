@@ -90,7 +90,7 @@ AXIAM_TEST("§27.6: drift is updated in place, carrying only the drifted field")
     const auto report = fixture.client.management().manifest().apply(manifest);
 
     AXIAM_CHECK(report.complete());
-    AXIAM_CHECK(report.applied.size() == 1);
+    AXIAM_REQUIRE(report.applied.size() == 1);
     AXIAM_CHECK(report.applied[0].action == ChangeAction::Update);
     AXIAM_CHECK(fixture.state->last().method == "PUT");
     // The sparse body of §27.4 rule 5 -- only what drifted.
@@ -294,6 +294,223 @@ AXIAM_TEST("§27.6: omission is never deletion") {
 
     AXIAM_CHECK(plan.changes.size() == 1);
     AXIAM_CHECK(plan.converged());
+}
+
+
+// ---- §27.7's C++ declarative form -------------------------------------
+//
+// The macro form is sugar over the aggregate, and the whole point of §27.7's
+// closing rule is that it stays sugar: "whatever the surface syntax, it MUST
+// lower to the same ManagementManifest value and go through the same
+// plan/apply." So the assertions here are equality against a manifest built
+// the plain way, and then a plan over the macro-built one.
+
+AXIAM_TEST("§27.7: the declarative macros lower to the same value as plain construction") {
+    const auto declarative = AXIAM_MANIFEST(
+        AXIAM_PERMISSION(.key = "read", .name = "documents:read", .description = "Read documents",
+                         .action = "documents:read"));
+
+    const Manifest plain{{one_permission()}};
+
+    AXIAM_CHECK(declarative.entities.size() == plain.entities.size());
+    AXIAM_CHECK(declarative.entities[0].kind == plain.entities[0].kind);
+    AXIAM_CHECK(declarative.entities[0].key == plain.entities[0].key);
+    AXIAM_CHECK(declarative.entities[0].name == plain.entities[0].name);
+    AXIAM_CHECK(declarative.entities[0].description == plain.entities[0].description);
+    AXIAM_CHECK(declarative.entities[0].action == plain.entities[0].action);
+    // Members nobody named still hold their declared defaults — that is what
+    // makes a partial designated-initializer list legal in the first place.
+    AXIAM_CHECK(declarative.entities[0].resource_type.empty());
+    AXIAM_CHECK(declarative.entities[0].is_global == false);
+    AXIAM_CHECK(!declarative.entities[0].depends_on.has_value());
+}
+
+AXIAM_TEST("§27.7: a macro-built manifest goes through the same plan/apply") {
+    auto fixture = axtest::mgmt::signed_in(200, kPermPage);
+
+    const auto manifest = AXIAM_MANIFEST(
+        AXIAM_PERMISSION(.key = "read", .name = "documents:read", .description = "Read documents",
+                         .action = "documents:read"));
+
+    // Same tenant state, same manifest content, therefore the same verdict the
+    // plain-construction test above gets: converged, nothing to send.
+    AXIAM_CHECK(fixture.client.management().manifest().plan(manifest).converged());
+}
+
+AXIAM_TEST("§27.7: every kind has a macro, and each sets only its kind") {
+    const auto manifest = AXIAM_MANIFEST(
+        AXIAM_RESOURCE(.key = "root", .name = "documents", .resource_type = "folder"),
+        AXIAM_PERMISSION(.key = "read", .name = "documents:read", .action = "read"),
+        AXIAM_ROLE(.key = "editor", .name = "editor", .depends_on = "read"),
+        AXIAM_GROUP(.key = "editors", .name = "editors", .depends_on = "editor"));
+
+    AXIAM_CHECK(manifest.entities.size() == 4);
+    AXIAM_CHECK(manifest.entities[0].kind == ManifestKind::Resource);
+    AXIAM_CHECK(manifest.entities[1].kind == ManifestKind::Permission);
+    AXIAM_CHECK(manifest.entities[2].kind == ManifestKind::Role);
+    AXIAM_CHECK(manifest.entities[3].kind == ManifestKind::Group);
+
+    // Declaration order above is deliberately NOT apply order: ordered() must
+    // still put the resource first and the group last, derived from kind.
+    const auto ordered = ManifestApi::ordered(manifest);
+    AXIAM_CHECK(ordered.size() == 4);
+    AXIAM_CHECK(ordered[0].key == "root");
+    AXIAM_CHECK(ordered[1].key == "read");
+    AXIAM_CHECK(ordered[2].key == "editor");
+    AXIAM_CHECK(ordered[3].key == "editors");
+}
+
+// ---- every kind, read and written -------------------------------------
+//
+// The cases above all use permissions, which leaves the resource, role and group
+// branches of the manifest's read-current-state and perform-one-change switches
+// unexercised — and those are exactly the branches that pick a request body. A wrong
+// one there is invisible to a permission-only suite and produces a manifest that
+// silently applies the wrong shape.
+
+const char* kResourcePage =
+    R"json({"items":[{"created_at":"2026-08-26T00:00:00Z",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","metadata":{},"name":"documents",)json"
+    R"json("resource_type":"folder","tenant_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("updated_at":"2026-08-26T00:00:00Z"}],"total":1})json";
+
+const char* kRolePage =
+    R"json({"items":[{"created_at":"2026-08-26T00:00:00Z","description":"Edits documents",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","is_global":false,"name":"editor",)json"
+    R"json("tenant_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("updated_at":"2026-08-26T00:00:00Z"}],"total":1})json";
+
+const char* kRolePageStale =
+    R"json({"items":[{"created_at":"2026-08-26T00:00:00Z","description":"stale",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","is_global":false,"name":"editor",)json"
+    R"json("tenant_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("updated_at":"2026-08-26T00:00:00Z"}],"total":1})json";
+
+const char* kGroupPage =
+    R"json({"items":[{"created_at":"2026-08-26T00:00:00Z","description":"The editors",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","metadata":{},"name":"editors",)json"
+    R"json("tenant_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("updated_at":"2026-08-26T00:00:00Z"}],"total":1})json";
+
+const char* kResourceObject =
+    R"json({"created_at":"2026-08-26T00:00:00Z",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","metadata":{},"name":"documents",)json"
+    R"json("resource_type":"folder","tenant_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("updated_at":"2026-08-26T00:00:00Z"})json";
+
+const char* kRoleObject =
+    R"json({"created_at":"2026-08-26T00:00:00Z","description":"Edits documents",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","is_global":false,"name":"editor",)json"
+    R"json("tenant_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("updated_at":"2026-08-26T00:00:00Z"})json";
+
+const char* kGroupObject =
+    R"json({"created_at":"2026-08-26T00:00:00Z","description":"The editors",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","metadata":{},"name":"editors",)json"
+    R"json("tenant_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("updated_at":"2026-08-26T00:00:00Z"})json";
+
+Manifest four_kinds() {
+    return AXIAM_MANIFEST(
+        AXIAM_RESOURCE(.key = "root", .name = "documents", .description = "The document tree",
+                       .resource_type = "folder"),
+        AXIAM_PERMISSION(.key = "read", .name = "documents:read",
+                         .description = "Read documents", .action = "documents:read"),
+        AXIAM_ROLE(.key = "editor", .name = "editor", .description = "Edits documents"),
+        AXIAM_GROUP(.key = "editors", .name = "editors", .description = "The editors"));
+}
+
+AXIAM_TEST("§27.6: a manifest spanning every kind reads each kind exactly once") {
+    // Four empty pages: one read per KIND, not one per entity. A manifest declaring ten
+    // roles must still be one list call.
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, kEmptyPage}, {200, kEmptyPage}, {200, kEmptyPage}, {200, kEmptyPage},
+    });
+
+    const auto plan = fixture.client.management().manifest().plan(four_kinds());
+
+    AXIAM_REQUIRE(plan.changes.size() == 4);
+    AXIAM_CHECK(plan.pending().size() == 4);
+    // login + four list calls, and nothing else: plan writes nothing.
+    AXIAM_CHECK(fixture.state->count() == 5);
+    for (const auto& change : plan.changes) {
+        AXIAM_CHECK(change.action == ChangeAction::Create);
+    }
+}
+
+AXIAM_TEST("§27.6: a manifest spanning every kind creates each in derived order") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        // apply re-plans first: four reads, all empty.
+        {200, kEmptyPage}, {200, kEmptyPage}, {200, kEmptyPage}, {200, kEmptyPage},
+        // then four creates.
+        {201, kResourceObject}, {201, kPermObject}, {201, kRoleObject}, {201, kGroupObject},
+    });
+
+    const auto report = fixture.client.management().manifest().apply(four_kinds());
+
+    AXIAM_CHECK(report.complete());
+    AXIAM_REQUIRE(report.applied.size() == 4);
+    // Derived from kind, not from the order four_kinds() happens to declare.
+    AXIAM_CHECK(report.applied[0].entity.kind == ManifestKind::Resource);
+    AXIAM_CHECK(report.applied[1].entity.kind == ManifestKind::Permission);
+    AXIAM_CHECK(report.applied[2].entity.kind == ManifestKind::Role);
+    AXIAM_CHECK(report.applied[3].entity.kind == ManifestKind::Group);
+}
+
+AXIAM_TEST("§27.6: a manifest spanning every kind converges against a matching tenant") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, kResourcePage}, {200, kPermPage}, {200, kRolePage}, {200, kGroupPage},
+    });
+
+    const auto plan = fixture.client.management().manifest().plan(four_kinds());
+
+    AXIAM_CHECK(plan.converged());
+    for (const auto& change : plan.changes) {
+        AXIAM_CHECK(change.action == ChangeAction::Unchanged);
+        // An existing object contributes its server id, which is what an Update would
+        // need and what makes a resumed apply able to tell create from update.
+        AXIAM_CHECK(change.id.has_value());
+    }
+}
+
+AXIAM_TEST("§27.6: drifted role and group descriptions are updated, not recreated") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        // re-plan: the role's description differs, everything else matches.
+        {200, kResourcePage}, {200, kPermPage}, {200, kRolePageStale}, {200, kGroupPage},
+        // one update.
+        {200, kRoleObject},
+    });
+
+    const auto report = fixture.client.management().manifest().apply(four_kinds());
+
+    AXIAM_CHECK(report.complete());
+    AXIAM_REQUIRE(report.applied.size() == 1);
+    AXIAM_CHECK(report.applied[0].action == ChangeAction::Update);
+    AXIAM_CHECK(report.applied[0].entity.kind == ManifestKind::Role);
+    // In place: PUT/PATCH against the existing id, never a delete-then-create.
+    AXIAM_CHECK(fixture.state->last().method != "POST");
+    AXIAM_CHECK(fixture.state->last().url.find(kUuid) != std::string::npos);
+}
+
+AXIAM_TEST("§27.6: describe() names every kind and every action") {
+    // A report a caller pastes into a ticket is only useful if it says which object it
+    // is about. Every kind and every action must render as something other than "?".
+    const ManifestKind kinds[] = {ManifestKind::Resource, ManifestKind::Permission,
+                                  ManifestKind::Role, ManifestKind::Group};
+    const ChangeAction actions[] = {ChangeAction::Unchanged, ChangeAction::Create,
+                                    ChangeAction::Update};
+
+    for (const auto kind : kinds) {
+        for (const auto action : actions) {
+            PlannedChange change;
+            change.entity.kind = kind;
+            change.entity.key = "thing";
+            change.action = action;
+            const auto rendered = change.describe();
+            AXIAM_CHECK(rendered.find('?') == std::string::npos);
+            AXIAM_CHECK(rendered.find("thing") != std::string::npos);
+        }
+    }
 }
 
 }  // namespace

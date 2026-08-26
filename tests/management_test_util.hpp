@@ -58,6 +58,13 @@ Fixture signed_in_three(long a_status, const std::string& a_body,
                         long b_status, const std::string& b_body,
                         long c_status, const std::string& c_body);
 
+/// As signed_in(), with an arbitrary queue of responses served in order.
+///
+/// A manifest spanning all four kinds plans with four reads and applies with four more
+/// plus four writes, which is past the point where a fixed-arity helper reads as a
+/// column of numbers nobody can align with the calls they answer.
+Fixture signed_in_many(std::vector<std::pair<long, std::string>> replies);
+
 /// As signed_in(), but with a §19 telemetry hook recording every request path.
 Fixture signed_in_telemetry(long status, const std::string& body);
 

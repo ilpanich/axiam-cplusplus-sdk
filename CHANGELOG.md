@@ -6,6 +6,80 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Added
+
+- **CONTRACT.md §27 — the management API.** 146 operations across 24 namespaces,
+  reached through namespace handles hung off `client.management()`
+  (`client.management().service_accounts().rotate_secret(id)`), which is the form
+  §27.3's table specifies for C++.
+
+  The models, the JSON hooks and one raw call per operation are **generated** by
+  `scripts/gen_management.py` from the vendored `management-registry.json` and
+  `openapi.json`; the output is committed, so building this library still needs
+  no code-generation step and no Python. A new `management-drift-check` CI job
+  re-runs the generator with `--check` and fails on drift — committed generated
+  code is only trustworthy if something checks it is current, and without that
+  gate a re-vendor adding an operation would leave the SDK shipping a surface
+  that disagrees with the contract while every test still passed, because the
+  generated tests come from the same stale copy.
+
+  The generated layer sits on the **existing** request path (§27.8): every
+  operation inherits §5's tenant/org headers, §6's TLS floor, §9's single-flight
+  refresh, §16's retry policy and §19's telemetry. The suite drives the fake
+  transport at the bottom of a real client, so an operation that opened its own
+  request path fails the tests rather than passing them.
+
+  Hand-written on top: `Page<T>` and `PageRequest` (§27.4 rule 4 — `total` is the
+  server's count and is never derived from the page in hand; auto-paging stops on
+  an empty page, not a short one), `CallScope` with `in_org()` / `for_tenant()`
+  returning a **new** handle (§27.4 rule 3), and the error sub-types (§27.4
+  rule 7): `NotFoundError` and `ConflictError` under `AuthzError`,
+  `ValidationError` under `NetworkError` and excluded from retry.
+
+  New public headers `axiam/management.hpp` and `axiam/management_manifest.hpp`.
+  Deliberately **not** pulled in by the `axiam/axiam.hpp` umbrella: they are
+  around five thousand lines of declarations, and most programs authenticate and
+  check access without ever administering a tenant. `client.management()` is
+  declared in `client.hpp` either way, so the surface is still discoverable from
+  the umbrella alone.
+
+- **§27.6/§27.7 declarative manifests.** `ManagementApi::manifest()` gives a
+  `ManifestApi` with `plan()` (reads only), `apply()` (stops at the first failure
+  and does not roll back), `validate()` and `ordered()`. `AXIAM_MANIFEST(...)`
+  plus `AXIAM_RESOURCE` / `AXIAM_PERMISSION` / `AXIAM_ROLE` / `AXIAM_GROUP` are
+  §27.7's C++ form — designated-initializer aggregate specs that lower to the
+  same `Manifest` value a config file deserializes into, and go through the same
+  `plan`/`apply`. Ordering is derived from kind and `depends_on` and is stable
+  across runs; omission is never deletion, and `ChangeAction` has no `Delete`
+  member at all.
+
+- Three worked examples: `examples/management_basics.cpp`,
+  `examples/management_manifest.cpp`, and
+  `examples/device_mtls_provisioning.cpp` — the last provisioning an IoT device
+  end to end (service account, device certificate from the tenant signing CA,
+  certificate binding, mTLS trust anchor) and then authenticating as it over §6.1
+  mTLS from a second client.
+
+### Changed
+
+- **Coverage floor 96 → 98.** The §27 surface adds ~5,000 instrumented lines,
+  which moves this number on its own: measured, it landed at 74.68% before the
+  §27 suites existed. With the generated round-trip, enum and re-scope passes and
+  the hand-written semantics and manifest suites it measures **98.78%**
+  (9,070/9,182 lines by the gate's own metric), so the floor is ratcheted to a
+  value this job actually computed.
+
+### Fixed
+
+- **A manifest naming a resource never converged.** `Resource` has no description
+  property, so reading current state could only ever report an empty one — and
+  comparing a manifest's resource description against it marked the resource
+  drifted, updated it, and marked it drifted again on the next run. §27.6 rule 6
+  requires apply-then-plan to be all-`Unchanged`; drift is now computed only for
+  the kinds the server actually stores a description for. Caught by the
+  every-kind manifest tests added here.
+
+
 ## [1.0.0-alpha44] - 2026-08-25
 
 ### Changed

@@ -1,7 +1,20 @@
 // AXIAM C++ SDK — umbrella header. Include this to pull in the full public API.
 //
-// Conforms to CONTRACT.md §1–§7, §9–§11 and §13 (including §6.1 mTLS).
+// Conforms to CONTRACT.md §1–§7, §9–§11, §13 and §27 (including §6.1 mTLS).
 // See README.md.
+//
+// §27's management surface is the one part deliberately NOT pulled in here.
+// It is 146 operations and their model types — around five thousand lines of
+// declarations — and most programs that talk to AXIAM authenticate and check
+// access without ever administering a tenant. Making every translation unit pay
+// for it would be a compile-time tax on the common case, so it is opt-in:
+//
+//     #include "axiam/management.hpp"           // namespace handles + models
+//     #include "axiam/management_manifest.hpp"  // §27.6/§27.7 declarative layer
+//
+// Both are fully public and installed; `client.management()` is declared in
+// client.hpp either way, so the umbrella alone is enough to see that the surface
+// exists.
 #pragma once
 
 // Refuse a toolchain older than the declared floor at the point of inclusion.
