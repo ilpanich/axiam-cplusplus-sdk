@@ -24,6 +24,12 @@
 #include "axiam/uma.hpp"
 #include "axiam/webauthn.hpp"
 
+namespace axiam::management {
+// Forward declaration only: including <axiam/management.hpp> here would pull 3000 lines
+// of generated models into every translation unit that merely wants a Client.
+class ManagementApi;
+}  // namespace axiam::management
+
 namespace axiam {
 
 class Client {
@@ -845,6 +851,22 @@ public:
     /// construct or inspect one — the alternative was a second copy of the
     /// request plumbing living beside the first, which is exactly the "second,
     /// parallel stack" the §12.6 deferral warned about.
+    /// The CONTRACT.md §27 management surface: 146 operations across 24 namespaces.
+    ///
+    /// `client.management().users().list()`. §27.3's C++ row is
+    /// `client.service_accounts().rotate_secret(id)` — a method returning a handle,
+    /// snake_case — and that is what the accessors on the returned object are.
+    ///
+    /// Built on the same request path every other operation uses, so §3 CSRF, the §4
+    /// cookie jar, the §5 tenant header, §6 TLS, §16 retry and §19 telemetry apply to all
+    /// 146 by construction rather than by 146 opportunities to forget one (§27.8).
+    ///
+    /// Returned by value: it holds a shared_ptr to the transport and a scope, and
+    /// building one per call is what keeps `in_org()` from having anything shared to
+    /// re-point. That is not a §27.4 rule 10 violation — that rule forbids caching
+    /// RESPONSES, and nothing here caches one.
+    management::ManagementApi management();
+
     struct Impl;
 
 private:

@@ -16,6 +16,8 @@ set_target_properties(axiam_opaque_stub_incomplete PROPERTIES PREFIX "lib")
 # (third_party/testing/assert.hpp) so it builds fully offline.
 add_executable(axiam_cpp_tests
   main.cpp
+  management_test_util.cpp
+  test_management_generated.cpp
   test_sensitive.cpp
   test_version_policy.cpp
   test_errors.cpp
