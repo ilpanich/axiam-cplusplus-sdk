@@ -1343,6 +1343,21 @@ def emit_ops_source() -> str:
                "std::make_shared<management::Transport>(p_), std::move(scope));")
     out.append("}")
     out.append("")
+
+    out.extend(comment(
+        "§27.2/§27.3: the namespace handles also sit DIRECTLY on the client, which is "
+        "the form §27.3's C++ row shows -- `client.service_accounts().rotate_secret(id)`. "
+        "§27.2 rule 4 makes the single `management()` accessor above the ADDITIONAL one, "
+        "and requires that where an SDK offers both they return equivalent handles; "
+        "these forward to it, so equivalence is structural rather than a promise two "
+        "code paths have to keep."))
+    for namespace in REGISTRY["namespaces"]:
+        cls = f"management::{handle_type(namespace)}"
+        out.append(f"{cls} Client::{method(namespace)}() {{")
+        out.append(f"    return management().{method(namespace)}();")
+        out.append("}")
+        out.append("")
+
     out.append("}  // namespace axiam")
     return "\n".join(out) + "\n"
 
@@ -1707,6 +1722,54 @@ def emit_models_test() -> str:
         out.append("}")
         out.append("")
 
+    # ---- Pass D: client.<ns>() and client.management().<ns>() agree ----
+    equivalents = 0
+    for namespace, nsdef in REGISTRY["namespaces"].items():
+        first_op = None
+        for opname, op in nsdef["operations"].items():
+            if not [p for p in op_params(namespace, op) if p["kind"] == "body"]:
+                first_op = (opname, op)
+                break
+        if first_op is None:
+            continue
+        opname, op = first_op
+        equivalents += 1
+
+        args = []
+        for prm in op_params(namespace, op):
+            if prm["kind"] == "path":
+                args.append(f'"{EXAMPLE_UUID}"')
+            elif prm["kind"] == "query" and prm["required"]:
+                args.append('"example"')
+        call_args = ", ".join(args)
+        body = example_response(op)
+        fixture_body = cpp_raw_string(json.dumps(body)) if body is not None else '""'
+        status = "200" if body is not None else "204"
+
+        out.append(f'AXIAM_TEST("management {namespace}: client.{method(namespace)}() and '
+                   f'management().{method(namespace)}() are equivalent (§27.2 rule 4)") {{')
+        out.append(f"    auto fixture = axtest::mgmt::signed_in_two({status}, {fixture_body},")
+        out.append(f"                                              {status}, {fixture_body});")
+        out.append("")
+        out.extend(comment(
+            "§27.2 rule 4: \"where an SDK offers both, the two MUST return equivalent "
+            "handles\". Equivalent means the same request, not merely the same type -- so "
+            "this compares the method and path each actually put on the wire.", "    "))
+        out.append(f"    (void) fixture.client.{method(namespace)}()"
+                   f".{method(opname)}({call_args});")
+        out.append("    const auto direct_method = fixture.state->last().method;")
+        out.append("    const auto direct_path = "
+                   "axtest::mgmt::path_of(fixture.state->last().url);")
+        out.append("")
+        out.append(f"    (void) fixture.client.management().{method(namespace)}()"
+                   f".{method(opname)}({call_args});")
+        out.append("    AXIAM_CHECK(fixture.state->last().method == direct_method);")
+        out.append("    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "
+                   "direct_path);")
+        out.append(f'    AXIAM_CHECK(direct_path == "{expected_path(op)}");')
+        out.append("}")
+        out.append("")
+
     out.extend(comment(
         f"§27.9: {models} models, {enums} enums and {scopes} namespaces are covered "
         "above.\n\n"
@@ -1717,6 +1780,7 @@ def emit_models_test() -> str:
     out.append("    int round_trips = 0;")
     out.append("    int enum_maps = 0;")
     out.append("    int rescopes = 0;")
+    out.append("    int equivalents = 0;")
     out.append("    for (const auto& test : axtest::registry()) {")
     out.append('        if (test.name.find("round-trips without losing a field") != std::string::npos) {')
     out.append("            ++round_trips;")
@@ -1724,11 +1788,14 @@ def emit_models_test() -> str:
     out.append("            ++enum_maps;")
     out.append('        } else if (test.name.find("re-scoping returns a new handle") != std::string::npos) {')
     out.append("            ++rescopes;")
+    out.append('        } else if (test.name.find("are equivalent") != std::string::npos) {')
+    out.append("            ++equivalents;")
     out.append("        }")
     out.append("    }")
     out.append(f"    AXIAM_CHECK(round_trips == {models});")
     out.append(f"    AXIAM_CHECK(enum_maps == {enums});")
     out.append(f"    AXIAM_CHECK(rescopes == {scopes});")
+    out.append(f"    AXIAM_CHECK(equivalents == {equivalents});")
     out.append("}")
     out.append("")
     out.append("}  // namespace")

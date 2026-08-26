@@ -1981,4 +1981,105 @@ management::ManagementApi Client::management() {
     return management::ManagementApi(std::make_shared<management::Transport>(p_), std::move(scope));
 }
 
+// §27.2/§27.3: the namespace handles also sit DIRECTLY on the client, which is the form §27.3's
+// C++ row shows -- `client.service_accounts().rotate_secret(id)`. §27.2 rule 4 makes the single
+// `management()` accessor above the ADDITIONAL one, and requires that where an SDK offers both
+// they return equivalent handles; these forward to it, so equivalence is structural rather than
+// a promise two code paths have to keep.
+management::OrganizationsApi Client::organizations() {
+    return management().organizations();
+}
+
+management::TenantsApi Client::tenants() {
+    return management().tenants();
+}
+
+management::UsersApi Client::users() {
+    return management().users();
+}
+
+management::GroupsApi Client::groups() {
+    return management().groups();
+}
+
+management::RolesApi Client::roles() {
+    return management().roles();
+}
+
+management::PermissionsApi Client::permissions() {
+    return management().permissions();
+}
+
+management::ResourcesApi Client::resources() {
+    return management().resources();
+}
+
+management::ScopesApi Client::scopes() {
+    return management().scopes();
+}
+
+management::ServiceAccountsApi Client::service_accounts() {
+    return management().service_accounts();
+}
+
+management::CertificatesApi Client::certificates() {
+    return management().certificates();
+}
+
+management::CaCertificatesApi Client::ca_certificates() {
+    return management().ca_certificates();
+}
+
+management::PgpKeysApi Client::pgp_keys() {
+    return management().pgp_keys();
+}
+
+management::WebhooksApi Client::webhooks() {
+    return management().webhooks();
+}
+
+management::Oauth2ClientsApi Client::oauth2_clients() {
+    return management().oauth2_clients();
+}
+
+management::FederationApi Client::federation() {
+    return management().federation();
+}
+
+management::NotificationRulesApi Client::notification_rules() {
+    return management().notification_rules();
+}
+
+management::EmailConfigApi Client::email_config() {
+    return management().email_config();
+}
+
+management::SettingsApi Client::settings() {
+    return management().settings();
+}
+
+management::ScimTokensApi Client::scim_tokens() {
+    return management().scim_tokens();
+}
+
+management::ReactorsApi Client::reactors() {
+    return management().reactors();
+}
+
+management::WebauthnPolicyApi Client::webauthn_policy() {
+    return management().webauthn_policy();
+}
+
+management::AuditApi Client::audit() {
+    return management().audit();
+}
+
+management::PrivacyApi Client::privacy() {
+    return management().privacy();
+}
+
+management::PlatformApi Client::platform() {
+    return management().platform();
+}
+
 }  // namespace axiam

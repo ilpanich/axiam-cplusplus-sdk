@@ -2799,6 +2799,414 @@ AXIAM_TEST("management platform: re-scoping returns a new handle (§27.4 rule 3)
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/health");
 }
 
+AXIAM_TEST("management organizations: client.organizations() and management().organizations() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "slug": "example", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "slug": "example", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.organizations().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().organizations().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/organizations");
+}
+
+AXIAM_TEST("management tenants: client.tenants() and management().tenants() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.tenants().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().tenants().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/organizations/11111111-1111-4111-8111-111111111111/tenants");
+}
+
+AXIAM_TEST("management users: client.users() and management().users() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.users().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().users().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/users");
+}
+
+AXIAM_TEST("management groups: client.groups() and management().groups() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.groups().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().groups().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/groups");
+}
+
+AXIAM_TEST("management roles: client.roles() and management().roles() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "is_global": true, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "is_global": true, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.roles().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().roles().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/roles");
+}
+
+AXIAM_TEST("management permissions: client.permissions() and management().permissions() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"action": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"action": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.permissions().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().permissions().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/permissions");
+}
+
+AXIAM_TEST("management resources: client.resources() and management().resources() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "parent_id": "11111111-1111-4111-8111-111111111111", "resource_type": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "uma_registered_by": "example", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "parent_id": "11111111-1111-4111-8111-111111111111", "resource_type": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "uma_registered_by": "example", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.resources().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().resources().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/resources");
+}
+
+AXIAM_TEST("management scopes: client.scopes() and management().scopes() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json([{"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}])json",
+                                              200, R"json([{"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}])json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.scopes().list("11111111-1111-4111-8111-111111111111");
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().scopes().list("11111111-1111-4111-8111-111111111111");
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/resources/11111111-1111-4111-8111-111111111111/scopes");
+}
+
+AXIAM_TEST("management service_accounts: client.service_accounts() and management().service_accounts() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.service_accounts().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().service_accounts().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/service-accounts");
+}
+
+AXIAM_TEST("management certificates: client.certificates() and management().certificates() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.certificates().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().certificates().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/certificates");
+}
+
+AXIAM_TEST("management ca_certificates: client.ca_certificates() and management().ca_certificates() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"chain_pem": "example", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "key_custody": "example", "key_locator": "example", "mtls_trust_anchor": true, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "organization_id": "11111111-1111-4111-8111-111111111111", "parent_ca_id": "11111111-1111-4111-8111-111111111111", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"chain_pem": "example", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "key_custody": "example", "key_locator": "example", "mtls_trust_anchor": true, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "organization_id": "11111111-1111-4111-8111-111111111111", "parent_ca_id": "11111111-1111-4111-8111-111111111111", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.ca_certificates().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().ca_certificates().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/organizations/11111111-1111-4111-8111-111111111111/ca-certificates");
+}
+
+AXIAM_TEST("management pgp_keys: client.pgp_keys() and management().pgp_keys() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"algorithm": "Rsa4096", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "public_key_armored": "example", "purpose": "AuditSigning", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"algorithm": "Rsa4096", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "public_key_armored": "example", "purpose": "AuditSigning", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.pgp_keys().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().pgp_keys().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/pgp-keys");
+}
+
+AXIAM_TEST("management webhooks: client.webhooks() and management().webhooks() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "enabled": true, "events": ["example"], "id": "11111111-1111-4111-8111-111111111111", "retry_policy": {"backoff_multiplier": 1.5, "initial_delay_secs": 1, "max_retries": 1}, "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "url": "example"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "enabled": true, "events": ["example"], "id": "11111111-1111-4111-8111-111111111111", "retry_policy": {"backoff_multiplier": 1.5, "initial_delay_secs": 1, "max_retries": 1}, "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "url": "example"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.webhooks().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().webhooks().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/webhooks");
+}
+
+AXIAM_TEST("management oauth2_clients: client.oauth2_clients() and management().oauth2_clients() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.oauth2_clients().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().oauth2_clients().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/oauth2-clients");
+}
+
+AXIAM_TEST("management federation: client.federation() and management().federation() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"attribute_map": {}, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "enabled": true, "id": "11111111-1111-4111-8111-111111111111", "metadata_url": "example", "protocol": "example", "provider": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"attribute_map": {}, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "enabled": true, "id": "11111111-1111-4111-8111-111111111111", "metadata_url": "example", "protocol": "example", "provider": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.federation().list_configs();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().federation().list_configs();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/federation-configs");
+}
+
+AXIAM_TEST("management notification_rules: client.notification_rules() and management().notification_rules() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["login_failure"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "recipient_emails": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["login_failure"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "recipient_emails": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.notification_rules().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().notification_rules().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/notification-rules");
+}
+
+AXIAM_TEST("management email_config: client.email_config() and management().email_config() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"created_at": "2026-08-26T00:00:00Z", "enabled": true, "from_email": "example", "from_name": "example", "id": "11111111-1111-4111-8111-111111111111", "provider": {"kind": "smtp", "host": "example", "port": 1, "starttls": true, "username": "example"}, "reply_to": "example", "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"})json",
+                                              200, R"json({"created_at": "2026-08-26T00:00:00Z", "enabled": true, "from_email": "example", "from_name": "example", "id": "11111111-1111-4111-8111-111111111111", "provider": {"kind": "smtp", "host": "example", "port": 1, "starttls": true, "username": "example"}, "reply_to": "example", "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.email_config().get_org();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().email_config().get_org();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/organizations/11111111-1111-4111-8111-111111111111/email-config");
+}
+
+AXIAM_TEST("management settings: client.settings() and management().settings() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z"})json",
+                                              200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z"})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.settings().get_org();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().settings().get_org();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/organizations/11111111-1111-4111-8111-111111111111/settings");
+}
+
+AXIAM_TEST("management scim_tokens: client.scim_tokens() and management().scim_tokens() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json([{"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "expires_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "last_used_at": "2026-08-26T00:00:00Z", "name": "example", "revoked_at": "2026-08-26T00:00:00Z", "status": "active", "tenant_id": "11111111-1111-4111-8111-111111111111", "user_id": "11111111-1111-4111-8111-111111111111"}])json",
+                                              200, R"json([{"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "expires_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "last_used_at": "2026-08-26T00:00:00Z", "name": "example", "revoked_at": "2026-08-26T00:00:00Z", "status": "active", "tenant_id": "11111111-1111-4111-8111-111111111111", "user_id": "11111111-1111-4111-8111-111111111111"}])json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.scim_tokens().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().scim_tokens().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/scim-tokens");
+}
+
+AXIAM_TEST("management reactors: client.reactors() and management().reactors() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["example"], "failure_policy": "fail_closed", "id": "11111111-1111-4111-8111-111111111111", "last_seen_at": "2026-08-26T00:00:00Z", "mode": "intercept", "name": "example", "priority": 1, "recent_timeout_count": 1, "recent_veto_count": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "timeout_ms": 1, "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["example"], "failure_policy": "fail_closed", "id": "11111111-1111-4111-8111-111111111111", "last_seen_at": "2026-08-26T00:00:00Z", "mode": "intercept", "name": "example", "priority": 1, "recent_timeout_count": 1, "recent_veto_count": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "timeout_ms": 1, "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.reactors().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().reactors().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/reactors");
+}
+
+AXIAM_TEST("management webauthn_policy: client.webauthn_policy() and management().webauthn_policy() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"allowed_aaguids": ["11111111-1111-4111-8111-111111111111"], "block_revoked_status": true, "blocked_aaguids": ["11111111-1111-4111-8111-111111111111"], "min_certification": "L1", "mode": "none", "require_fido_certified": true, "unknown_aaguid": "allow", "effective_unknown_aaguid": "allow"})json",
+                                              200, R"json({"allowed_aaguids": ["11111111-1111-4111-8111-111111111111"], "block_revoked_status": true, "blocked_aaguids": ["11111111-1111-4111-8111-111111111111"], "min_certification": "L1", "mode": "none", "require_fido_certified": true, "unknown_aaguid": "allow", "effective_unknown_aaguid": "allow"})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.webauthn_policy().get();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().webauthn_policy().get();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/tenants/11111111-1111-4111-8111-111111111111/webauthn/attestation-policy");
+}
+
+AXIAM_TEST("management audit: client.audit() and management().audit() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.audit().list();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().audit().list();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/audit-logs");
+}
+
+AXIAM_TEST("management privacy: client.privacy() and management().privacy() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(204, "",
+                                              204, "");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.privacy().request_export();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().privacy().request_export();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/account/export");
+}
+
+AXIAM_TEST("management platform: client.platform() and management().platform() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"status": "example"})json",
+                                              200, R"json({"status": "example"})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.platform().health();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().platform().health();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/health");
+}
+
 // §27.9: 114 models, 22 enums and 24 namespaces are covered above. Counted from the test
 // registry rather than restated as a literal on both sides -- a case dropped by a bad
 // regeneration would still satisfy a tautology, and fails this instead.
@@ -2806,6 +3214,7 @@ AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
     int round_trips = 0;
     int enum_maps = 0;
     int rescopes = 0;
+    int equivalents = 0;
     for (const auto& test : axtest::registry()) {
         if (test.name.find("round-trips without losing a field") != std::string::npos) {
             ++round_trips;
@@ -2813,11 +3222,14 @@ AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
             ++enum_maps;
         } else if (test.name.find("re-scoping returns a new handle") != std::string::npos) {
             ++rescopes;
+        } else if (test.name.find("are equivalent") != std::string::npos) {
+            ++equivalents;
         }
     }
     AXIAM_CHECK(round_trips == 114);
     AXIAM_CHECK(enum_maps == 22);
     AXIAM_CHECK(rescopes == 24);
+    AXIAM_CHECK(equivalents == 24);
 }
 
 }  // namespace

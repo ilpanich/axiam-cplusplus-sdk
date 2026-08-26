@@ -36,6 +36,14 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   rule 7): `NotFoundError` and `ConflictError` under `AuthzError`,
   `ValidationError` under `NetworkError` and excluded from retry.
 
+  The 24 namespace handles sit **directly on the client** —
+  `client.service_accounts().rotate_secret(id)`, which is the form §27.3's C++
+  row specifies — and `client.management()` reaches the same handles behind one
+  accessor (§27.2 rule 4). The direct accessors forward to `management()`, so the
+  "equivalent handles" rule 4 requires is structural rather than two code paths
+  agreeing to stay in step; the suite asserts it per namespace by comparing the
+  method and path each actually puts on the wire.
+
   New public headers `axiam/management.hpp` and `axiam/management_manifest.hpp`.
   Deliberately **not** pulled in by the `axiam/axiam.hpp` umbrella: they are
   around five thousand lines of declarations, and most programs authenticate and

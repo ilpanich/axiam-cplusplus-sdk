@@ -1135,23 +1135,31 @@ sign path, in both directions. Worked example, including a transport skeleton:
 
 ## §27 Management API
 
-146 operations across 24 namespaces, reached through namespace handles hung off
-`client.management()`:
+146 operations across 24 namespaces, reached through namespace handles that sit
+directly on the client — the form §27.3's C++ row specifies:
 
 ```cpp
 #include "axiam/management.hpp"   // opt-in; the umbrella header does not pull it in
 
-auto mgmt = client.management();
-
-auto page = mgmt.roles().list();
+auto page = client.roles().list();
 std::cout << page.size() << " on this page, " << page.total << " in the tenant\n";
 
 axiam::management::CreateRoleRequest req;
 req.name = "editor";
 req.description = "Read and write documents";
 req.is_global = false;
-const auto role = mgmt.roles().create(req);
+const auto role = client.roles().create(req);
+
+// Or reach the same 24 handles behind one accessor (§27.2 rule 4), which reads
+// better where a call site is already dense with §1 operations:
+auto mgmt = client.management();
+const auto same = mgmt.roles().list();
 ```
+
+The two forms are **equivalent** — rule 4 requires it, the direct accessors
+forward to `management()` so it is structural rather than a promise, and the
+suite asserts it per namespace by comparing the method and path each actually
+puts on the wire.
 
 Everything below the handles is **generated** from the vendored
 `management-registry.json` and `openapi.json` by

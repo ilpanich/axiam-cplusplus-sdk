@@ -48,6 +48,13 @@ int main() {
         // management call is a programming error, not a 401 to handle.
         client.login(env_or("AXIAM_USERNAME", "admin"), env_or("AXIAM_PASSWORD", "admin"));
 
+        // The namespace handles sit directly on the client — `client.roles()`,
+        // `client.service_accounts()` — which is the form §27.3's C++ row shows.
+        // `client.management()` reaches the same handles behind one accessor
+        // (§27.2 rule 4) and is the nicer read when a call site is dense with
+        // §1 operations; the two are equivalent, and the suite asserts it by
+        // comparing what each puts on the wire. This program uses both, to show
+        // there is no difference.
         auto mgmt = client.management();
 
         // ---- 1. Paging (§27.4 rule 4) ---------------------------------
@@ -56,7 +63,7 @@ int main() {
         // how many came back in this one. They are separate members precisely
         // so that a management tool cannot accidentally report "4 roles" after
         // reading the first page of four hundred.
-        auto page = mgmt.roles().list();
+        auto page = client.roles().list();
         std::cout << "roles: " << page.size() << " on this page, " << page.total
                   << " in the tenant\n";
         for (const auto& role : page) {
@@ -67,7 +74,7 @@ int main() {
         // free to return fewer rows than asked for and still have more.
         std::int64_t seen = 0;
         for (auto req = axiam::management::PageRequest{}; ; req = req.next()) {
-            const auto batch = mgmt.roles().list(req);
+            const auto batch = client.roles().list(req);
             if (batch.empty()) {
                 break;  // The stop condition. Not `batch.size() < req.limit`.
             }
@@ -83,9 +90,9 @@ int main() {
         // it.
         const std::string other = env_or("AXIAM_OTHER_TENANT_ID", "");
         if (!other.empty()) {
-            const auto elsewhere = mgmt.roles().for_tenant(other).list();
+            const auto elsewhere = client.roles().for_tenant(other).list();
             std::cout << "tenant " << other << " has " << elsewhere.total << " roles\n";
-            // mgmt.roles() is still pointed at the client's own tenant here.
+            // client.roles() is still pointed at the client's own tenant here.
         }
 
         if (env_or("AXIAM_WRITE", "") != "1") {
