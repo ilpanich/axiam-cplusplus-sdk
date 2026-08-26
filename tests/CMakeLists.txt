@@ -18,6 +18,8 @@ add_executable(axiam_cpp_tests
   main.cpp
   management_test_util.cpp
   test_management_generated.cpp
+  test_management_semantics.cpp
+  test_management_manifest.cpp
   test_sensitive.cpp
   test_version_policy.cpp
   test_errors.cpp

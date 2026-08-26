@@ -1083,7 +1083,8 @@ def emit_api_header() -> str:
     out.append("    std::optional<std::string> tenant_id;  ///< Overrides `{tenant_id}`.")
     out.append("};")
     out.append("")
-    out.append("class Transport;  // defined in src/management_transport.hpp")
+    out.append("class Transport;    // defined in src/management_transport.hpp")
+    out.append("class ManifestApi;  // defined in axiam/management_manifest.hpp")
     out.append("")
 
     # ---- handles ----
@@ -1147,7 +1148,7 @@ def emit_api_header() -> str:
         "The §27.6 declarative layer: plan and apply a manifest.\n\n"
         "`plan()` writes nothing; `apply()` performs the plan, stops at the first failure "
         "and does not roll back (§27.7).", "    "))
-    out.append("    class ManifestApi manifest() const;")
+    out.append("    ManifestApi manifest() const;")
     out.append("")
     out.append("private:")
     out.append("    std::shared_ptr<Transport> transport_;")
@@ -1260,11 +1261,11 @@ def emit_op_body(namespace: str, opname: str, op: dict[str, Any]) -> list[str]:
     out.append("")
     model = model_type(schema.lstrip("[]"))
     if kind == "page":
-        out.append(f"    return Transport::to_page<{model}>(response, page);")
+        out.append(f"    return Transport::to_page<{model}>(response, page, \"{canonical}\");")
     elif kind == "array":
-        out.append(f"    return response.get<std::vector<{model}>>();")
+        out.append(f"    return Transport::decode<std::vector<{model}>>(response, \"{canonical}\");")
     else:
-        out.append(f"    return response.get<{model}>();")
+        out.append(f"    return Transport::decode<{model}>(response, \"{canonical}\");")
     out.append("}")
     return out
 

@@ -51,7 +51,8 @@ axiam::Transport routed(std::shared_ptr<FakeState> st, std::shared_ptr<Queue> qu
     return axtest::make_fake(std::move(st));
 }
 
-Fixture make(std::vector<Canned> replies, bool sign_in, bool scoped) {
+Fixture make(std::vector<Canned> replies, bool sign_in, bool scoped,
+             std::shared_ptr<std::vector<std::string>> paths = nullptr) {
     auto st = std::make_shared<FakeState>();
     auto queue = std::make_shared<Queue>();
     queue->replies = std::move(replies);
@@ -59,6 +60,13 @@ Fixture make(std::vector<Canned> replies, bool sign_in, bool scoped) {
     auto builder = axiam::Client::builder()
                        .base_url("https://iam.example.com")
                        .transport(routed(st, queue));
+    if (paths) {
+        builder.telemetry_hook([paths](const axiam::TelemetryEvent& ev) {
+            if (const auto* start = std::get_if<axiam::RequestStartEvent>(&ev)) {
+                paths->push_back(start->path_template);
+            }
+        });
+    }
     if (scoped) {
         builder.tenant_id(kUuid).org_id(kUuid);
     } else {
@@ -68,7 +76,7 @@ Fixture make(std::vector<Canned> replies, bool sign_in, bool scoped) {
     }
     auto client = builder.build();
     if (sign_in) client.login("admin@acme.test", "correct horse");
-    return Fixture{std::move(st), std::move(client)};
+    return Fixture{std::move(st), std::move(client), std::move(paths)};
 }
 
 }  // namespace
@@ -80,6 +88,16 @@ Fixture signed_in(long status, const std::string& body) {
 Fixture signed_in_two(long first_status, const std::string& first_body,
                       long second_status, const std::string& second_body) {
     return make({{first_status, first_body}, {second_status, second_body}}, true, true);
+}
+
+Fixture signed_in_three(long a_status, const std::string& a_body,
+                        long b_status, const std::string& b_body,
+                        long c_status, const std::string& c_body) {
+    return make({{a_status, a_body}, {b_status, b_body}, {c_status, c_body}}, true, true);
+}
+
+Fixture signed_in_telemetry(long status, const std::string& body) {
+    return make({{status, body}}, true, true, std::make_shared<std::vector<std::string>>());
 }
 
 Fixture anonymous() { return make({}, false, true); }

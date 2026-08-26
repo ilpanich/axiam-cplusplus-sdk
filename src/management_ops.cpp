@@ -40,7 +40,7 @@ Page<Organization> OrganizationsApi::list(const PageRequest& page) {
     const auto response = transport_->send("organizations.list", "GET", "/api/v1/organizations",
                                             values, query, payload);
 
-    return Transport::to_page<Organization>(response, page);
+    return Transport::to_page<Organization>(response, page, "organizations.list");
 }
 
 Organization OrganizationsApi::get() {
@@ -50,7 +50,7 @@ Organization OrganizationsApi::get() {
     const auto response = transport_->send("organizations.get", "GET", "/api/v1/organizations/{org_id}",
                                             values, query, payload);
 
-    return response.get<Organization>();
+    return Transport::decode<Organization>(response, "organizations.get");
 }
 
 Organization OrganizationsApi::update(const UpdateOrganizationRequest& body) {
@@ -60,7 +60,7 @@ Organization OrganizationsApi::update(const UpdateOrganizationRequest& body) {
     const auto response = transport_->send("organizations.update", "PUT", "/api/v1/organizations/{org_id}",
                                             values, query, payload);
 
-    return response.get<Organization>();
+    return Transport::decode<Organization>(response, "organizations.update");
 }
 
 TenantsApi::TenantsApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -89,7 +89,7 @@ Page<Tenant> TenantsApi::list(const PageRequest& page) {
     const auto response = transport_->send("tenants.list", "GET", "/api/v1/organizations/{org_id}/tenants",
                                             values, query, payload);
 
-    return Transport::to_page<Tenant>(response, page);
+    return Transport::to_page<Tenant>(response, page, "tenants.list");
 }
 
 Tenant TenantsApi::create(const CreateTenantRequest& body) {
@@ -99,7 +99,7 @@ Tenant TenantsApi::create(const CreateTenantRequest& body) {
     const auto response = transport_->send("tenants.create", "POST", "/api/v1/organizations/{org_id}/tenants",
                                             values, query, payload);
 
-    return response.get<Tenant>();
+    return Transport::decode<Tenant>(response, "tenants.create");
 }
 
 Tenant TenantsApi::get(const std::string& tenant_id) {
@@ -109,7 +109,7 @@ Tenant TenantsApi::get(const std::string& tenant_id) {
     const auto response = transport_->send("tenants.get", "GET", "/api/v1/organizations/{org_id}/tenants/{tenant_id}",
                                             values, query, payload);
 
-    return response.get<Tenant>();
+    return Transport::decode<Tenant>(response, "tenants.get");
 }
 
 Tenant TenantsApi::update(const std::string& tenant_id, const UpdateTenant& body) {
@@ -119,7 +119,7 @@ Tenant TenantsApi::update(const std::string& tenant_id, const UpdateTenant& body
     const auto response = transport_->send("tenants.update", "PUT", "/api/v1/organizations/{org_id}/tenants/{tenant_id}",
                                             values, query, payload);
 
-    return response.get<Tenant>();
+    return Transport::decode<Tenant>(response, "tenants.update");
 }
 
 void TenantsApi::delete_(const std::string& tenant_id) {
@@ -156,7 +156,7 @@ Page<UserResponse> UsersApi::list(const PageRequest& page) {
     const auto response = transport_->send("users.list", "GET", "/api/v1/users",
                                             values, query, payload);
 
-    return Transport::to_page<UserResponse>(response, page);
+    return Transport::to_page<UserResponse>(response, page, "users.list");
 }
 
 UserResponse UsersApi::create(const CreateUserRequest& body) {
@@ -166,7 +166,7 @@ UserResponse UsersApi::create(const CreateUserRequest& body) {
     const auto response = transport_->send("users.create", "POST", "/api/v1/users",
                                             values, query, payload);
 
-    return response.get<UserResponse>();
+    return Transport::decode<UserResponse>(response, "users.create");
 }
 
 UserResponse UsersApi::get(const std::string& user_id) {
@@ -176,7 +176,7 @@ UserResponse UsersApi::get(const std::string& user_id) {
     const auto response = transport_->send("users.get", "GET", "/api/v1/users/{user_id}",
                                             values, query, payload);
 
-    return response.get<UserResponse>();
+    return Transport::decode<UserResponse>(response, "users.get");
 }
 
 UserResponse UsersApi::update(const std::string& user_id, const UpdateUserRequest& body) {
@@ -186,7 +186,7 @@ UserResponse UsersApi::update(const std::string& user_id, const UpdateUserReques
     const auto response = transport_->send("users.update", "PUT", "/api/v1/users/{user_id}",
                                             values, query, payload);
 
-    return response.get<UserResponse>();
+    return Transport::decode<UserResponse>(response, "users.update");
 }
 
 void UsersApi::delete_(const std::string& user_id) {
@@ -204,7 +204,7 @@ std::vector<MfaMethodResponse> UsersApi::list_mfa_methods(const std::string& use
     const auto response = transport_->send("users.list_mfa_methods", "GET", "/api/v1/users/{user_id}/mfa-methods",
                                             values, query, payload);
 
-    return response.get<std::vector<MfaMethodResponse>>();
+    return Transport::decode<std::vector<MfaMethodResponse>>(response, "users.list_mfa_methods");
 }
 
 void UsersApi::delete_mfa_method(const std::string& user_id, const std::string& method_id) {
@@ -230,7 +230,7 @@ UserResponse UsersApi::unlock(const std::string& user_id) {
     const auto response = transport_->send("users.unlock", "POST", "/api/v1/users/{user_id}/unlock",
                                             values, query, payload);
 
-    return response.get<UserResponse>();
+    return Transport::decode<UserResponse>(response, "users.unlock");
 }
 
 std::vector<RoleAssignment> UsersApi::list_roles(const std::string& user_id) {
@@ -240,7 +240,7 @@ std::vector<RoleAssignment> UsersApi::list_roles(const std::string& user_id) {
     const auto response = transport_->send("users.list_roles", "GET", "/api/v1/users/{user_id}/roles",
                                             values, query, payload);
 
-    return response.get<std::vector<RoleAssignment>>();
+    return Transport::decode<std::vector<RoleAssignment>>(response, "users.list_roles");
 }
 
 GroupsApi::GroupsApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -269,7 +269,7 @@ Page<Group> GroupsApi::list(const PageRequest& page) {
     const auto response = transport_->send("groups.list", "GET", "/api/v1/groups",
                                             values, query, payload);
 
-    return Transport::to_page<Group>(response, page);
+    return Transport::to_page<Group>(response, page, "groups.list");
 }
 
 Group GroupsApi::create(const CreateGroupRequest& body) {
@@ -279,7 +279,7 @@ Group GroupsApi::create(const CreateGroupRequest& body) {
     const auto response = transport_->send("groups.create", "POST", "/api/v1/groups",
                                             values, query, payload);
 
-    return response.get<Group>();
+    return Transport::decode<Group>(response, "groups.create");
 }
 
 Group GroupsApi::get(const std::string& group_id) {
@@ -289,7 +289,7 @@ Group GroupsApi::get(const std::string& group_id) {
     const auto response = transport_->send("groups.get", "GET", "/api/v1/groups/{group_id}",
                                             values, query, payload);
 
-    return response.get<Group>();
+    return Transport::decode<Group>(response, "groups.get");
 }
 
 Group GroupsApi::update(const std::string& group_id, const UpdateGroup& body) {
@@ -299,7 +299,7 @@ Group GroupsApi::update(const std::string& group_id, const UpdateGroup& body) {
     const auto response = transport_->send("groups.update", "PUT", "/api/v1/groups/{group_id}",
                                             values, query, payload);
 
-    return response.get<Group>();
+    return Transport::decode<Group>(response, "groups.update");
 }
 
 void GroupsApi::delete_(const std::string& group_id) {
@@ -317,7 +317,7 @@ Page<UserResponse> GroupsApi::list_members(const std::string& group_id, const Pa
     const auto response = transport_->send("groups.list_members", "GET", "/api/v1/groups/{group_id}/members",
                                             values, query, payload);
 
-    return Transport::to_page<UserResponse>(response, page);
+    return Transport::to_page<UserResponse>(response, page, "groups.list_members");
 }
 
 void GroupsApi::add_member(const std::string& group_id, const AddMemberRequest& body) {
@@ -343,7 +343,7 @@ std::vector<RoleAssignment> GroupsApi::list_roles(const std::string& group_id) {
     const auto response = transport_->send("groups.list_roles", "GET", "/api/v1/groups/{group_id}/roles",
                                             values, query, payload);
 
-    return response.get<std::vector<RoleAssignment>>();
+    return Transport::decode<std::vector<RoleAssignment>>(response, "groups.list_roles");
 }
 
 RolesApi::RolesApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -372,7 +372,7 @@ Page<Role> RolesApi::list(const PageRequest& page) {
     const auto response = transport_->send("roles.list", "GET", "/api/v1/roles",
                                             values, query, payload);
 
-    return Transport::to_page<Role>(response, page);
+    return Transport::to_page<Role>(response, page, "roles.list");
 }
 
 Role RolesApi::create(const CreateRoleRequest& body) {
@@ -382,7 +382,7 @@ Role RolesApi::create(const CreateRoleRequest& body) {
     const auto response = transport_->send("roles.create", "POST", "/api/v1/roles",
                                             values, query, payload);
 
-    return response.get<Role>();
+    return Transport::decode<Role>(response, "roles.create");
 }
 
 Role RolesApi::get(const std::string& role_id) {
@@ -392,7 +392,7 @@ Role RolesApi::get(const std::string& role_id) {
     const auto response = transport_->send("roles.get", "GET", "/api/v1/roles/{role_id}",
                                             values, query, payload);
 
-    return response.get<Role>();
+    return Transport::decode<Role>(response, "roles.get");
 }
 
 Role RolesApi::update(const std::string& role_id, const UpdateRole& body) {
@@ -402,7 +402,7 @@ Role RolesApi::update(const std::string& role_id, const UpdateRole& body) {
     const auto response = transport_->send("roles.update", "PUT", "/api/v1/roles/{role_id}",
                                             values, query, payload);
 
-    return response.get<Role>();
+    return Transport::decode<Role>(response, "roles.update");
 }
 
 void RolesApi::delete_(const std::string& role_id) {
@@ -420,7 +420,7 @@ std::vector<RoleUserAssignment> RolesApi::list_users(const std::string& role_id)
     const auto response = transport_->send("roles.list_users", "GET", "/api/v1/roles/{role_id}/users",
                                             values, query, payload);
 
-    return response.get<std::vector<RoleUserAssignment>>();
+    return Transport::decode<std::vector<RoleUserAssignment>>(response, "roles.list_users");
 }
 
 void RolesApi::assign_to_user(const std::string& role_id, const AssignRoleToUserRequest& body) {
@@ -446,7 +446,7 @@ std::vector<RoleGroupAssignment> RolesApi::list_groups(const std::string& role_i
     const auto response = transport_->send("roles.list_groups", "GET", "/api/v1/roles/{role_id}/groups",
                                             values, query, payload);
 
-    return response.get<std::vector<RoleGroupAssignment>>();
+    return Transport::decode<std::vector<RoleGroupAssignment>>(response, "roles.list_groups");
 }
 
 void RolesApi::assign_to_group(const std::string& role_id, const AssignRoleToGroupRequest& body) {
@@ -472,7 +472,7 @@ std::vector<ResolvedPermissionGrant> RolesApi::list_permissions(const std::strin
     const auto response = transport_->send("roles.list_permissions", "GET", "/api/v1/roles/{role_id}/permissions",
                                             values, query, payload);
 
-    return response.get<std::vector<ResolvedPermissionGrant>>();
+    return Transport::decode<std::vector<ResolvedPermissionGrant>>(response, "roles.list_permissions");
 }
 
 void RolesApi::grant_permission(const std::string& role_id, const GrantPermissionRequest& body) {
@@ -517,7 +517,7 @@ Page<Permission> PermissionsApi::list(const PageRequest& page) {
     const auto response = transport_->send("permissions.list", "GET", "/api/v1/permissions",
                                             values, query, payload);
 
-    return Transport::to_page<Permission>(response, page);
+    return Transport::to_page<Permission>(response, page, "permissions.list");
 }
 
 Permission PermissionsApi::create(const CreatePermissionRequest& body) {
@@ -527,7 +527,7 @@ Permission PermissionsApi::create(const CreatePermissionRequest& body) {
     const auto response = transport_->send("permissions.create", "POST", "/api/v1/permissions",
                                             values, query, payload);
 
-    return response.get<Permission>();
+    return Transport::decode<Permission>(response, "permissions.create");
 }
 
 Permission PermissionsApi::get(const std::string& permission_id) {
@@ -537,7 +537,7 @@ Permission PermissionsApi::get(const std::string& permission_id) {
     const auto response = transport_->send("permissions.get", "GET", "/api/v1/permissions/{permission_id}",
                                             values, query, payload);
 
-    return response.get<Permission>();
+    return Transport::decode<Permission>(response, "permissions.get");
 }
 
 Permission PermissionsApi::update(const std::string& permission_id, const UpdatePermissionRequest& body) {
@@ -547,7 +547,7 @@ Permission PermissionsApi::update(const std::string& permission_id, const Update
     const auto response = transport_->send("permissions.update", "PUT", "/api/v1/permissions/{permission_id}",
                                             values, query, payload);
 
-    return response.get<Permission>();
+    return Transport::decode<Permission>(response, "permissions.update");
 }
 
 void PermissionsApi::delete_(const std::string& permission_id) {
@@ -584,7 +584,7 @@ Page<Resource> ResourcesApi::list(const PageRequest& page) {
     const auto response = transport_->send("resources.list", "GET", "/api/v1/resources",
                                             values, query, payload);
 
-    return Transport::to_page<Resource>(response, page);
+    return Transport::to_page<Resource>(response, page, "resources.list");
 }
 
 Resource ResourcesApi::create(const CreateResourceRequest& body) {
@@ -594,7 +594,7 @@ Resource ResourcesApi::create(const CreateResourceRequest& body) {
     const auto response = transport_->send("resources.create", "POST", "/api/v1/resources",
                                             values, query, payload);
 
-    return response.get<Resource>();
+    return Transport::decode<Resource>(response, "resources.create");
 }
 
 Resource ResourcesApi::get(const std::string& resource_id) {
@@ -604,7 +604,7 @@ Resource ResourcesApi::get(const std::string& resource_id) {
     const auto response = transport_->send("resources.get", "GET", "/api/v1/resources/{resource_id}",
                                             values, query, payload);
 
-    return response.get<Resource>();
+    return Transport::decode<Resource>(response, "resources.get");
 }
 
 Resource ResourcesApi::update(const std::string& resource_id, const UpdateResourceRequest& body) {
@@ -614,7 +614,7 @@ Resource ResourcesApi::update(const std::string& resource_id, const UpdateResour
     const auto response = transport_->send("resources.update", "PUT", "/api/v1/resources/{resource_id}",
                                             values, query, payload);
 
-    return response.get<Resource>();
+    return Transport::decode<Resource>(response, "resources.update");
 }
 
 void ResourcesApi::delete_(const std::string& resource_id) {
@@ -632,7 +632,7 @@ std::vector<Resource> ResourcesApi::list_children(const std::string& resource_id
     const auto response = transport_->send("resources.list_children", "GET", "/api/v1/resources/{resource_id}/children",
                                             values, query, payload);
 
-    return response.get<std::vector<Resource>>();
+    return Transport::decode<std::vector<Resource>>(response, "resources.list_children");
 }
 
 std::vector<Resource> ResourcesApi::list_ancestors(const std::string& resource_id) {
@@ -642,7 +642,7 @@ std::vector<Resource> ResourcesApi::list_ancestors(const std::string& resource_i
     const auto response = transport_->send("resources.list_ancestors", "GET", "/api/v1/resources/{resource_id}/ancestors",
                                             values, query, payload);
 
-    return response.get<std::vector<Resource>>();
+    return Transport::decode<std::vector<Resource>>(response, "resources.list_ancestors");
 }
 
 ScopesApi::ScopesApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -671,7 +671,7 @@ std::vector<Scope> ScopesApi::list(const std::string& resource_id) {
     const auto response = transport_->send("scopes.list", "GET", "/api/v1/resources/{resource_id}/scopes",
                                             values, query, payload);
 
-    return response.get<std::vector<Scope>>();
+    return Transport::decode<std::vector<Scope>>(response, "scopes.list");
 }
 
 Scope ScopesApi::create(const std::string& resource_id, const CreateScopeRequest& body) {
@@ -681,7 +681,7 @@ Scope ScopesApi::create(const std::string& resource_id, const CreateScopeRequest
     const auto response = transport_->send("scopes.create", "POST", "/api/v1/resources/{resource_id}/scopes",
                                             values, query, payload);
 
-    return response.get<Scope>();
+    return Transport::decode<Scope>(response, "scopes.create");
 }
 
 Scope ScopesApi::get(const std::string& resource_id, const std::string& scope_id) {
@@ -691,7 +691,7 @@ Scope ScopesApi::get(const std::string& resource_id, const std::string& scope_id
     const auto response = transport_->send("scopes.get", "GET", "/api/v1/resources/{resource_id}/scopes/{scope_id}",
                                             values, query, payload);
 
-    return response.get<Scope>();
+    return Transport::decode<Scope>(response, "scopes.get");
 }
 
 Scope ScopesApi::update(const std::string& resource_id, const std::string& scope_id, const UpdateScopeRequest& body) {
@@ -701,7 +701,7 @@ Scope ScopesApi::update(const std::string& resource_id, const std::string& scope
     const auto response = transport_->send("scopes.update", "PUT", "/api/v1/resources/{resource_id}/scopes/{scope_id}",
                                             values, query, payload);
 
-    return response.get<Scope>();
+    return Transport::decode<Scope>(response, "scopes.update");
 }
 
 void ScopesApi::delete_(const std::string& resource_id, const std::string& scope_id) {
@@ -738,7 +738,7 @@ Page<ServiceAccountResponse> ServiceAccountsApi::list(const PageRequest& page) {
     const auto response = transport_->send("service_accounts.list", "GET", "/api/v1/service-accounts",
                                             values, query, payload);
 
-    return Transport::to_page<ServiceAccountResponse>(response, page);
+    return Transport::to_page<ServiceAccountResponse>(response, page, "service_accounts.list");
 }
 
 ServiceAccountCreatedResponse ServiceAccountsApi::create(const CreateServiceAccountRequest& body) {
@@ -748,7 +748,7 @@ ServiceAccountCreatedResponse ServiceAccountsApi::create(const CreateServiceAcco
     const auto response = transport_->send("service_accounts.create", "POST", "/api/v1/service-accounts",
                                             values, query, payload);
 
-    return response.get<ServiceAccountCreatedResponse>();
+    return Transport::decode<ServiceAccountCreatedResponse>(response, "service_accounts.create");
 }
 
 ServiceAccountResponse ServiceAccountsApi::get(const std::string& sa_id) {
@@ -758,7 +758,7 @@ ServiceAccountResponse ServiceAccountsApi::get(const std::string& sa_id) {
     const auto response = transport_->send("service_accounts.get", "GET", "/api/v1/service-accounts/{sa_id}",
                                             values, query, payload);
 
-    return response.get<ServiceAccountResponse>();
+    return Transport::decode<ServiceAccountResponse>(response, "service_accounts.get");
 }
 
 ServiceAccountResponse ServiceAccountsApi::update(const std::string& sa_id, const UpdateServiceAccount& body) {
@@ -768,7 +768,7 @@ ServiceAccountResponse ServiceAccountsApi::update(const std::string& sa_id, cons
     const auto response = transport_->send("service_accounts.update", "PUT", "/api/v1/service-accounts/{sa_id}",
                                             values, query, payload);
 
-    return response.get<ServiceAccountResponse>();
+    return Transport::decode<ServiceAccountResponse>(response, "service_accounts.update");
 }
 
 void ServiceAccountsApi::delete_(const std::string& sa_id) {
@@ -786,7 +786,7 @@ RotateSecretResponse ServiceAccountsApi::rotate_secret(const std::string& sa_id)
     const auto response = transport_->send("service_accounts.rotate_secret", "POST", "/api/v1/service-accounts/{sa_id}/rotate-secret",
                                             values, query, payload);
 
-    return response.get<RotateSecretResponse>();
+    return Transport::decode<RotateSecretResponse>(response, "service_accounts.rotate_secret");
 }
 
 void ServiceAccountsApi::bind_certificate(const std::string& sa_id, const BindCertificate& body) {
@@ -823,7 +823,7 @@ Page<Certificate> CertificatesApi::list(const PageRequest& page) {
     const auto response = transport_->send("certificates.list", "GET", "/api/v1/certificates",
                                             values, query, payload);
 
-    return Transport::to_page<Certificate>(response, page);
+    return Transport::to_page<Certificate>(response, page, "certificates.list");
 }
 
 GeneratedCertificate CertificatesApi::generate(const CreateCertificateRequest& body) {
@@ -833,7 +833,7 @@ GeneratedCertificate CertificatesApi::generate(const CreateCertificateRequest& b
     const auto response = transport_->send("certificates.generate", "POST", "/api/v1/certificates",
                                             values, query, payload);
 
-    return response.get<GeneratedCertificate>();
+    return Transport::decode<GeneratedCertificate>(response, "certificates.generate");
 }
 
 Certificate CertificatesApi::get(const std::string& id) {
@@ -843,7 +843,7 @@ Certificate CertificatesApi::get(const std::string& id) {
     const auto response = transport_->send("certificates.get", "GET", "/api/v1/certificates/{id}",
                                             values, query, payload);
 
-    return response.get<Certificate>();
+    return Transport::decode<Certificate>(response, "certificates.get");
 }
 
 void CertificatesApi::revoke(const std::string& id) {
@@ -880,7 +880,7 @@ Page<CaCertificate> CaCertificatesApi::list(const PageRequest& page) {
     const auto response = transport_->send("ca_certificates.list", "GET", "/api/v1/organizations/{org_id}/ca-certificates",
                                             values, query, payload);
 
-    return Transport::to_page<CaCertificate>(response, page);
+    return Transport::to_page<CaCertificate>(response, page, "ca_certificates.list");
 }
 
 GeneratedCaCertificate CaCertificatesApi::generate(const CreateCaCertificateRequest& body) {
@@ -890,7 +890,7 @@ GeneratedCaCertificate CaCertificatesApi::generate(const CreateCaCertificateRequ
     const auto response = transport_->send("ca_certificates.generate", "POST", "/api/v1/organizations/{org_id}/ca-certificates",
                                             values, query, payload);
 
-    return response.get<GeneratedCaCertificate>();
+    return Transport::decode<GeneratedCaCertificate>(response, "ca_certificates.generate");
 }
 
 CaCertificate CaCertificatesApi::import_ca(const ImportCaCertificateRequest& body) {
@@ -900,7 +900,7 @@ CaCertificate CaCertificatesApi::import_ca(const ImportCaCertificateRequest& bod
     const auto response = transport_->send("ca_certificates.import_ca", "POST", "/api/v1/organizations/{org_id}/ca-certificates/import",
                                             values, query, payload);
 
-    return response.get<CaCertificate>();
+    return Transport::decode<CaCertificate>(response, "ca_certificates.import_ca");
 }
 
 CaCertificate CaCertificatesApi::get(const std::string& id) {
@@ -910,7 +910,7 @@ CaCertificate CaCertificatesApi::get(const std::string& id) {
     const auto response = transport_->send("ca_certificates.get", "GET", "/api/v1/organizations/{org_id}/ca-certificates/{id}",
                                             values, query, payload);
 
-    return response.get<CaCertificate>();
+    return Transport::decode<CaCertificate>(response, "ca_certificates.get");
 }
 
 void CaCertificatesApi::revoke(const std::string& id) {
@@ -928,7 +928,7 @@ MigrateCustodyResponse CaCertificatesApi::migrate_custody(const std::string& id)
     const auto response = transport_->send("ca_certificates.migrate_custody", "POST", "/api/v1/organizations/{org_id}/ca-certificates/{id}/migrate-custody",
                                             values, query, payload);
 
-    return response.get<MigrateCustodyResponse>();
+    return Transport::decode<MigrateCustodyResponse>(response, "ca_certificates.migrate_custody");
 }
 
 MtlsTrustAnchorResponse CaCertificatesApi::set_mtls_trust_anchor(const std::string& id, const SetMtlsTrustAnchor& body) {
@@ -938,7 +938,7 @@ MtlsTrustAnchorResponse CaCertificatesApi::set_mtls_trust_anchor(const std::stri
     const auto response = transport_->send("ca_certificates.set_mtls_trust_anchor", "PUT", "/api/v1/organizations/{org_id}/ca-certificates/{id}/mtls-trust-anchor",
                                             values, query, payload);
 
-    return response.get<MtlsTrustAnchorResponse>();
+    return Transport::decode<MtlsTrustAnchorResponse>(response, "ca_certificates.set_mtls_trust_anchor");
 }
 
 Page<CaCertificate> CaCertificatesApi::list_signing_cas(const std::string& tenant_id, const PageRequest& page) {
@@ -948,7 +948,7 @@ Page<CaCertificate> CaCertificatesApi::list_signing_cas(const std::string& tenan
     const auto response = transport_->send("ca_certificates.list_signing_cas", "GET", "/api/v1/organizations/{org_id}/tenants/{tenant_id}/signing-cas",
                                             values, query, payload);
 
-    return Transport::to_page<CaCertificate>(response, page);
+    return Transport::to_page<CaCertificate>(response, page, "ca_certificates.list_signing_cas");
 }
 
 GeneratedCaCertificate CaCertificatesApi::generate_signing_ca(const std::string& tenant_id, const CreateIntermediateCaRequest& body) {
@@ -958,7 +958,7 @@ GeneratedCaCertificate CaCertificatesApi::generate_signing_ca(const std::string&
     const auto response = transport_->send("ca_certificates.generate_signing_ca", "POST", "/api/v1/organizations/{org_id}/tenants/{tenant_id}/signing-cas",
                                             values, query, payload);
 
-    return response.get<GeneratedCaCertificate>();
+    return Transport::decode<GeneratedCaCertificate>(response, "ca_certificates.generate_signing_ca");
 }
 
 CaCertificate CaCertificatesApi::sign_signing_ca_csr(const std::string& tenant_id, const SignIntermediateCsrRequest& body) {
@@ -968,7 +968,7 @@ CaCertificate CaCertificatesApi::sign_signing_ca_csr(const std::string& tenant_i
     const auto response = transport_->send("ca_certificates.sign_signing_ca_csr", "POST", "/api/v1/organizations/{org_id}/tenants/{tenant_id}/signing-cas/sign-csr",
                                             values, query, payload);
 
-    return response.get<CaCertificate>();
+    return Transport::decode<CaCertificate>(response, "ca_certificates.sign_signing_ca_csr");
 }
 
 PgpKeysApi::PgpKeysApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -997,7 +997,7 @@ Page<PgpKey> PgpKeysApi::list(const PageRequest& page) {
     const auto response = transport_->send("pgp_keys.list", "GET", "/api/v1/pgp-keys",
                                             values, query, payload);
 
-    return Transport::to_page<PgpKey>(response, page);
+    return Transport::to_page<PgpKey>(response, page, "pgp_keys.list");
 }
 
 GeneratedPgpKey PgpKeysApi::generate(const CreatePgpKeyRequest& body) {
@@ -1007,7 +1007,7 @@ GeneratedPgpKey PgpKeysApi::generate(const CreatePgpKeyRequest& body) {
     const auto response = transport_->send("pgp_keys.generate", "POST", "/api/v1/pgp-keys",
                                             values, query, payload);
 
-    return response.get<GeneratedPgpKey>();
+    return Transport::decode<GeneratedPgpKey>(response, "pgp_keys.generate");
 }
 
 PgpKey PgpKeysApi::get(const std::string& id) {
@@ -1017,7 +1017,7 @@ PgpKey PgpKeysApi::get(const std::string& id) {
     const auto response = transport_->send("pgp_keys.get", "GET", "/api/v1/pgp-keys/{id}",
                                             values, query, payload);
 
-    return response.get<PgpKey>();
+    return Transport::decode<PgpKey>(response, "pgp_keys.get");
 }
 
 void PgpKeysApi::revoke(const std::string& id) {
@@ -1035,7 +1035,7 @@ EncryptedExport PgpKeysApi::encrypt(const std::string& id, const EncryptRequest&
     const auto response = transport_->send("pgp_keys.encrypt", "POST", "/api/v1/pgp-keys/{id}/encrypt",
                                             values, query, payload);
 
-    return response.get<EncryptedExport>();
+    return Transport::decode<EncryptedExport>(response, "pgp_keys.encrypt");
 }
 
 SignedAuditBatch PgpKeysApi::sign_audit_batch(const SignAuditBatchRequest& body) {
@@ -1045,7 +1045,7 @@ SignedAuditBatch PgpKeysApi::sign_audit_batch(const SignAuditBatchRequest& body)
     const auto response = transport_->send("pgp_keys.sign_audit_batch", "POST", "/api/v1/pgp-keys/sign-audit-batch",
                                             values, query, payload);
 
-    return response.get<SignedAuditBatch>();
+    return Transport::decode<SignedAuditBatch>(response, "pgp_keys.sign_audit_batch");
 }
 
 WebhooksApi::WebhooksApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -1074,7 +1074,7 @@ Page<WebhookResponse> WebhooksApi::list(const PageRequest& page) {
     const auto response = transport_->send("webhooks.list", "GET", "/api/v1/webhooks",
                                             values, query, payload);
 
-    return Transport::to_page<WebhookResponse>(response, page);
+    return Transport::to_page<WebhookResponse>(response, page, "webhooks.list");
 }
 
 WebhookResponse WebhooksApi::create(const CreateWebhookRequest& body) {
@@ -1084,7 +1084,7 @@ WebhookResponse WebhooksApi::create(const CreateWebhookRequest& body) {
     const auto response = transport_->send("webhooks.create", "POST", "/api/v1/webhooks",
                                             values, query, payload);
 
-    return response.get<WebhookResponse>();
+    return Transport::decode<WebhookResponse>(response, "webhooks.create");
 }
 
 WebhookResponse WebhooksApi::get(const std::string& id) {
@@ -1094,7 +1094,7 @@ WebhookResponse WebhooksApi::get(const std::string& id) {
     const auto response = transport_->send("webhooks.get", "GET", "/api/v1/webhooks/{id}",
                                             values, query, payload);
 
-    return response.get<WebhookResponse>();
+    return Transport::decode<WebhookResponse>(response, "webhooks.get");
 }
 
 WebhookResponse WebhooksApi::update(const std::string& id, const UpdateWebhookRequest& body) {
@@ -1104,7 +1104,7 @@ WebhookResponse WebhooksApi::update(const std::string& id, const UpdateWebhookRe
     const auto response = transport_->send("webhooks.update", "PUT", "/api/v1/webhooks/{id}",
                                             values, query, payload);
 
-    return response.get<WebhookResponse>();
+    return Transport::decode<WebhookResponse>(response, "webhooks.update");
 }
 
 void WebhooksApi::delete_(const std::string& id) {
@@ -1141,7 +1141,7 @@ Page<OAuth2ClientResponse> Oauth2ClientsApi::list(const PageRequest& page) {
     const auto response = transport_->send("oauth2_clients.list", "GET", "/api/v1/oauth2-clients",
                                             values, query, payload);
 
-    return Transport::to_page<OAuth2ClientResponse>(response, page);
+    return Transport::to_page<OAuth2ClientResponse>(response, page, "oauth2_clients.list");
 }
 
 OAuth2ClientCreatedResponse Oauth2ClientsApi::create(const CreateOAuth2ClientRequest& body) {
@@ -1151,7 +1151,7 @@ OAuth2ClientCreatedResponse Oauth2ClientsApi::create(const CreateOAuth2ClientReq
     const auto response = transport_->send("oauth2_clients.create", "POST", "/api/v1/oauth2-clients",
                                             values, query, payload);
 
-    return response.get<OAuth2ClientCreatedResponse>();
+    return Transport::decode<OAuth2ClientCreatedResponse>(response, "oauth2_clients.create");
 }
 
 OAuth2ClientResponse Oauth2ClientsApi::get(const std::string& id) {
@@ -1161,7 +1161,7 @@ OAuth2ClientResponse Oauth2ClientsApi::get(const std::string& id) {
     const auto response = transport_->send("oauth2_clients.get", "GET", "/api/v1/oauth2-clients/{id}",
                                             values, query, payload);
 
-    return response.get<OAuth2ClientResponse>();
+    return Transport::decode<OAuth2ClientResponse>(response, "oauth2_clients.get");
 }
 
 OAuth2ClientResponse Oauth2ClientsApi::update(const std::string& id, const UpdateOAuth2ClientRequest& body) {
@@ -1171,7 +1171,7 @@ OAuth2ClientResponse Oauth2ClientsApi::update(const std::string& id, const Updat
     const auto response = transport_->send("oauth2_clients.update", "PUT", "/api/v1/oauth2-clients/{id}",
                                             values, query, payload);
 
-    return response.get<OAuth2ClientResponse>();
+    return Transport::decode<OAuth2ClientResponse>(response, "oauth2_clients.update");
 }
 
 void Oauth2ClientsApi::delete_(const std::string& id) {
@@ -1208,7 +1208,7 @@ Page<FederationConfigResponse> FederationApi::list_configs(const PageRequest& pa
     const auto response = transport_->send("federation.list_configs", "GET", "/api/v1/federation-configs",
                                             values, query, payload);
 
-    return Transport::to_page<FederationConfigResponse>(response, page);
+    return Transport::to_page<FederationConfigResponse>(response, page, "federation.list_configs");
 }
 
 FederationConfigResponse FederationApi::create_config(const CreateFederationConfigRequest& body) {
@@ -1218,7 +1218,7 @@ FederationConfigResponse FederationApi::create_config(const CreateFederationConf
     const auto response = transport_->send("federation.create_config", "POST", "/api/v1/federation-configs",
                                             values, query, payload);
 
-    return response.get<FederationConfigResponse>();
+    return Transport::decode<FederationConfigResponse>(response, "federation.create_config");
 }
 
 FederationConfigResponse FederationApi::get_config(const std::string& id) {
@@ -1228,7 +1228,7 @@ FederationConfigResponse FederationApi::get_config(const std::string& id) {
     const auto response = transport_->send("federation.get_config", "GET", "/api/v1/federation-configs/{id}",
                                             values, query, payload);
 
-    return response.get<FederationConfigResponse>();
+    return Transport::decode<FederationConfigResponse>(response, "federation.get_config");
 }
 
 FederationConfigResponse FederationApi::update_config(const std::string& id, const UpdateFederationConfigRequest& body) {
@@ -1238,7 +1238,7 @@ FederationConfigResponse FederationApi::update_config(const std::string& id, con
     const auto response = transport_->send("federation.update_config", "PUT", "/api/v1/federation-configs/{id}",
                                             values, query, payload);
 
-    return response.get<FederationConfigResponse>();
+    return Transport::decode<FederationConfigResponse>(response, "federation.update_config");
 }
 
 void FederationApi::delete_config(const std::string& id) {
@@ -1256,7 +1256,7 @@ std::vector<FederationLinkResponse> FederationApi::list_user_links(const std::st
     const auto response = transport_->send("federation.list_user_links", "GET", "/api/v1/federation-links/user/{user_id}",
                                             values, query, payload);
 
-    return response.get<std::vector<FederationLinkResponse>>();
+    return Transport::decode<std::vector<FederationLinkResponse>>(response, "federation.list_user_links");
 }
 
 void FederationApi::delete_link(const std::string& id) {
@@ -1274,7 +1274,7 @@ OidcAuthorizeResponse FederationApi::oidc_authorize(const OidcAuthorizeRequest& 
     const auto response = transport_->send("federation.oidc_authorize", "POST", "/api/v1/federation/oidc/authorize",
                                             values, query, payload);
 
-    return response.get<OidcAuthorizeResponse>();
+    return Transport::decode<OidcAuthorizeResponse>(response, "federation.oidc_authorize");
 }
 
 OidcCallbackResponse FederationApi::oidc_callback(const OidcCallbackRequest& body) {
@@ -1284,7 +1284,7 @@ OidcCallbackResponse FederationApi::oidc_callback(const OidcCallbackRequest& bod
     const auto response = transport_->send("federation.oidc_callback", "POST", "/api/v1/federation/oidc/callback",
                                             values, query, payload);
 
-    return response.get<OidcCallbackResponse>();
+    return Transport::decode<OidcCallbackResponse>(response, "federation.oidc_callback");
 }
 
 NotificationRulesApi::NotificationRulesApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -1313,7 +1313,7 @@ Page<NotificationRuleResponse> NotificationRulesApi::list(const PageRequest& pag
     const auto response = transport_->send("notification_rules.list", "GET", "/api/v1/notification-rules",
                                             values, query, payload);
 
-    return Transport::to_page<NotificationRuleResponse>(response, page);
+    return Transport::to_page<NotificationRuleResponse>(response, page, "notification_rules.list");
 }
 
 NotificationRuleResponse NotificationRulesApi::create(const CreateNotificationRuleRequest& body) {
@@ -1323,7 +1323,7 @@ NotificationRuleResponse NotificationRulesApi::create(const CreateNotificationRu
     const auto response = transport_->send("notification_rules.create", "POST", "/api/v1/notification-rules",
                                             values, query, payload);
 
-    return response.get<NotificationRuleResponse>();
+    return Transport::decode<NotificationRuleResponse>(response, "notification_rules.create");
 }
 
 NotificationRuleResponse NotificationRulesApi::get(const std::string& id) {
@@ -1333,7 +1333,7 @@ NotificationRuleResponse NotificationRulesApi::get(const std::string& id) {
     const auto response = transport_->send("notification_rules.get", "GET", "/api/v1/notification-rules/{id}",
                                             values, query, payload);
 
-    return response.get<NotificationRuleResponse>();
+    return Transport::decode<NotificationRuleResponse>(response, "notification_rules.get");
 }
 
 NotificationRuleResponse NotificationRulesApi::update(const std::string& id, const UpdateNotificationRuleRequest& body) {
@@ -1343,7 +1343,7 @@ NotificationRuleResponse NotificationRulesApi::update(const std::string& id, con
     const auto response = transport_->send("notification_rules.update", "PUT", "/api/v1/notification-rules/{id}",
                                             values, query, payload);
 
-    return response.get<NotificationRuleResponse>();
+    return Transport::decode<NotificationRuleResponse>(response, "notification_rules.update");
 }
 
 void NotificationRulesApi::delete_(const std::string& id) {
@@ -1380,7 +1380,7 @@ EmailConfig EmailConfigApi::get_org() {
     const auto response = transport_->send("email_config.get_org", "GET", "/api/v1/organizations/{org_id}/email-config",
                                             values, query, payload);
 
-    return response.get<EmailConfig>();
+    return Transport::decode<EmailConfig>(response, "email_config.get_org");
 }
 
 EmailConfig EmailConfigApi::set_org(const SetOrgEmailConfig& body) {
@@ -1390,7 +1390,7 @@ EmailConfig EmailConfigApi::set_org(const SetOrgEmailConfig& body) {
     const auto response = transport_->send("email_config.set_org", "PUT", "/api/v1/organizations/{org_id}/email-config",
                                             values, query, payload);
 
-    return response.get<EmailConfig>();
+    return Transport::decode<EmailConfig>(response, "email_config.set_org");
 }
 
 void EmailConfigApi::delete_org() {
@@ -1408,7 +1408,7 @@ EmailTestResult EmailConfigApi::test_org() {
     const auto response = transport_->send("email_config.test_org", "POST", "/api/v1/organizations/{org_id}/email-config/test",
                                             values, query, payload);
 
-    return response.get<EmailTestResult>();
+    return Transport::decode<EmailTestResult>(response, "email_config.test_org");
 }
 
 EmailConfigOverride EmailConfigApi::get_tenant() {
@@ -1418,7 +1418,7 @@ EmailConfigOverride EmailConfigApi::get_tenant() {
     const auto response = transport_->send("email_config.get_tenant", "GET", "/api/v1/tenants/{tenant_id}/email-config",
                                             values, query, payload);
 
-    return response.get<EmailConfigOverride>();
+    return Transport::decode<EmailConfigOverride>(response, "email_config.get_tenant");
 }
 
 EmailConfigOverride EmailConfigApi::set_tenant(const EmailConfigOverride& body) {
@@ -1428,7 +1428,7 @@ EmailConfigOverride EmailConfigApi::set_tenant(const EmailConfigOverride& body) 
     const auto response = transport_->send("email_config.set_tenant", "PUT", "/api/v1/tenants/{tenant_id}/email-config",
                                             values, query, payload);
 
-    return response.get<EmailConfigOverride>();
+    return Transport::decode<EmailConfigOverride>(response, "email_config.set_tenant");
 }
 
 void EmailConfigApi::delete_tenant() {
@@ -1446,7 +1446,7 @@ EmailTestResult EmailConfigApi::test_tenant() {
     const auto response = transport_->send("email_config.test_tenant", "POST", "/api/v1/tenants/{tenant_id}/email-config/test",
                                             values, query, payload);
 
-    return response.get<EmailTestResult>();
+    return Transport::decode<EmailTestResult>(response, "email_config.test_tenant");
 }
 
 SettingsApi::SettingsApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -1475,7 +1475,7 @@ SecuritySettings SettingsApi::get_org() {
     const auto response = transport_->send("settings.get_org", "GET", "/api/v1/organizations/{org_id}/settings",
                                             values, query, payload);
 
-    return response.get<SecuritySettings>();
+    return Transport::decode<SecuritySettings>(response, "settings.get_org");
 }
 
 SecuritySettings SettingsApi::set_org(const SetOrgSettings& body) {
@@ -1485,7 +1485,7 @@ SecuritySettings SettingsApi::set_org(const SetOrgSettings& body) {
     const auto response = transport_->send("settings.set_org", "PUT", "/api/v1/organizations/{org_id}/settings",
                                             values, query, payload);
 
-    return response.get<SecuritySettings>();
+    return Transport::decode<SecuritySettings>(response, "settings.set_org");
 }
 
 SecuritySettings SettingsApi::get_effective() {
@@ -1495,7 +1495,7 @@ SecuritySettings SettingsApi::get_effective() {
     const auto response = transport_->send("settings.get_effective", "GET", "/api/v1/settings",
                                             values, query, payload);
 
-    return response.get<SecuritySettings>();
+    return Transport::decode<SecuritySettings>(response, "settings.get_effective");
 }
 
 SecuritySettings SettingsApi::set_effective(const TenantSettingsOverride& body) {
@@ -1505,7 +1505,7 @@ SecuritySettings SettingsApi::set_effective(const TenantSettingsOverride& body) 
     const auto response = transport_->send("settings.set_effective", "PUT", "/api/v1/settings",
                                             values, query, payload);
 
-    return response.get<SecuritySettings>();
+    return Transport::decode<SecuritySettings>(response, "settings.set_effective");
 }
 
 TenantSettingsOverride SettingsApi::get_tenant_override() {
@@ -1515,7 +1515,7 @@ TenantSettingsOverride SettingsApi::get_tenant_override() {
     const auto response = transport_->send("settings.get_tenant_override", "GET", "/api/v1/tenants/{tenant_id}/settings",
                                             values, query, payload);
 
-    return response.get<TenantSettingsOverride>();
+    return Transport::decode<TenantSettingsOverride>(response, "settings.get_tenant_override");
 }
 
 TenantSettingsOverride SettingsApi::set_tenant_override(const TenantSettingsOverride& body) {
@@ -1525,7 +1525,7 @@ TenantSettingsOverride SettingsApi::set_tenant_override(const TenantSettingsOver
     const auto response = transport_->send("settings.set_tenant_override", "PUT", "/api/v1/tenants/{tenant_id}/settings",
                                             values, query, payload);
 
-    return response.get<TenantSettingsOverride>();
+    return Transport::decode<TenantSettingsOverride>(response, "settings.set_tenant_override");
 }
 
 void SettingsApi::delete_tenant_override() {
@@ -1562,7 +1562,7 @@ std::vector<ScimTokenResponse> ScimTokensApi::list() {
     const auto response = transport_->send("scim_tokens.list", "GET", "/api/v1/scim-tokens",
                                             values, query, payload);
 
-    return response.get<std::vector<ScimTokenResponse>>();
+    return Transport::decode<std::vector<ScimTokenResponse>>(response, "scim_tokens.list");
 }
 
 CreateScimTokenResponse ScimTokensApi::create(const CreateScimTokenRequest& body) {
@@ -1572,7 +1572,7 @@ CreateScimTokenResponse ScimTokensApi::create(const CreateScimTokenRequest& body
     const auto response = transport_->send("scim_tokens.create", "POST", "/api/v1/scim-tokens",
                                             values, query, payload);
 
-    return response.get<CreateScimTokenResponse>();
+    return Transport::decode<CreateScimTokenResponse>(response, "scim_tokens.create");
 }
 
 void ScimTokensApi::revoke(const std::string& id) {
@@ -1609,7 +1609,7 @@ Page<ReactorResponse> ReactorsApi::list(const PageRequest& page) {
     const auto response = transport_->send("reactors.list", "GET", "/api/v1/reactors",
                                             values, query, payload);
 
-    return Transport::to_page<ReactorResponse>(response, page);
+    return Transport::to_page<ReactorResponse>(response, page, "reactors.list");
 }
 
 ReactorResponse ReactorsApi::create(const CreateReactorRequest& body) {
@@ -1619,7 +1619,7 @@ ReactorResponse ReactorsApi::create(const CreateReactorRequest& body) {
     const auto response = transport_->send("reactors.create", "POST", "/api/v1/reactors",
                                             values, query, payload);
 
-    return response.get<ReactorResponse>();
+    return Transport::decode<ReactorResponse>(response, "reactors.create");
 }
 
 ReactorResponse ReactorsApi::get(const std::string& id) {
@@ -1629,7 +1629,7 @@ ReactorResponse ReactorsApi::get(const std::string& id) {
     const auto response = transport_->send("reactors.get", "GET", "/api/v1/reactors/{id}",
                                             values, query, payload);
 
-    return response.get<ReactorResponse>();
+    return Transport::decode<ReactorResponse>(response, "reactors.get");
 }
 
 ReactorResponse ReactorsApi::update(const std::string& id, const UpdateReactorRequest& body) {
@@ -1639,7 +1639,7 @@ ReactorResponse ReactorsApi::update(const std::string& id, const UpdateReactorRe
     const auto response = transport_->send("reactors.update", "PUT", "/api/v1/reactors/{id}",
                                             values, query, payload);
 
-    return response.get<ReactorResponse>();
+    return Transport::decode<ReactorResponse>(response, "reactors.update");
 }
 
 void ReactorsApi::delete_(const std::string& id) {
@@ -1657,7 +1657,7 @@ std::vector<ReactorEventDescriptor> ReactorsApi::list_events() {
     const auto response = transport_->send("reactors.list_events", "GET", "/api/v1/reactors/events",
                                             values, query, payload);
 
-    return response.get<std::vector<ReactorEventDescriptor>>();
+    return Transport::decode<std::vector<ReactorEventDescriptor>>(response, "reactors.list_events");
 }
 
 WebauthnPolicyApi::WebauthnPolicyApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -1686,7 +1686,7 @@ PolicyResponse WebauthnPolicyApi::get() {
     const auto response = transport_->send("webauthn_policy.get", "GET", "/api/v1/tenants/{tenant_id}/webauthn/attestation-policy",
                                             values, query, payload);
 
-    return response.get<PolicyResponse>();
+    return Transport::decode<PolicyResponse>(response, "webauthn_policy.get");
 }
 
 WebauthnAttestationPolicy WebauthnPolicyApi::set(const WebauthnAttestationPolicy& body) {
@@ -1696,7 +1696,7 @@ WebauthnAttestationPolicy WebauthnPolicyApi::set(const WebauthnAttestationPolicy
     const auto response = transport_->send("webauthn_policy.set", "PUT", "/api/v1/tenants/{tenant_id}/webauthn/attestation-policy",
                                             values, query, payload);
 
-    return response.get<WebauthnAttestationPolicy>();
+    return Transport::decode<WebauthnAttestationPolicy>(response, "webauthn_policy.set");
 }
 
 std::vector<ComplianceReportEntry> WebauthnPolicyApi::compliance_report() {
@@ -1706,7 +1706,7 @@ std::vector<ComplianceReportEntry> WebauthnPolicyApi::compliance_report() {
     const auto response = transport_->send("webauthn_policy.compliance_report", "GET", "/api/v1/tenants/{tenant_id}/webauthn/compliance-report",
                                             values, query, payload);
 
-    return response.get<std::vector<ComplianceReportEntry>>();
+    return Transport::decode<std::vector<ComplianceReportEntry>>(response, "webauthn_policy.compliance_report");
 }
 
 AuditApi::AuditApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -1741,7 +1741,7 @@ Page<AuditLogEntry> AuditApi::list(const PageRequest& page, const std::optional<
     const auto response = transport_->send("audit.list", "GET", "/api/v1/audit-logs",
                                             values, query, payload);
 
-    return Transport::to_page<AuditLogEntry>(response, page);
+    return Transport::to_page<AuditLogEntry>(response, page, "audit.list");
 }
 
 Page<AuditLogEntry> AuditApi::list_system(const PageRequest& page, const std::optional<std::string>& actor_id, const std::optional<std::string>& action, const std::optional<std::string>& outcome, const std::optional<std::string>& resource_id, const std::optional<std::string>& from, const std::optional<std::string>& to) {
@@ -1757,7 +1757,7 @@ Page<AuditLogEntry> AuditApi::list_system(const PageRequest& page, const std::op
     const auto response = transport_->send("audit.list_system", "GET", "/api/v1/audit-logs/system",
                                             values, query, payload);
 
-    return Transport::to_page<AuditLogEntry>(response, page);
+    return Transport::to_page<AuditLogEntry>(response, page, "audit.list_system");
 }
 
 PrivacyApi::PrivacyApi(std::shared_ptr<Transport> transport, CallScope scope)
@@ -1837,7 +1837,7 @@ HealthResponse PlatformApi::health() {
     const auto response = transport_->send("platform.health", "GET", "/health",
                                             values, query, payload);
 
-    return response.get<HealthResponse>();
+    return Transport::decode<HealthResponse>(response, "platform.health");
 }
 
 ReadyResponse PlatformApi::ready() {
@@ -1847,7 +1847,7 @@ ReadyResponse PlatformApi::ready() {
     const auto response = transport_->send("platform.ready", "GET", "/ready",
                                             values, query, payload);
 
-    return response.get<ReadyResponse>();
+    return Transport::decode<ReadyResponse>(response, "platform.ready");
 }
 
 MdsStatusResponse PlatformApi::mds_status() {
@@ -1857,7 +1857,7 @@ MdsStatusResponse PlatformApi::mds_status() {
     const auto response = transport_->send("platform.mds_status", "GET", "/api/v1/mds/status",
                                             values, query, payload);
 
-    return response.get<MdsStatusResponse>();
+    return Transport::decode<MdsStatusResponse>(response, "platform.mds_status");
 }
 
 MdsRefreshOutcome PlatformApi::mds_refresh() {
@@ -1867,7 +1867,7 @@ MdsRefreshOutcome PlatformApi::mds_refresh() {
     const auto response = transport_->send("platform.mds_refresh", "POST", "/api/v1/mds/refresh",
                                             values, query, payload);
 
-    return response.get<MdsRefreshOutcome>();
+    return Transport::decode<MdsRefreshOutcome>(response, "platform.mds_refresh");
 }
 
 ManagementApi::ManagementApi(std::shared_ptr<Transport> transport, CallScope scope)

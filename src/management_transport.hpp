@@ -68,16 +68,35 @@ public:
                         const std::vector<QueryValue>& query,
                         const std::optional<nlohmann::json>& body) const;
 
+    /// Decode a response body into `T`, reporting a malformed one as an SDK error.
+    ///
+    /// nlohmann throws its own exception type when a field openapi.json marks required is
+    /// absent. Left alone that escapes the §2 taxonomy entirely: a caller who wrote
+    /// `catch (const AxiamError&)` around a management call would not catch it, and the
+    /// message names neither the operation nor the fact that the SERVER sent something
+    /// short. This is where that class of failure becomes a NetworkError -- which is
+    /// accurate, since a truncated body IS a transport-level problem.
+    template <typename T>
+    static T decode(const nlohmann::json& j, const std::string& operation) {
+        try {
+            return j.get<T>();
+        } catch (const nlohmann::json::exception& e) {
+            throw NetworkError(operation + ": the server's response did not match the "
+                               "expected shape (" + e.what() + ")");
+        }
+    }
+
     /// Decode a page envelope. `total` comes from the server's own count, never from
     /// `items.size()` -- the two differ on every page but the last (§27.4 rule 4).
     template <typename T>
-    static Page<T> to_page(const nlohmann::json& j, const PageRequest& request) {
+    static Page<T> to_page(const nlohmann::json& j, const PageRequest& request,
+                           const std::string& operation) {
         Page<T> page;
         page.request = request;
         const auto items = j.contains("items") ? j.at("items")
                          : (j.contains("data") ? j.at("data") : nlohmann::json::array());
         if (items.is_array()) {
-            for (const auto& item : items) page.items.push_back(item.get<T>());
+            for (const auto& item : items) page.items.push_back(decode<T>(item, operation));
         }
         if (j.contains("total") && j.at("total").is_number()) {
             page.total = j.at("total").get<std::int64_t>();

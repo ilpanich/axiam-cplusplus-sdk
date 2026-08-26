@@ -7,6 +7,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 #include <string>
 
 #include "axiam/axiam.hpp"
@@ -17,6 +18,8 @@ namespace axtest::mgmt {
 struct Fixture {
     std::shared_ptr<FakeState> state;
     axiam::Client client;
+    /// Every §19 request-start path this client emitted -- for the rule 11 assertion.
+    std::shared_ptr<std::vector<std::string>> paths;
 };
 
 /// The path part of a URL -- what a route assertion cares about. The host is the
@@ -49,6 +52,14 @@ Fixture signed_in_two(long first_status, const std::string& first_body,
 
 /// A client that has NOT logged in -- for the rule 1 cases.
 Fixture anonymous();
+
+/// As signed_in_two(), with a third queued response.
+Fixture signed_in_three(long a_status, const std::string& a_body,
+                        long b_status, const std::string& b_body,
+                        long c_status, const std::string& c_body);
+
+/// As signed_in(), but with a §19 telemetry hook recording every request path.
+Fixture signed_in_telemetry(long status, const std::string& body);
 
 /// A signed-in client with a tenant SLUG and no org or tenant UUID, for the routes that
 /// substitute an implicit identifier and must refuse without one.

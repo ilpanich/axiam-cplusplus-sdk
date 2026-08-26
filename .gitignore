@@ -79,3 +79,6 @@ coverage.lcov
 
 # Doxygen output
 docs/
+
+# Python bytecode from scripts/gen_management.py
+__pycache__/

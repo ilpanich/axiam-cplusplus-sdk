@@ -110,7 +110,8 @@ struct CallScope {
     std::optional<std::string> tenant_id;  ///< Overrides `{tenant_id}`.
 };
 
-class Transport;  // defined in src/management_transport.hpp
+class Transport;    // defined in src/management_transport.hpp
+class ManifestApi;  // defined in axiam/management_manifest.hpp
 
 /// Organizations an SDK client may read and configure. Creation and deletion are outside the
 /// SDK boundary (§27.0).
@@ -2119,7 +2120,7 @@ public:
     ///
     /// `plan()` writes nothing; `apply()` performs the plan, stops at the first failure and
     /// does not roll back (§27.7).
-    class ManifestApi manifest() const;
+    ManifestApi manifest() const;
 
 private:
     std::shared_ptr<Transport> transport_;
