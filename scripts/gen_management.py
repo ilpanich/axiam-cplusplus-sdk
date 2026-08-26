@@ -77,40 +77,13 @@ def pascal(text: str) -> str:
 
 
 def camel(text: str) -> str:
-    """``service_accounts`` -> ``serviceAccounts``; the PHP property spelling."""
+    """``service_accounts`` -> ``serviceAccounts``.
+
+    Unused by the C++ emitters, which are snake_case throughout; kept because the
+    generated tests name operations in the registry's own vocabulary.
+    """
     out = pascal(text)
     return out[0].lower() + out[1:] if out else out
-
-
-# PHP reserved words that cannot be used bare as a method name on a class.
-# (Property names are far less restricted, but methods share the keyword space.)
-PHP_KEYWORDS = {
-    "abstract", "and", "array", "as", "break", "callable", "case", "catch",
-    "class", "clone", "const", "continue", "declare", "default", "do", "echo",
-    "else", "elseif", "empty", "enddeclare", "endfor", "endforeach", "endif",
-    "endswitch", "endwhile", "enum", "eval", "exit", "extends", "final",
-    "finally", "fn", "for", "foreach", "function", "global", "goto", "if",
-    "implements", "include", "instanceof", "insteadof", "interface", "isset",
-    "list", "match", "namespace", "new", "or", "print", "private", "protected",
-    "public", "readonly", "require", "return", "static", "switch", "throw",
-    "trait", "try", "unset", "use", "var", "while", "xor", "yield",
-}
-
-
-def prop(name: str) -> str:
-    """A PHP property name for a wire field. Properties may be keywords; methods may not."""
-    return camel(name)
-
-
-def method(name: str) -> str:
-    """A PHP-legal method name for ``name``.
-
-    ``list`` is a language construct and cannot be a bare method name in the PHP
-    versions this SDK supports, and it is also the single most common §27 operation
-    name -- so the suffix rule earns its keep on the very first namespace.
-    """
-    ident = camel(name)
-    return f"{ident}Items" if ident.lower() in PHP_KEYWORDS else ident
 
 
 def snake(text: str) -> str:
@@ -147,42 +120,15 @@ def wrap(text: str, width: int = 76) -> list[str]:
 
 
 def escape(text: str) -> str:
-    """Make an ``openapi.json`` description safe to paste into a PHP docblock.
+    """Make an ``openapi.json`` description safe to paste into a C++ comment.
 
-    A docblock is delimited by ``*/``, so a description containing one would close the
-    comment early and spill the rest into code -- the PHP analogue of the nested-KDoc
-    bug the Kotlin port hit. Both ``*/`` and ``/*`` are neutralised.
+    ``*/`` closes a block comment, so a description carrying one would spill the rest of
+    itself into code. Both ``*/`` and ``/*`` are neutralised. The emitters here use
+    ``//`` and ``///``, where neither can do harm -- this keeps that true if one ever
+    moves to a block comment.
     """
     out = " ".join(str(text).split())
     return out.replace("*/", "* /").replace("/*", "/ *")
-
-
-def docblock(text: str, indent: str = "", tags: list[str] | None = None) -> list[str]:
-    """A wrapped docblock at ``indent``, with optional trailing ``@``-tag lines."""
-    paragraphs = [p for p in str(text).split("\n\n") if p.strip()]
-    width = 92 - len(indent)
-    out = [f"{indent}/**"]
-    first = True
-    for para in paragraphs or [""]:
-        if not first:
-            out.append(f"{indent} *")
-        for line in wrap(para, width):
-            out.append(f"{indent} * {line}".rstrip())
-        first = False
-    for tag in tags or []:
-        lines = wrap(tag, width)
-        out.append(f"{indent} * {lines[0]}")
-        out.extend(f"{indent} *     {more}" for more in lines[1:])
-    out.append(f"{indent} */")
-    return out
-
-
-def inline_doc(text: str, indent: str = "") -> list[str]:
-    """A one-line docblock, or a wrapped block when it will not fit."""
-    single = f"{indent}/** {text} */"
-    if len(single) <= 100 and "\n" not in text:
-        return [single]
-    return docblock(text, indent)
 
 
 def resolve_ref(schema: Any) -> Any:
