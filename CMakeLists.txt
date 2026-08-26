@@ -54,6 +54,14 @@ add_library(axiam_cpp
   src/reactor.cpp
   src/webauthn.cpp
   src/webhook.cpp
+  # CONTRACT.md §27 management API. management_transport.cpp is hand-written (the one
+  # wire path, scope resolution, the rule 7 classification); the other two are generated
+  # by scripts/gen_management.py, and their being committed is what keeps a consumer from
+  # needing Python to build this library.
+  src/management_transport.cpp
+  src/management_models.cpp
+  src/management_ops.cpp
+  src/management_manifest.cpp
 )
 add_library(axiam::axiam_cpp ALIAS axiam_cpp)
 

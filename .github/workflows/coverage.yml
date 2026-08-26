@@ -55,9 +55,18 @@ jobs:
       # The floor was 95 against a claimed "~99%" that this metric never
       # actually showed: measured, it was 95.88% — 0.88pp of margin, not four
       # points. The §12 refusal-path suite (tests/test_oidc_errors.cpp) and the
-      # sender-constrained authenticator cases took it to 97.36%, so 96 restores
-      # a real margin against a number this job computes. Ratchet it the same
-      # way: only ever to a value measured here, never to an estimate.
+      # sender-constrained authenticator cases took it to 97.36%, so 96 restored
+      # a real margin against a number this job computes.
+      #
+      # The §27 management surface then added ~5,000 instrumented lines, which
+      # is enough to move this number on its own — it landed at 74.68% before
+      # its suites were written, so the generated round-trip, enum and re-scope
+      # passes are not decoration. Measured 2026-08-26 with §27 in place: 98.78%
+      # (9,070/9,182). Floor 96 → 98.
+      #
+      # Ratchet it the same way it has been ratcheted so far: only ever to a
+      # value measured HERE, by THIS awk expression, never to an estimate and
+      # never to the "Lines" column `llvm-cov report` prints above.
       - name: Enforce coverage floor
         working-directory: build
         run: |
@@ -67,8 +76,8 @@ jobs:
             END { printf "%.2f", (t ? 100*c/t : 0) }
           ' coverage.lcov)
           echo "Line coverage: ${total}%"
-          awk -v t="$total" 'BEGIN { exit (t+0 >= 96) ? 0 : 1 }' || {
-            echo "::error::coverage ${total}% is below the 96% floor"; exit 1;
+          awk -v t="$total" 'BEGIN { exit (t+0 >= 98) ? 0 : 1 }' || {
+            echo "::error::coverage ${total}% is below the 98% floor"; exit 1;
           }
 
       - name: Upload to Coveralls

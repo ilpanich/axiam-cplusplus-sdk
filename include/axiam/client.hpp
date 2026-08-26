@@ -24,6 +24,40 @@
 #include "axiam/uma.hpp"
 #include "axiam/webauthn.hpp"
 
+namespace axiam::management {
+// Forward declarations only: including <axiam/management.hpp> here would pull 3000 lines
+// of generated models into every translation unit that merely wants a Client. The 24
+// handle classes are named because §27.2/§27.3 put them directly on the client too, and a
+// return type only needs to be complete where the accessor is DEFINED (the generated
+// src/management_ops.cpp) or where a caller actually calls one — at which point they have
+// included the header anyway.
+class ManagementApi;
+class OrganizationsApi;
+class TenantsApi;
+class UsersApi;
+class GroupsApi;
+class RolesApi;
+class PermissionsApi;
+class ResourcesApi;
+class ScopesApi;
+class ServiceAccountsApi;
+class CertificatesApi;
+class CaCertificatesApi;
+class PgpKeysApi;
+class WebhooksApi;
+class Oauth2ClientsApi;
+class FederationApi;
+class NotificationRulesApi;
+class EmailConfigApi;
+class SettingsApi;
+class ScimTokensApi;
+class ReactorsApi;
+class WebauthnPolicyApi;
+class AuditApi;
+class PrivacyApi;
+class PlatformApi;
+}  // namespace axiam::management
+
 namespace axiam {
 
 class Client {
@@ -845,6 +879,120 @@ public:
     /// construct or inspect one — the alternative was a second copy of the
     /// request plumbing living beside the first, which is exactly the "second,
     /// parallel stack" the §12.6 deferral warned about.
+    /// The CONTRACT.md §27 management surface: 146 operations across 24 namespaces.
+    ///
+    /// `client.management().users().list()`. §27.3's C++ row is
+    /// `client.service_accounts().rotate_secret(id)` — a method returning a handle,
+    /// snake_case — and that is what the accessors on the returned object are.
+    ///
+    /// Built on the same request path every other operation uses, so §3 CSRF, the §4
+    /// cookie jar, the §5 tenant header, §6 TLS, §16 retry and §19 telemetry apply to all
+    /// 146 by construction rather than by 146 opportunities to forget one (§27.8).
+    ///
+    /// Returned by value: it holds a shared_ptr to the transport and a scope, and
+    /// building one per call is what keeps `in_org()` from having anything shared to
+    /// re-point. That is not a §27.4 rule 10 violation — that rule forbids caching
+    /// RESPONSES, and nothing here caches one.
+    management::ManagementApi management();
+
+    // ---- §27.2/§27.3: the namespace handles, directly on the client ----
+    //
+    // `client.roles().list()`, `client.service_accounts().rotate_secret(id)` — the
+    // form §27.3's C++ row shows. `management()` above reaches the same handles behind
+    // one accessor (§27.2 rule 4), and these forward to it, so the two are equivalent
+    // by construction rather than by two code paths agreeing to stay that way.
+    //
+    // Acquiring one performs no I/O beyond the open-client check every accessor makes
+    // (§27.2 rule 1), and none is constructible without a client (rule 3) — the handle
+    // constructors take a transport nothing outside this library can build.
+    //
+    // Declared, not defined, here: the definitions live in the generated
+    // src/management_ops.cpp, so client.cpp still knows nothing about the 146
+    // operations and a caller who never touches §27 never compiles its models.
+
+    /// Organizations an SDK client may read and configure. Creation and deletion are outside
+    /// the SDK boundary (§27.0).
+    management::OrganizationsApi organizations();
+
+    /// Tenants within an organization -- the isolation boundary every other namespace is
+    /// scoped to.
+    management::TenantsApi tenants();
+
+    /// Users within the client's tenant, and the administrative side of their second factor
+    /// and lockout state.
+    management::UsersApi users();
+
+    /// Named collections of users. Roles assigned to a group are inherited by every member.
+    management::GroupsApi groups();
+
+    /// Roles, their permission sets, and their assignment to users and groups.
+    management::RolesApi roles();
+
+    /// Permissions -- an action on a resource, optionally narrowed by a scope.
+    management::PermissionsApi permissions();
+
+    /// The resource hierarchy role assignments cascade down.
+    management::ResourcesApi resources();
+
+    /// Sub-resource granularity, always addressed under their resource.
+    management::ScopesApi scopes();
+
+    /// Machine identities, their secrets, and the certificate a device-bound one
+    /// authenticates with.
+    management::ServiceAccountsApi service_accounts();
+
+    /// End-entity X.509 certificates -- the ones issued to users, services and IoT devices.
+    management::CertificatesApi certificates();
+
+    /// Organization CAs and the per-tenant signing CAs chained beneath them.
+    management::CaCertificatesApi ca_certificates();
+
+    /// OpenPGP keys used for audit signing and encrypted data export.
+    management::PgpKeysApi pgp_keys();
+
+    /// Outbound event notifications. Delivery signatures are verified with the §13 helper,
+    /// which this namespace configures.
+    management::WebhooksApi webhooks();
+
+    /// Registered OAuth2/OIDC clients -- the registration half of what §12, §21 and §26 then
+    /// speak to.
+    management::Oauth2ClientsApi oauth2_clients();
+
+    /// Upstream IdP configuration and the per-user links it produces.
+    management::FederationApi federation();
+
+    /// Which events raise a notification, and to whom.
+    management::NotificationRulesApi notification_rules();
+
+    /// Transactional-mail transport, configurable at organization level and overridable per
+    /// tenant.
+    management::EmailConfigApi email_config();
+
+    /// Effective settings, and the organization/tenant layers they resolve from.
+    management::SettingsApi settings();
+
+    /// Bearer tokens for the SCIM 2.0 provisioning endpoint.
+    management::ScimTokensApi scim_tokens();
+
+    /// Registration of §22 AMQP extension actors -- the admin surface §22.9 describes, which
+    /// no SDK could previously reach.
+    management::ReactorsApi reactors();
+
+    /// Per-tenant attestation policy governing the §24 ceremonies, and the compliance report
+    /// over it.
+    management::WebauthnPolicyApi webauthn_policy();
+
+    /// Append-only audit log, read-only by construction.
+    management::AuditApi audit();
+
+    /// GDPR self-service: the authenticated account's own export and erasure. Scoped to the
+    /// caller, never to another user.
+    management::PrivacyApi privacy();
+
+    /// Deployment-level probes and FIDO metadata state. Unauthenticated where the server
+    /// leaves them so.
+    management::PlatformApi platform();
+
     struct Impl;
 
 private:

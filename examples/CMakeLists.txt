@@ -48,6 +48,24 @@ target_link_libraries(axiam_example_account_lifecycle PRIVATE axiam::axiam_cpp)
 add_executable(axiam_example_par_login par_login.cpp)
 target_link_libraries(axiam_example_par_login PRIVATE axiam::axiam_cpp)
 
+# CONTRACT.md §27 — the management API.
+#
+# management_basics covers the imperative surface and the §27.4 rules that are
+# easy to get wrong (paging that does not lie, per-call scope, a sparse update,
+# and the three error sub-types). management_manifest covers the §27.6/§27.7
+# declarative layer, built with the AXIAM_MANIFEST(...) form §27.7 specifies for
+# C++. device_mtls_provisioning is the flow the certificate namespaces exist
+# for: provision an IoT device end to end, then authenticate as it over §6.1
+# mTLS — the one place a §27.5 one-time secret has to be caught as it goes past.
+add_executable(axiam_example_management_basics management_basics.cpp)
+target_link_libraries(axiam_example_management_basics PRIVATE axiam::axiam_cpp)
+
+add_executable(axiam_example_management_manifest management_manifest.cpp)
+target_link_libraries(axiam_example_management_manifest PRIVATE axiam::axiam_cpp)
+
+add_executable(axiam_example_device_mtls_provisioning device_mtls_provisioning.cpp)
+target_link_libraries(axiam_example_device_mtls_provisioning PRIVATE axiam::axiam_cpp)
+
 # CONTRACT.md §22.11 — a NON-NORMATIVE reactor sample.
 #
 # This SDK ships no reactor runtime and this target adds none: nothing here is
