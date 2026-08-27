@@ -46,6 +46,7 @@ struct Replies {
     long setup_confirm_status = 200;
     long verify_email_status = 204;
     long resend_status = 202;
+    long resend_own_status = 200;
     long reset_status = 202;
     long reset_context_status = 200;
     std::string reset_context_body = "{}";
@@ -85,6 +86,9 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
         }
         if (url.find("/auth/verify-email") != std::string::npos) {
             return reply(r->verify_email_status, "");
+        }
+        if (url.find("/users/me/resend-verification") != std::string::npos) {
+            return reply(r->resend_own_status, R"({"sent":true})");
         }
         if (url.find("/auth/resend-verification") != std::string::npos) {
             return reply(r->resend_status, "");
@@ -351,6 +355,139 @@ AXIAM_TEST("account: resend_verification carries the tenant in the BODY") {
     const std::string body = last_body(*st, "/resend-verification");
     AXIAM_REQUIRE(contains(body, R"("email":"ada@acme.test")"));
     AXIAM_REQUIRE(contains(body, R"("tenant_id":"22222222-2222-2222-2222-222222222222")"));
+}
+
+// ---- §25.7: the two resends -------------------------------------------
+
+// The signed-in resend sends NO caller-supplied data (§25.6).
+//
+// Asserted on the serialized request rather than on the signature: a method that takes no
+// address but reads one off the client and sends it anyway would pass a signature check
+// and still be the bug §25.7 exists to prevent. The empty object -- the same thing
+// mfa_enroll() already sends -- is conformant; an `email` key is not.
+AXIAM_TEST("account: resend_own_verification sends no address") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = signed_in_client(st, r);
+
+    client.resend_own_verification();
+
+    AXIAM_REQUIRE(last_body(*st, "/users/me/resend-verification") == "{}");
+    AXIAM_REQUIRE_FALSE(contains(last_url(*st, "/users/me/resend-verification"), "email="));
+}
+
+// §25.7 rule 2 forbids routing either to the other in either direction; an SDK that
+// aliased one reintroduces exactly the defect that section describes.
+AXIAM_TEST("account: the two resends hit distinct paths") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = signed_in_client(st, r);
+
+    client.resend_own_verification();
+    client.resend_verification("ada@acme.test", kTenantUuid);
+
+    AXIAM_REQUIRE(st->count_path("/api/v1/users/me/resend-verification") == 1);
+    AXIAM_REQUIRE(st->count_path("/api/v1/auth/resend-verification") == 1);
+}
+
+// A 409 raises, and is NOT retried against the public endpoint.
+//
+// This matters more than it looks: the bug this operation exists to fix was a success
+// return on a request that sent nothing, and §25.7 rule 2's forbidden "helpful" fallback
+// would restore it with an extra round trip. The absence of a call to the public path is
+// what pins that.
+AXIAM_TEST("account: resend_own_verification raises on 409 and does not fall back") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    r->resend_own_status = 409;
+    auto client = signed_in_client(st, r);
+
+    AXIAM_REQUIRE_THROWS_AS(client.resend_own_verification(), axiam::AuthzError);
+    AXIAM_REQUIRE(st->count_path("/api/v1/auth/resend-verification") == 0);
+}
+
+// A 429 is the §2 mapping of the daily resend limit, and is likewise not retried.
+AXIAM_TEST("account: resend_own_verification raises on 429 and does not fall back") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    r->resend_own_status = 429;
+    auto client = signed_in_client(st, r);
+
+    AXIAM_REQUIRE_THROWS_AS(client.resend_own_verification(), axiam::NetworkError);
+    AXIAM_REQUIRE(st->count_path("/api/v1/auth/resend-verification") == 0);
+}
+
+// With no session it refuses client-side, with ZERO wire calls.
+AXIAM_TEST("account: resend_own_verification with no session makes no wire call") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);
+
+    AXIAM_REQUIRE_THROWS_AS(client.resend_own_verification(), axiam::AuthError);
+    AXIAM_REQUIRE(st->count() == 0);
+}
+
+// ---- §5.2: organization-level principals -------------------------------
+
+// The flag is the only thing that makes a tenant switch meaningful: such a principal
+// changes the tenant it acts on by sending a different X-Tenant-ID, with no re-login. An
+// application checks it BEFORE offering the switch rather than discovering the answer
+// from a 403.
+AXIAM_TEST("account: login surfaces an organization-level principal") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    r->login_body =
+        R"({"session_id":"sess-1","expires_in":900,)"
+        R"("user":{"id":"user-1","username":"root","email":"root@acme.test",)"
+        R"("tenant_id":"22222222-2222-2222-2222-222222222222",)"
+        R"("organization_level":true}})";
+    auto client = make_client(st, r);
+
+    const auto result = client.login("root@acme.test", "pw");
+
+    AXIAM_REQUIRE(result.user.has_value());
+    AXIAM_REQUIRE(result.user->organization_level);
+}
+
+// Absent means false -- what a server older than contract 1.31 answers, and the safe
+// direction: the application then offers no cross-tenant action. Anything that is not the
+// JSON literal true is read the same way, because a truthy string is exactly how a field
+// the SDK does not really understand becomes a UI offering a switch that 403s.
+AXIAM_TEST("account: an absent or non-boolean organization_level is false") {
+    {
+        auto st = std::make_shared<axtest::FakeState>();
+        auto r = std::make_shared<Replies>();
+        auto client = make_client(st, r);
+        const auto result = client.login("ada@acme.test", "pw");
+        AXIAM_REQUIRE(result.user.has_value());
+        AXIAM_REQUIRE_FALSE(result.user->organization_level);
+    }
+    {
+        auto st = std::make_shared<axtest::FakeState>();
+        auto r = std::make_shared<Replies>();
+        r->login_body =
+            R"({"session_id":"sess-1","expires_in":900,)"
+            R"("user":{"id":"user-1",)"
+            R"("tenant_id":"22222222-2222-2222-2222-222222222222",)"
+            R"("organization_level":"yes"}})";
+        auto client = make_client(st, r);
+        const auto result = client.login("ada@acme.test", "pw");
+        AXIAM_REQUIRE(result.user.has_value());
+        AXIAM_REQUIRE_FALSE(result.user->organization_level);
+    }
+}
+
+// §5.2 rule 2: it is derived, never asserted -- the SDK never SENDS it. A field a client
+// could put on the request would be a client claiming a capability the server is supposed
+// to resolve, which is why the rule is a prohibition rather than a convention.
+AXIAM_TEST("account: organization_level is never sent on the login request") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);
+
+    client.login("ada@acme.test", "pw");
+
+    AXIAM_REQUIRE_FALSE(contains(last_body(*st, "/auth/login"), "organization_level"));
 }
 
 AXIAM_TEST("account: a 204 is success, not a parse failure") {

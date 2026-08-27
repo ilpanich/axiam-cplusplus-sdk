@@ -27,6 +27,7 @@ constexpr const char* kMfaSetupEnroll = "/api/v1/auth/mfa/setup/enroll";
 constexpr const char* kMfaSetupConfirm = "/api/v1/auth/mfa/setup/confirm";
 constexpr const char* kVerifyEmail = "/api/v1/auth/verify-email";
 constexpr const char* kResendVerification = "/api/v1/auth/resend-verification";
+constexpr const char* kResendOwnVerification = "/api/v1/users/me/resend-verification";
 constexpr const char* kReset = "/api/v1/auth/reset";
 constexpr const char* kResetContext = "/api/v1/auth/reset/context";
 constexpr const char* kResetConfirm = "/api/v1/auth/reset/confirm";
@@ -149,6 +150,12 @@ LoginResult Client::mfa_setup_confirm(const Sensitive<std::string>& setup_token,
             user.username = j["user"].value("username", std::string{});
             user.email = j["user"].value("email", std::string{});
             user.tenant_id = j["user"].value("tenant_id", std::string{});
+            // §5.2, and for the same reason as in the login path: mfa_setup_confirm IS
+            // the completion of a login (§25.2 rule 2), so the principal it establishes
+            // carries the same flag.
+            user.organization_level = j["user"].contains("organization_level") &&
+                                      j["user"]["organization_level"].is_boolean() &&
+                                      j["user"]["organization_level"].get<bool>();
             result.user = user;
         }
     }
@@ -181,6 +188,26 @@ void Client::resend_verification(const std::string& email, const std::string& te
     body["email"] = email;
     body["tenant_id"] = tenant_id;
     post(*p_, kResendVerification, body.dump());
+}
+
+void Client::resend_own_verification() {
+    p_->ensure_open();
+    // §25.7: session-authenticated, and the refusal is raised HERE, with no wire call.
+    // Sending it anyway would leave a rejected request in the audit log for what is a
+    // programming error on this side.
+    {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        if (!p_->session) {
+            throw AuthError(
+                "resend_own_verification requires an authenticated session: it resends the "
+                "mail for the account you are signed in to, and names no address "
+                "(CONTRACT.md §25.7). Use resend_verification(email, tenant_id) when there "
+                "is no session.");
+        }
+    }
+    // The empty object, exactly as mfa_enroll() sends: the server takes the address off
+    // the caller's own record, and §25.6 asks for a request carrying NO address field.
+    post(*p_, kResendOwnVerification, "{}");
 }
 
 // ---------------------------------------------------------------------------

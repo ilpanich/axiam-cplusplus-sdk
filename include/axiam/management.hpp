@@ -21,20 +21,51 @@ class Client;
 
 namespace axiam::management {
 
-/// One page's worth of `?offset=`/`?limit=` (§27.4 rule 4).
+/// One page's worth of `?offset=`/`?limit=`/`?search=` (§27.4 rule 4).
 ///
-/// Default-constructed means the first page at the server's default size, which is what a
-/// caller who does not care about paging gets by writing nothing.
+/// Default-constructed means the first page at the server's default size, unfiltered, which is
+/// what a caller who does not care about paging gets by writing nothing.
 struct PageRequest {
     std::int64_t offset = 0;   ///< How many items to skip; clamped at 0.
     std::int64_t limit = 50;   ///< How many to ask for; clamped to at least 1.
 
-    /// The page after this one -- same size, advanced by exactly `limit`.
+    /// A free-text filter applied by the SERVER, before `offset`/`limit`, or empty for none.
+    ///
+    /// Matched case-insensitively against the identifying fields of whatever is being listed --
+    /// a name or username, plus the record id, so a UUID out of a log line can be pasted in
+    /// as-is. `Page::total` then counts MATCHES, not rows, which is what lets a pager built on
+    /// it show a page count belonging to the result set it is paging.
+    ///
+    /// It lives here, beside `offset` and `limit`, rather than as an extra argument on each of
+    /// the twenty paginated `list` methods. That is what §27.4 rule 4 asks for and what makes
+    /// `next()` -- and so `Page::next_request()` -- carry it across a whole walk: a walk that
+    /// filtered its first request and dropped the term on the second would return the matches
+    /// followed by the unfiltered tail, which reads as a server bug from the caller's side.
+    ///
+    /// An empty or all-whitespace term is the SAME request as none: no `search` parameter is
+    /// sent at all. A search box that fires on every keystroke sends one the moment it is
+    /// cleared, and "rows containing the empty string" is a different question from "all rows".
+    /// The server caps the term's LENGTH and this SDK deliberately does not re-implement that
+    /// cap, because a client-side truncation the server would not have made is a silently
+    /// different query the caller has no way to see.
+    std::string search;
+
+    /// The page after this one -- same size and same term, advanced by exactly `limit`.
     ///
     /// By the requested limit, not by how many items came back: §27.4 rule 4 stops auto-paging
     /// on an EMPTY page, not a short one, and advancing by a short count would re-request rows
     /// the caller has already seen.
     PageRequest next() const;
+
+    /// A COPY of this request filtered by `term`, leaving this one as it was.
+    PageRequest matching(std::string term) const;
+
+    /// The term as it goes on the wire, or empty when there is nothing to send.
+    ///
+    /// Trims, then treats a blank result as absent -- the same normalisation the server
+    /// applies, and the reason absent and blank are the same request. Never truncates; see the
+    /// note on `search`.
+    static std::string normalize_search(const std::string& term);
 };
 
 /// One page of a paginated response (§27.4 rule 4).
@@ -61,6 +92,10 @@ struct Page {
     auto end() const noexcept { return items.end(); }
 
     /// The request that would fetch the page after this one.
+    ///
+    /// Carries this page's `search` term forward with it (§27.4 rule 4) -- that is
+    /// `PageRequest::next()`'s job, so a walk written against `next_request()` filters every
+    /// request of the walk rather than only its first.
     PageRequest next_request() const { return request.next(); }
 };
 
@@ -979,8 +1014,6 @@ public:
     /// A COPY of this handle scoped to `tenant_id` (§27.4 rule 3). See in_org().
     CertificatesApi for_tenant(std::string tenant_id) const;
 
-    /// `GET /api/v1/certificates`
-    ///
     /// `GET /api/v1/certificates`.
     ///
     /// Returns ONE page. `Page::total` is the server's count across all pages and is not

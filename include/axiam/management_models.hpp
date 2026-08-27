@@ -28,16 +28,27 @@ enum class ActorType {
     User,  ///< Wire value `User`.
     ServiceAccount,  ///< Wire value `ServiceAccount`.
     System,  ///< Wire value `System`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a ActorType.
+///
+/// `ActorType::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(ActorType value);
 
 /// Parse a wire value into a ActorType.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `ActorType::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 ActorType actor_type_from_wire(const std::string& value);
 
 /// What attestation conveyance a registration ceremony requests, and whether the policy is
@@ -49,16 +60,27 @@ enum class AttestationMode {
     None,  ///< Wire value `none`.
     Indirect,  ///< Wire value `indirect`.
     DirectRequired,  ///< Wire value `direct_required`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a AttestationMode.
+///
+/// `AttestationMode::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(AttestationMode value);
 
 /// Parse a wire value into a AttestationMode.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `AttestationMode::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 AttestationMode attestation_mode_from_wire(const std::string& value);
 
 /// The `AuditOutcome` enumeration from the server's OpenAPI document.
@@ -66,16 +88,27 @@ enum class AuditOutcome {
     Success,  ///< Wire value `Success`.
     Failure,  ///< Wire value `Failure`.
     Denied,  ///< Wire value `Denied`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a AuditOutcome.
+///
+/// `AuditOutcome::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(AuditOutcome value);
 
 /// Parse a wire value into a AuditOutcome.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `AuditOutcome::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 AuditOutcome audit_outcome_from_wire(const std::string& value);
 
 /// Status of a certificate in its lifecycle.
@@ -83,16 +116,27 @@ enum class CertificateStatus {
     Active,  ///< Wire value `Active`.
     Revoked,  ///< Wire value `Revoked`.
     Expired,  ///< Wire value `Expired`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a CertificateStatus.
+///
+/// `CertificateStatus::Unknown` spells as the empty string, which no server value is: carrying
+/// an unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(CertificateStatus value);
 
 /// Parse a wire value into a CertificateStatus.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `CertificateStatus::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 CertificateStatus certificate_status_from_wire(const std::string& value);
 
 /// The purpose for which a certificate was issued.
@@ -100,16 +144,27 @@ enum class CertificateType {
     User,  ///< Wire value `User`.
     Service,  ///< Wire value `Service`.
     Device,  ///< Wire value `Device`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a CertificateType.
+///
+/// `CertificateType::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(CertificateType value);
 
 /// Parse a wire value into a CertificateType.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `CertificateType::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 CertificateType certificate_type_from_wire(const std::string& value);
 
 /// FIDO certification level, as recorded in an MDS `statusReports` entry's `FIDO_CERTIFIED*`
@@ -125,16 +180,27 @@ enum class CertificationLevel {
     L2Plus,  ///< Wire value `L2Plus`.
     L3,  ///< Wire value `L3`.
     L3Plus,  ///< Wire value `L3Plus`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a CertificationLevel.
+///
+/// `CertificationLevel::Unknown` spells as the empty string, which no server value is: carrying
+/// an unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(CertificationLevel value);
 
 /// Parse a wire value into a CertificationLevel.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `CertificationLevel::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 CertificationLevel certification_level_from_wire(const std::string& value);
 
 /// How a client proves its identity at the token endpoint (RFC 8705 §2, OIDC Core §9 naming).
@@ -148,16 +214,27 @@ enum class ClientAuthMethod {
     TlsClientAuth,  ///< Wire value `tls_client_auth`.
     SelfSignedTlsClientAuth,  ///< Wire value `self_signed_tls_client_auth`.
     PrivateKeyJwt,  ///< Wire value `private_key_jwt`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a ClientAuthMethod.
+///
+/// `ClientAuthMethod::Unknown` spells as the empty string, which no server value is: carrying
+/// an unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(ClientAuthMethod value);
 
 /// Parse a wire value into a ClientAuthMethod.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `ClientAuthMethod::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 ClientAuthMethod client_auth_method_from_wire(const std::string& value);
 
 /// Which security posture a client is registered under (X5.1).
@@ -175,16 +252,27 @@ ClientAuthMethod client_auth_method_from_wire(const std::string& value);
 enum class ClientProfile {
     Standard,  ///< Wire value `standard`.
     Fapi2,  ///< Wire value `fapi2`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a ClientProfile.
+///
+/// `ClientProfile::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(ClientProfile value);
 
 /// Parse a wire value into a ClientProfile.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `ClientProfile::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 ClientProfile client_profile_from_wire(const std::string& value);
 
 /// What the server does when an interceptor does not produce a usable reply — timeout,
@@ -192,32 +280,54 @@ ClientProfile client_profile_from_wire(const std::string& value);
 enum class FailurePolicy {
     FailClosed,  ///< Wire value `fail_closed`.
     FailOpen,  ///< Wire value `fail_open`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a FailurePolicy.
+///
+/// `FailurePolicy::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(FailurePolicy value);
 
 /// Parse a wire value into a FailurePolicy.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `FailurePolicy::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 FailurePolicy failure_policy_from_wire(const std::string& value);
 
 /// The type of key algorithm used for a certificate.
 enum class KeyAlgorithm {
     Rsa4096,  ///< Wire value `Rsa4096`.
     Ed25519,  ///< Wire value `Ed25519`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a KeyAlgorithm.
+///
+/// `KeyAlgorithm::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(KeyAlgorithm value);
 
 /// Parse a wire value into a KeyAlgorithm.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `KeyAlgorithm::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 KeyAlgorithm key_algorithm_from_wire(const std::string& value);
 
 /// Type of MFA method.
@@ -225,16 +335,27 @@ enum class MfaMethodType {
     Totp,  ///< Wire value `Totp`.
     Passkey,  ///< Wire value `Passkey`.
     SecurityKey,  ///< Wire value `SecurityKey`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a MfaMethodType.
+///
+/// `MfaMethodType::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(MfaMethodType value);
 
 /// Parse a wire value into a MfaMethodType.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `MfaMethodType::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 MfaMethodType mfa_method_type_from_wire(const std::string& value);
 
 /// Events that can trigger an admin notification.
@@ -256,16 +377,27 @@ enum class NotificationEventType {
     UserUpdated,  ///< Wire value `user_updated`.
     ServiceAccountCreated,  ///< Wire value `service_account_created`.
     ServiceAccountDeleted,  ///< Wire value `service_account_deleted`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a NotificationEventType.
+///
+/// `NotificationEventType::Unknown` spells as the empty string, which no server value is:
+/// carrying an unrecognised value back into an update is refused by the server rather than
+/// written as a spelling it never used.
 std::string to_wire(NotificationEventType value);
 
 /// Parse a wire value into a NotificationEventType.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `NotificationEventType::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 NotificationEventType notification_event_type_from_wire(const std::string& value);
 
 /// Whether a grant permits an action or refuses it (B1, deny-override).
@@ -287,80 +419,135 @@ NotificationEventType notification_event_type_from_wire(const std::string& value
 enum class PermissionEffect {
     Allow,  ///< Wire value `allow`.
     Deny,  ///< Wire value `deny`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a PermissionEffect.
+///
+/// `PermissionEffect::Unknown` spells as the empty string, which no server value is: carrying
+/// an unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(PermissionEffect value);
 
 /// Parse a wire value into a PermissionEffect.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `PermissionEffect::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 PermissionEffect permission_effect_from_wire(const std::string& value);
 
 /// Key algorithm for OpenPGP keys.
 enum class PgpKeyAlgorithm {
     Rsa4096,  ///< Wire value `Rsa4096`.
     Ed25519,  ///< Wire value `Ed25519`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a PgpKeyAlgorithm.
+///
+/// `PgpKeyAlgorithm::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(PgpKeyAlgorithm value);
 
 /// Parse a wire value into a PgpKeyAlgorithm.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `PgpKeyAlgorithm::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 PgpKeyAlgorithm pgp_key_algorithm_from_wire(const std::string& value);
 
 /// The purpose of an OpenPGP key.
 enum class PgpKeyPurpose {
     AuditSigning,  ///< Wire value `AuditSigning`.
     Export_,  ///< Wire value `Export`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a PgpKeyPurpose.
+///
+/// `PgpKeyPurpose::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(PgpKeyPurpose value);
 
 /// Parse a wire value into a PgpKeyPurpose.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `PgpKeyPurpose::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 PgpKeyPurpose pgp_key_purpose_from_wire(const std::string& value);
 
 /// Status of an OpenPGP key.
 enum class PgpKeyStatus {
     Active,  ///< Wire value `Active`.
     Revoked,  ///< Wire value `Revoked`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a PgpKeyStatus.
+///
+/// `PgpKeyStatus::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(PgpKeyStatus value);
 
 /// Parse a wire value into a PgpKeyStatus.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `PgpKeyStatus::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 PgpKeyStatus pgp_key_status_from_wire(const std::string& value);
 
 /// How a reactor participates in an event.
 enum class ReactorMode {
     Intercept,  ///< Wire value `intercept`.
     Listen,  ///< Wire value `listen`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a ReactorMode.
+///
+/// `ReactorMode::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(ReactorMode value);
 
 /// Parse a wire value into a ReactorMode.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `ReactorMode::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 ReactorMode reactor_mode_from_wire(const std::string& value);
 
 /// Why a token is or is not currently usable — for display only. The authentication path never
@@ -369,33 +556,87 @@ enum class ScimTokenStatus {
     Active,  ///< Wire value `active`.
     Expired,  ///< Wire value `expired`.
     Revoked,  ///< Wire value `revoked`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a ScimTokenStatus.
+///
+/// `ScimTokenStatus::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(ScimTokenStatus value);
 
 /// Parse a wire value into a ScimTokenStatus.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `ScimTokenStatus::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 ScimTokenStatus scim_token_status_from_wire(const std::string& value);
 
 /// Whether a settings row belongs to an organization or a tenant.
 enum class SettingsScope {
     Org,  ///< Wire value `Org`.
     Tenant,  ///< Wire value `Tenant`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a SettingsScope.
+///
+/// `SettingsScope::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(SettingsScope value);
 
 /// Parse a wire value into a SettingsScope.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `SettingsScope::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 SettingsScope settings_scope_from_wire(const std::string& value);
+
+/// What a tenant *is*, as distinct from what state it is in.
+///
+/// Reserved rather than inferred: an organization has exactly one tenant of kind
+/// [`Self::Organization`], enforced by a unique index rather than by convention. Deriving it
+/// from a magic slug or from "the oldest tenant" would make the organization scope something an
+/// operator could rename or delete by accident, and it is the scope the super-admin lives in.
+enum class TenantKind {
+    Standard,  ///< Wire value `standard`.
+    Organization,  ///< Wire value `organization`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a TenantKind.
+///
+/// `TenantKind::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(TenantKind value);
+
+/// Parse a wire value into a TenantKind.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `TenantKind::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+TenantKind tenant_kind_from_wire(const std::string& value);
 
 /// Lifecycle status of a tenant.
 ///
@@ -404,16 +645,27 @@ SettingsScope settings_scope_from_wire(const std::string& value);
 enum class TenantStatus {
     Active,  ///< Wire value `Active`.
     Suspended,  ///< Wire value `Suspended`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a TenantStatus.
+///
+/// `TenantStatus::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(TenantStatus value);
 
 /// Parse a wire value into a TenantStatus.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `TenantStatus::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 TenantStatus tenant_status_from_wire(const std::string& value);
 
 /// What to do with an AAGUID that has no MDS entry (i.e. FIDO Alliance has no metadata for it —
@@ -421,16 +673,27 @@ TenantStatus tenant_status_from_wire(const std::string& value);
 enum class UnknownAaguidAction {
     Allow,  ///< Wire value `allow`.
     Deny,  ///< Wire value `deny`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a UnknownAaguidAction.
+///
+/// `UnknownAaguidAction::Unknown` spells as the empty string, which no server value is:
+/// carrying an unrecognised value back into an update is refused by the server rather than
+/// written as a spelling it never used.
 std::string to_wire(UnknownAaguidAction value);
 
 /// Parse a wire value into a UnknownAaguidAction.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `UnknownAaguidAction::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 UnknownAaguidAction unknown_aaguid_action_from_wire(const std::string& value);
 
 /// The `UserStatus` enumeration from the server's OpenAPI document.
@@ -441,16 +704,27 @@ enum class UserStatus {
     PendingVerification,  ///< Wire value `PendingVerification`.
     Anonymized,  ///< Wire value `Anonymized`.
     Deleted,  ///< Wire value `Deleted`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
 /// The wire spelling of a UserStatus.
+///
+/// `UserStatus::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
 std::string to_wire(UserStatus value);
 
 /// Parse a wire value into a UserStatus.
 ///
-/// Throws rather than mapping an unrecognised value to a default enumerator: on this surface
-/// these values gate access, and silently reading a state this SDK does not know as whichever
-/// enumerator happens to be first turns a newer server into a wrong answer.
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `UserStatus::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
 UserStatus user_status_from_wire(const std::string& value);
 
 // Forward declarations. The spec's types reference each other freely and in both directions, so
@@ -732,6 +1006,11 @@ struct Certificate {
     std::string subject;
     /// The tenant this certificate belongs to.
     std::string tenant_id;
+    /// Resolved by the list projection only. The server resolves this for a whole page in one
+    /// query, so it is populated by `list` and is empty on `get` (CONTRACT.md §27.11 rule 4).
+    /// Empty there means "this read does not carry it", not "there is nothing bound" -- this
+    /// SDK does not issue a second request to fill it in. Optional.
+    std::optional<std::string> bound_service_account_id = std::nullopt;
 };
 
 /// Certificate issuance constraints.
@@ -1563,9 +1842,14 @@ struct MtlsTrustAnchorResponse {
     std::string message;
     /// The flag as now stored.
     bool mtls_trust_anchor;
-    /// Always `true`: rustls builds its client trust store once, when the listener is
-    /// constructed, so this takes effect at the next start.
+    /// Whether the change still needs a restart to take effect. `false` when the live listener
+    /// accepted the new anchor set — the ordinary case on a TLS deployment. `true` only when
+    /// there was no listener to reload into (plaintext, or `client_auth = off`), where the flag
+    /// is stored and applies at the next start.
     bool restart_required;
+    /// How many CAs the listener now trusts for client authentication, when it was reloaded.
+    /// `None` when nothing was reloaded. Optional.
+    std::optional<std::int64_t> trusted_anchors = std::nullopt;
 };
 
 /// Admin notification preferences.
@@ -2297,6 +2581,10 @@ struct Tenant {
     std::string created_at;
     /// The server's `id` field.
     std::string id;
+    /// Whether this is an ordinary tenant or the organization's own scope. `#[serde(default)]`
+    /// so every row written before organization scope existed reads back as
+    /// [`TenantKind::Standard`], which is what it is. Optional.
+    std::optional<TenantKind> kind = std::nullopt;
     /// Arbitrary key-value metadata.
     std::string metadata;
     /// Human-readable name.

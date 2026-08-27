@@ -756,9 +756,48 @@ public:
     /// a BODY field.
     void verify_email(const Sensitive<std::string>& token, const std::string& tenant_id);
 
-    /// `POST /api/v1/auth/resend-verification` (§25.1). Unauthenticated; the
-    /// tenant is a BODY field.
+    /// `POST /api/v1/auth/resend-verification` (§25.1) — the UNAUTHENTICATED
+    /// resend, for a caller with no session. The tenant is a BODY field.
+    ///
+    /// RETURNS NORMALLY WHATEVER THE OUTCOME. The address may not exist, may
+    /// already be verified, or may be over the daily limit, and the server
+    /// answers identically in every case because it takes an address from an
+    /// anonymous caller: anything else is an oracle for which addresses have
+    /// accounts (§25.4).
+    ///
+    /// A caller that IS signed in wants resend_own_verification(), which says
+    /// what happened. §25.7 rule 2 forbids routing either of these to the
+    /// other, and this SDK does not.
     void resend_verification(const std::string& email, const std::string& tenant_id);
+
+    /// `POST /api/v1/users/me/resend-verification` (§25.1, §25.7) — resend the
+    /// SIGNED-IN caller's own verification mail, and say what happened.
+    ///
+    /// Takes no address. The server reads it off the caller's own record, and
+    /// this signature deliberately offers no way to name a different one: a
+    /// parameter here would let an authenticated session mail an arbitrary
+    /// address.
+    ///
+    /// Unlike resend_verification() this reports the outcome, because the
+    /// caller is signed in to the account it is asking about and none of the
+    /// outcomes tells it anything it did not already bring with it:
+    ///
+    ///  - returns      — a token was minted and the mail ENQUEUED. Delivery is
+    ///                   asynchronous and can still fail at the provider; a
+    ///                   queue that accepts everything in front of a provider
+    ///                   that rejects it looks exactly like this succeeding
+    ///                   (§25.7 rule 3).
+    ///  - AuthzError   — from `409`: already verified, or an account state that
+    ///                   must not be sent a live token.
+    ///  - NetworkError — from `429`: the daily resend limit.
+    ///  - AuthError    — there is no session. Raised client-side, with NO wire
+    ///                   call.
+    ///
+    /// §25.7 rule 2 forbids falling back to the unauthenticated endpoint on
+    /// either failure, and this SDK does not: that fallback turns both back
+    /// into a silent success and restores the bug this operation exists to
+    /// fix, with an extra round trip.
+    void resend_own_verification();
 
     /// `POST /api/v1/auth/reset` (§25.1) — ask for a reset mail.
     ///

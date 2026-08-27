@@ -50,6 +50,8 @@ void to_json(nlohmann::json& j, const ScimTokenStatus& value);
 void from_json(const nlohmann::json& j, ScimTokenStatus& value);
 void to_json(nlohmann::json& j, const SettingsScope& value);
 void from_json(const nlohmann::json& j, SettingsScope& value);
+void to_json(nlohmann::json& j, const TenantKind& value);
+void from_json(const nlohmann::json& j, TenantKind& value);
 void to_json(nlohmann::json& j, const TenantStatus& value);
 void from_json(const nlohmann::json& j, TenantStatus& value);
 void to_json(nlohmann::json& j, const UnknownAaguidAction& value);

@@ -25,6 +25,49 @@ const char* kRole =
     R"json("name":"auditor","tenant_id":"11111111-1111-4111-8111-111111111111",)json"
     R"json("updated_at":"2026-08-26T00:00:00Z"})json";
 
+
+// A `Tenant` whose `kind` this SDK knows.
+const char* kTenantStandard =
+    R"json({"created_at":"2026-08-26T00:00:00Z",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","kind":"standard","metadata":{},)json"
+    R"json("name":"ordinary","organization_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("slug":"ordinary","status":"Active","updated_at":"2026-08-26T00:00:00Z"})json";
+
+// The same, with a `kind` only a newer server sends.
+const char* kTenantFuture =
+    R"json({"created_at":"2026-08-26T00:00:00Z",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","kind":"sandbox","metadata":{},)json"
+    R"json("name":"future","organization_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("slug":"future","status":"Active","updated_at":"2026-08-26T00:00:00Z"})json";
+
+// A row written before organization scope existed: no `kind` at all.
+const char* kTenantLegacy =
+    R"json({"created_at":"2026-08-26T00:00:00Z",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","metadata":{},)json"
+    R"json("name":"legacy","organization_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("slug":"legacy","status":"Active","updated_at":"2026-08-26T00:00:00Z"})json";
+
+// A `Certificate` as `certificates.list` projects it.
+const char* kCertBound =
+    R"json({"bound_service_account_id":"22222222-2222-4222-8222-222222222222",)json"
+    R"json("cert_type":"Device","created_at":"2026-08-26T00:00:00Z","fingerprint":"aa:bb",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("issuer_ca_id":"11111111-1111-4111-8111-111111111111","key_algorithm":"Ed25519",)json"
+    R"json("metadata":{},"not_after":"2027-08-26T00:00:00Z",)json"
+    R"json("not_before":"2026-08-26T00:00:00Z","public_cert_pem":"-----BEGIN CERTIFICATE-----",)json"
+    R"json("status":"Active","subject":"CN=device-001",)json"
+    R"json("tenant_id":"11111111-1111-4111-8111-111111111111"})json";
+
+// The same certificate as `certificates.get` returns it: no projection.
+const char* kCertUnbound =
+    R"json({"cert_type":"Device","created_at":"2026-08-26T00:00:00Z","fingerprint":"aa:bb",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("issuer_ca_id":"11111111-1111-4111-8111-111111111111","key_algorithm":"Ed25519",)json"
+    R"json("metadata":{},"not_after":"2027-08-26T00:00:00Z",)json"
+    R"json("not_before":"2026-08-26T00:00:00Z","public_cert_pem":"-----BEGIN CERTIFICATE-----",)json"
+    R"json("status":"Active","subject":"CN=device-001",)json"
+    R"json("tenant_id":"11111111-1111-4111-8111-111111111111"})json";
+
 // ---- rule 1: no session, no wire call ---------------------------------
 
 AXIAM_TEST("§27.4 rule 1: without a session nothing is sent") {
@@ -131,6 +174,216 @@ AXIAM_TEST("§27.4 rule 4: a bare array is a vector, not a Page") {
     AXIAM_CHECK(users.size() == 1);
     static_assert(std::is_same_v<decltype(users), const std::vector<RoleUserAssignment>>,
                   "a bare-array endpoint must not be modelled as a Page");
+}
+
+// ---- rule 4: search ----------------------------------------------------
+
+// Asserted on the request URI, not on the argument: a term the SDK accepts and never
+// sends is exactly the failure this test exists for -- every caller-side assertion still
+// passes while the server returns the unfiltered set.
+AXIAM_TEST("§27.4 rule 4: a search term reaches the query string") {
+    auto fixture = axtest::mgmt::signed_in(200, R"json({"items":[],"total":0})json");
+    PageRequest page{0, 25};
+    page.search = "ada";
+
+    fixture.client.management().roles().list(page);
+
+    const auto query = axtest::mgmt::query_of(fixture.state->last().url);
+    AXIAM_CHECK(query.find("search=ada") != std::string::npos);
+}
+
+// `?search=` is a filter matching nothing, which is a different request from not
+// filtering -- so the key is ABSENT, not empty.
+AXIAM_TEST("§27.4 rule 4: no search term sends no search key") {
+    auto fixture = axtest::mgmt::signed_in(200, R"json({"items":[],"total":0})json");
+
+    fixture.client.management().roles().list(PageRequest{0, 25});
+
+    const auto query = axtest::mgmt::query_of(fixture.state->last().url);
+    AXIAM_CHECK(query == "offset=0&limit=25");
+}
+
+// A search box that fires on every keystroke sends one the moment it is cleared, and
+// "rows containing the empty string" is a different question from "all rows".
+AXIAM_TEST("§27.4 rule 4: a blank search term is the same request as none") {
+    for (const char* blank : {"", "   ", "\t\n "}) {
+        auto fixture = axtest::mgmt::signed_in(200, R"json({"items":[],"total":0})json");
+        PageRequest page{0, 25};
+        page.search = blank;
+
+        fixture.client.management().roles().list(page);
+
+        AXIAM_CHECK(axtest::mgmt::query_of(fixture.state->last().url) == "offset=0&limit=25");
+    }
+}
+
+// The server caps the term's length. Re-implementing that cap here would make a
+// client-side truncation the server would not have made into a silently different query
+// the caller cannot see.
+AXIAM_TEST("§27.4 rule 4: a search term is trimmed but never truncated") {
+    const std::string long_term(300, 'a');
+    auto fixture = axtest::mgmt::signed_in(200, R"json({"items":[],"total":0})json");
+    PageRequest page{0, 25};
+    page.search = "  " + long_term + "  ";
+
+    fixture.client.management().roles().list(page);
+
+    const auto query = axtest::mgmt::query_of(fixture.state->last().url);
+    AXIAM_CHECK(query == "offset=0&limit=25&search=" + long_term);
+}
+
+AXIAM_TEST("§27.4 rule 4: normalize_search trims, and blank means absent") {
+    AXIAM_CHECK(PageRequest::normalize_search("").empty());
+    AXIAM_CHECK(PageRequest::normalize_search("   ").empty());
+    AXIAM_CHECK(PageRequest::normalize_search("\t\n\r ").empty());
+    AXIAM_CHECK(PageRequest::normalize_search("ada") == "ada");
+    AXIAM_CHECK(PageRequest::normalize_search("  ada  ") == "ada");
+}
+
+// next() carries the term, and matching() returns a COPY -- a shared request cannot be
+// repointed at a different query by unrelated code.
+AXIAM_TEST("§27.4 rule 4: next() carries the term and matching() copies") {
+    PageRequest first{10, 25};
+    first.search = "ada";
+
+    const auto second = first.next();
+    AXIAM_CHECK(second.search == "ada");
+    AXIAM_CHECK(second.offset == 35);
+
+    const auto other = first.matching("grace");
+    AXIAM_CHECK(first.search == "ada");
+    AXIAM_CHECK(other.search == "grace");
+    AXIAM_CHECK(other.offset == 10);
+    AXIAM_CHECK(other.limit == 25);
+}
+
+// Asserted on EVERY recorded request, not on the count: a walk that filtered only its
+// first request returns the matches followed by the unfiltered tail, which reads as a
+// server bug from the caller's side.
+AXIAM_TEST("§27.4 rule 4: a walk carries the term on every request") {
+    const std::string one =
+        std::string(R"json({"items":[)json") + kRole + R"json(],"total":3})json";
+    auto fixture = axtest::mgmt::signed_in_three(
+        200, one, 200, one, 200, R"json({"items":[],"total":3})json");
+
+    PageRequest page{0, 1};
+    page.search = "ad";
+    for (;;) {
+        const auto batch = fixture.client.management().roles().list(page);
+        if (batch.empty()) break;
+        // Derived from the PAGE's own request, which is how a caller walks -- so this
+        // asserts the term survived the round trip through the page, not merely that
+        // next() copies a struct member.
+        page = batch.next_request();
+    }
+
+    std::size_t seen = 0;
+    {
+        std::lock_guard<std::mutex> lock(fixture.state->mtx);
+        for (const auto& r : fixture.state->requests) {
+            if (r.url.find("/api/v1/roles") == std::string::npos) continue;
+            ++seen;
+            AXIAM_CHECK(r.url.find("search=ad") != std::string::npos);
+        }
+    }
+    AXIAM_CHECK(seen == 3);
+}
+
+// ---- §27.11: model additions -------------------------------------------
+
+// The page below carries two tenants and only the second has a `kind` this SDK has never
+// seen. A closed enum would throw while decoding it and take the first one -- which the
+// caller did ask for -- down with it. That blast radius is what rule 1 is about.
+AXIAM_TEST("§27.11 rule 1: an unknown enum value does not lose the page") {
+    const std::string body = std::string(R"json({"items":[)json") + kTenantStandard + "," +
+                             kTenantFuture + R"json(],"total":2})json";
+    auto fixture = axtest::mgmt::signed_in(200, body);
+
+    const auto page = fixture.client.management().tenants().list();
+
+    AXIAM_CHECK(page.size() == 2);
+    AXIAM_CHECK(page.items[0].kind == std::optional<TenantKind>(TenantKind::Standard));
+    AXIAM_CHECK(page.items[1].kind == std::optional<TenantKind>(TenantKind::Unknown));
+}
+
+// A row written before organization scope existed carries no `kind` at all, and that is
+// not an error.
+AXIAM_TEST("§27.11 rule 1: an absent tenant kind stays absent") {
+    const std::string body =
+        std::string(R"json({"items":[)json") + kTenantLegacy + R"json(],"total":1})json";
+    auto fixture = axtest::mgmt::signed_in(200, body);
+
+    const auto page = fixture.client.management().tenants().list();
+
+    AXIAM_CHECK(!page.items[0].kind.has_value());
+}
+
+// §27.11 rule 2: an organization's scope tenant is reserved at organization creation and
+// enforced by a unique index. A client able to set the field could ask for a second one,
+// and the request would be refused at the database rather than at the type. Asserted on
+// the ENCODED body, which is what reaches the server.
+AXIAM_TEST("§27.11 rule 2: tenant kind is read-only") {
+    {
+        auto fixture = axtest::mgmt::signed_in(200, kTenantStandard);
+        CreateTenantRequest body{};
+        body.name = "acme";
+        body.slug = "acme";
+        fixture.client.management().tenants().create(body);
+        AXIAM_CHECK(fixture.state->last().body.find("kind") == std::string::npos);
+    }
+    {
+        auto fixture = axtest::mgmt::signed_in(200, kTenantStandard);
+        UpdateTenant body{};
+        body.name = "renamed";
+        fixture.client.management().tenants().update(kUuid, body);
+        AXIAM_CHECK(fixture.state->last().body.find("kind") == std::string::npos);
+    }
+}
+
+// §27.11 rule 3: "the listener trusts no CAs" and "there was no listener to ask" are
+// different operational states, and only one of them is a problem. Coalescing the first
+// to 0 reports a healthy plaintext deployment as a broken TLS one.
+AXIAM_TEST("§27.11 rule 3: trusted_anchors keeps absent distinct from zero") {
+    // Nothing was reloaded: a plaintext deployment, or client_auth off. The server says
+    // so by omitting the count, and the SDK must not report that as "trusts zero CAs".
+    {
+        auto fixture = axtest::mgmt::signed_in(
+            200,
+            R"json({"ca_certificate_id":"11111111-1111-4111-8111-111111111111",)json"
+            R"json("message":"stored","mtls_trust_anchor":true,"restart_required":true})json");
+        const auto absent = fixture.client.management().ca_certificates()
+                                .set_mtls_trust_anchor(kUuid, SetMtlsTrustAnchor{true});
+        AXIAM_CHECK(!absent.trusted_anchors.has_value());
+    }
+    // The listener WAS reloaded and now trusts none. A different operational state, and
+    // the only one of the two that is a problem.
+    {
+        auto fixture = axtest::mgmt::signed_in(
+            200,
+            R"json({"ca_certificate_id":"11111111-1111-4111-8111-111111111111",)json"
+            R"json("message":"reloaded","mtls_trust_anchor":false,)json"
+            R"json("restart_required":false,"trusted_anchors":0})json");
+        const auto zero = fixture.client.management().ca_certificates()
+                              .set_mtls_trust_anchor(kUuid, SetMtlsTrustAnchor{true});
+        AXIAM_CHECK(zero.trusted_anchors == std::optional<std::int64_t>(0));
+    }
+}
+
+// §27.11 rule 4: the server resolves this for a whole page in one query, so `list`
+// populates it and `get` leaves it empty -- with no second request to fill it in. A `get`
+// that silently costs two round trips is what §27.4 rule 3 forbids elsewhere.
+AXIAM_TEST("§27.11 rule 4: the certificate projection is list-only") {
+    const std::string page_body =
+        std::string(R"json({"items":[)json") + kCertBound + R"json(],"total":1})json";
+    auto fixture = axtest::mgmt::signed_in_two(200, page_body, 200, kCertUnbound);
+
+    const auto listed = fixture.client.management().certificates().list();
+    const auto fetched = fixture.client.management().certificates().get(kUuid);
+
+    AXIAM_CHECK(listed.items[0].bound_service_account_id ==
+                std::optional<std::string>(kOtherOrg));
+    AXIAM_CHECK(!fetched.bound_service_account_id.has_value());
+    AXIAM_CHECK(fixture.state->count_path("/api/v1/certificates") == 2);
 }
 
 // ---- rule 5: sparse bodies ---------------------------------------------
@@ -375,18 +628,25 @@ AXIAM_TEST("a malformed item inside a page is a NetworkError") {
     AXIAM_CHECK(caught_sdk_error);
 }
 
-// An unknown enum value is reported, never mapped to whichever enumerator is first.
-AXIAM_TEST("an unknown enum value is refused") {
+// An unknown enum value DECODES, to an enumerator of its own -- it is never mapped to
+// whichever known enumerator happens to be first (CONTRACT.md §27.11 rule 1).
+//
+// This assertion was inverted in contract 1.31. It used to require `from_wire` to throw on
+// an unrecognised value, and the reason that was wrong is blast radius: the throw escapes
+// the whole `Page<T>` decode, so one field of one row took the entire page down with it --
+// including the rows the caller did ask for.
+//
+// What the old assertion was PROTECTING is still true and still asserted below: the value
+// is not silently read as `Active`. `Unknown` is an enumerator of its own, and its wire
+// spelling is the empty string -- which no server value is, so carrying it back into an
+// update is refused by the server rather than written as a spelling it never used.
+AXIAM_TEST("an unknown enum value decodes without becoming a known one") {
     AXIAM_CHECK(user_status_from_wire("Active") == UserStatus::Active);
     AXIAM_CHECK(to_wire(UserStatus::Active) == "Active");
 
-    bool threw = false;
-    try {
-        user_status_from_wire("Ascended");
-    } catch (const std::invalid_argument&) {
-        threw = true;
-    }
-    AXIAM_CHECK(threw);
+    AXIAM_CHECK(user_status_from_wire("Ascended") == UserStatus::Unknown);
+    AXIAM_CHECK(UserStatus::Unknown != UserStatus::Active);
+    AXIAM_CHECK(to_wire(UserStatus::Unknown).empty());
 }
 
 }  // namespace

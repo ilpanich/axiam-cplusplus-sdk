@@ -14,6 +14,9 @@ std::string to_wire(ActorType value) {
         case ActorType::User: return "User";
         case ActorType::ServiceAccount: return "ServiceAccount";
         case ActorType::System: return "System";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case ActorType::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -24,9 +27,11 @@ ActorType actor_type_from_wire(const std::string& value) {
     if (value == "User") return ActorType::User;
     if (value == "ServiceAccount") return ActorType::ServiceAccount;
     if (value == "System") return ActorType::System;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown ActorType value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return ActorType::Unknown;
 }
 
 void to_json(nlohmann::json& j, const ActorType& value) { j = to_wire(value); }
@@ -39,6 +44,9 @@ std::string to_wire(AttestationMode value) {
         case AttestationMode::None: return "none";
         case AttestationMode::Indirect: return "indirect";
         case AttestationMode::DirectRequired: return "direct_required";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case AttestationMode::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -49,9 +57,11 @@ AttestationMode attestation_mode_from_wire(const std::string& value) {
     if (value == "none") return AttestationMode::None;
     if (value == "indirect") return AttestationMode::Indirect;
     if (value == "direct_required") return AttestationMode::DirectRequired;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown AttestationMode value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return AttestationMode::Unknown;
 }
 
 void to_json(nlohmann::json& j, const AttestationMode& value) { j = to_wire(value); }
@@ -64,6 +74,9 @@ std::string to_wire(AuditOutcome value) {
         case AuditOutcome::Success: return "Success";
         case AuditOutcome::Failure: return "Failure";
         case AuditOutcome::Denied: return "Denied";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case AuditOutcome::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -74,9 +87,11 @@ AuditOutcome audit_outcome_from_wire(const std::string& value) {
     if (value == "Success") return AuditOutcome::Success;
     if (value == "Failure") return AuditOutcome::Failure;
     if (value == "Denied") return AuditOutcome::Denied;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown AuditOutcome value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return AuditOutcome::Unknown;
 }
 
 void to_json(nlohmann::json& j, const AuditOutcome& value) { j = to_wire(value); }
@@ -89,6 +104,9 @@ std::string to_wire(CertificateStatus value) {
         case CertificateStatus::Active: return "Active";
         case CertificateStatus::Revoked: return "Revoked";
         case CertificateStatus::Expired: return "Expired";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case CertificateStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -99,9 +117,11 @@ CertificateStatus certificate_status_from_wire(const std::string& value) {
     if (value == "Active") return CertificateStatus::Active;
     if (value == "Revoked") return CertificateStatus::Revoked;
     if (value == "Expired") return CertificateStatus::Expired;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown CertificateStatus value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return CertificateStatus::Unknown;
 }
 
 void to_json(nlohmann::json& j, const CertificateStatus& value) { j = to_wire(value); }
@@ -114,6 +134,9 @@ std::string to_wire(CertificateType value) {
         case CertificateType::User: return "User";
         case CertificateType::Service: return "Service";
         case CertificateType::Device: return "Device";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case CertificateType::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -124,9 +147,11 @@ CertificateType certificate_type_from_wire(const std::string& value) {
     if (value == "User") return CertificateType::User;
     if (value == "Service") return CertificateType::Service;
     if (value == "Device") return CertificateType::Device;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown CertificateType value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return CertificateType::Unknown;
 }
 
 void to_json(nlohmann::json& j, const CertificateType& value) { j = to_wire(value); }
@@ -142,6 +167,9 @@ std::string to_wire(CertificationLevel value) {
         case CertificationLevel::L2Plus: return "L2Plus";
         case CertificationLevel::L3: return "L3";
         case CertificationLevel::L3Plus: return "L3Plus";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case CertificationLevel::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -155,9 +183,11 @@ CertificationLevel certification_level_from_wire(const std::string& value) {
     if (value == "L2Plus") return CertificationLevel::L2Plus;
     if (value == "L3") return CertificationLevel::L3;
     if (value == "L3Plus") return CertificationLevel::L3Plus;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown CertificationLevel value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return CertificationLevel::Unknown;
 }
 
 void to_json(nlohmann::json& j, const CertificationLevel& value) { j = to_wire(value); }
@@ -171,6 +201,9 @@ std::string to_wire(ClientAuthMethod value) {
         case ClientAuthMethod::TlsClientAuth: return "tls_client_auth";
         case ClientAuthMethod::SelfSignedTlsClientAuth: return "self_signed_tls_client_auth";
         case ClientAuthMethod::PrivateKeyJwt: return "private_key_jwt";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case ClientAuthMethod::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -182,9 +215,11 @@ ClientAuthMethod client_auth_method_from_wire(const std::string& value) {
     if (value == "tls_client_auth") return ClientAuthMethod::TlsClientAuth;
     if (value == "self_signed_tls_client_auth") return ClientAuthMethod::SelfSignedTlsClientAuth;
     if (value == "private_key_jwt") return ClientAuthMethod::PrivateKeyJwt;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown ClientAuthMethod value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return ClientAuthMethod::Unknown;
 }
 
 void to_json(nlohmann::json& j, const ClientAuthMethod& value) { j = to_wire(value); }
@@ -196,6 +231,9 @@ std::string to_wire(ClientProfile value) {
     switch (value) {
         case ClientProfile::Standard: return "standard";
         case ClientProfile::Fapi2: return "fapi2";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case ClientProfile::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -205,9 +243,11 @@ std::string to_wire(ClientProfile value) {
 ClientProfile client_profile_from_wire(const std::string& value) {
     if (value == "standard") return ClientProfile::Standard;
     if (value == "fapi2") return ClientProfile::Fapi2;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown ClientProfile value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return ClientProfile::Unknown;
 }
 
 void to_json(nlohmann::json& j, const ClientProfile& value) { j = to_wire(value); }
@@ -219,6 +259,9 @@ std::string to_wire(FailurePolicy value) {
     switch (value) {
         case FailurePolicy::FailClosed: return "fail_closed";
         case FailurePolicy::FailOpen: return "fail_open";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case FailurePolicy::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -228,9 +271,11 @@ std::string to_wire(FailurePolicy value) {
 FailurePolicy failure_policy_from_wire(const std::string& value) {
     if (value == "fail_closed") return FailurePolicy::FailClosed;
     if (value == "fail_open") return FailurePolicy::FailOpen;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown FailurePolicy value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return FailurePolicy::Unknown;
 }
 
 void to_json(nlohmann::json& j, const FailurePolicy& value) { j = to_wire(value); }
@@ -242,6 +287,9 @@ std::string to_wire(KeyAlgorithm value) {
     switch (value) {
         case KeyAlgorithm::Rsa4096: return "Rsa4096";
         case KeyAlgorithm::Ed25519: return "Ed25519";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case KeyAlgorithm::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -251,9 +299,11 @@ std::string to_wire(KeyAlgorithm value) {
 KeyAlgorithm key_algorithm_from_wire(const std::string& value) {
     if (value == "Rsa4096") return KeyAlgorithm::Rsa4096;
     if (value == "Ed25519") return KeyAlgorithm::Ed25519;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown KeyAlgorithm value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return KeyAlgorithm::Unknown;
 }
 
 void to_json(nlohmann::json& j, const KeyAlgorithm& value) { j = to_wire(value); }
@@ -266,6 +316,9 @@ std::string to_wire(MfaMethodType value) {
         case MfaMethodType::Totp: return "Totp";
         case MfaMethodType::Passkey: return "Passkey";
         case MfaMethodType::SecurityKey: return "SecurityKey";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case MfaMethodType::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -276,9 +329,11 @@ MfaMethodType mfa_method_type_from_wire(const std::string& value) {
     if (value == "Totp") return MfaMethodType::Totp;
     if (value == "Passkey") return MfaMethodType::Passkey;
     if (value == "SecurityKey") return MfaMethodType::SecurityKey;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown MfaMethodType value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return MfaMethodType::Unknown;
 }
 
 void to_json(nlohmann::json& j, const MfaMethodType& value) { j = to_wire(value); }
@@ -305,6 +360,9 @@ std::string to_wire(NotificationEventType value) {
         case NotificationEventType::UserUpdated: return "user_updated";
         case NotificationEventType::ServiceAccountCreated: return "service_account_created";
         case NotificationEventType::ServiceAccountDeleted: return "service_account_deleted";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case NotificationEventType::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -329,9 +387,11 @@ NotificationEventType notification_event_type_from_wire(const std::string& value
     if (value == "user_updated") return NotificationEventType::UserUpdated;
     if (value == "service_account_created") return NotificationEventType::ServiceAccountCreated;
     if (value == "service_account_deleted") return NotificationEventType::ServiceAccountDeleted;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown NotificationEventType value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return NotificationEventType::Unknown;
 }
 
 void to_json(nlohmann::json& j, const NotificationEventType& value) { j = to_wire(value); }
@@ -343,6 +403,9 @@ std::string to_wire(PermissionEffect value) {
     switch (value) {
         case PermissionEffect::Allow: return "allow";
         case PermissionEffect::Deny: return "deny";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case PermissionEffect::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -352,9 +415,11 @@ std::string to_wire(PermissionEffect value) {
 PermissionEffect permission_effect_from_wire(const std::string& value) {
     if (value == "allow") return PermissionEffect::Allow;
     if (value == "deny") return PermissionEffect::Deny;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown PermissionEffect value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return PermissionEffect::Unknown;
 }
 
 void to_json(nlohmann::json& j, const PermissionEffect& value) { j = to_wire(value); }
@@ -366,6 +431,9 @@ std::string to_wire(PgpKeyAlgorithm value) {
     switch (value) {
         case PgpKeyAlgorithm::Rsa4096: return "Rsa4096";
         case PgpKeyAlgorithm::Ed25519: return "Ed25519";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case PgpKeyAlgorithm::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -375,9 +443,11 @@ std::string to_wire(PgpKeyAlgorithm value) {
 PgpKeyAlgorithm pgp_key_algorithm_from_wire(const std::string& value) {
     if (value == "Rsa4096") return PgpKeyAlgorithm::Rsa4096;
     if (value == "Ed25519") return PgpKeyAlgorithm::Ed25519;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown PgpKeyAlgorithm value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return PgpKeyAlgorithm::Unknown;
 }
 
 void to_json(nlohmann::json& j, const PgpKeyAlgorithm& value) { j = to_wire(value); }
@@ -389,6 +459,9 @@ std::string to_wire(PgpKeyPurpose value) {
     switch (value) {
         case PgpKeyPurpose::AuditSigning: return "AuditSigning";
         case PgpKeyPurpose::Export_: return "Export";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case PgpKeyPurpose::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -398,9 +471,11 @@ std::string to_wire(PgpKeyPurpose value) {
 PgpKeyPurpose pgp_key_purpose_from_wire(const std::string& value) {
     if (value == "AuditSigning") return PgpKeyPurpose::AuditSigning;
     if (value == "Export") return PgpKeyPurpose::Export_;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown PgpKeyPurpose value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return PgpKeyPurpose::Unknown;
 }
 
 void to_json(nlohmann::json& j, const PgpKeyPurpose& value) { j = to_wire(value); }
@@ -412,6 +487,9 @@ std::string to_wire(PgpKeyStatus value) {
     switch (value) {
         case PgpKeyStatus::Active: return "Active";
         case PgpKeyStatus::Revoked: return "Revoked";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case PgpKeyStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -421,9 +499,11 @@ std::string to_wire(PgpKeyStatus value) {
 PgpKeyStatus pgp_key_status_from_wire(const std::string& value) {
     if (value == "Active") return PgpKeyStatus::Active;
     if (value == "Revoked") return PgpKeyStatus::Revoked;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown PgpKeyStatus value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return PgpKeyStatus::Unknown;
 }
 
 void to_json(nlohmann::json& j, const PgpKeyStatus& value) { j = to_wire(value); }
@@ -435,6 +515,9 @@ std::string to_wire(ReactorMode value) {
     switch (value) {
         case ReactorMode::Intercept: return "intercept";
         case ReactorMode::Listen: return "listen";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case ReactorMode::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -444,9 +527,11 @@ std::string to_wire(ReactorMode value) {
 ReactorMode reactor_mode_from_wire(const std::string& value) {
     if (value == "intercept") return ReactorMode::Intercept;
     if (value == "listen") return ReactorMode::Listen;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown ReactorMode value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return ReactorMode::Unknown;
 }
 
 void to_json(nlohmann::json& j, const ReactorMode& value) { j = to_wire(value); }
@@ -459,6 +544,9 @@ std::string to_wire(ScimTokenStatus value) {
         case ScimTokenStatus::Active: return "active";
         case ScimTokenStatus::Expired: return "expired";
         case ScimTokenStatus::Revoked: return "revoked";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case ScimTokenStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -469,9 +557,11 @@ ScimTokenStatus scim_token_status_from_wire(const std::string& value) {
     if (value == "active") return ScimTokenStatus::Active;
     if (value == "expired") return ScimTokenStatus::Expired;
     if (value == "revoked") return ScimTokenStatus::Revoked;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown ScimTokenStatus value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return ScimTokenStatus::Unknown;
 }
 
 void to_json(nlohmann::json& j, const ScimTokenStatus& value) { j = to_wire(value); }
@@ -483,6 +573,9 @@ std::string to_wire(SettingsScope value) {
     switch (value) {
         case SettingsScope::Org: return "Org";
         case SettingsScope::Tenant: return "Tenant";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case SettingsScope::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -492,9 +585,11 @@ std::string to_wire(SettingsScope value) {
 SettingsScope settings_scope_from_wire(const std::string& value) {
     if (value == "Org") return SettingsScope::Org;
     if (value == "Tenant") return SettingsScope::Tenant;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown SettingsScope value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return SettingsScope::Unknown;
 }
 
 void to_json(nlohmann::json& j, const SettingsScope& value) { j = to_wire(value); }
@@ -502,10 +597,41 @@ void from_json(const nlohmann::json& j, SettingsScope& value) {
     value = settings_scope_from_wire(j.get<std::string>());
 }
 
+std::string to_wire(TenantKind value) {
+    switch (value) {
+        case TenantKind::Standard: return "standard";
+        case TenantKind::Organization: return "organization";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case TenantKind::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "standard";
+}
+
+TenantKind tenant_kind_from_wire(const std::string& value) {
+    if (value == "standard") return TenantKind::Standard;
+    if (value == "organization") return TenantKind::Organization;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return TenantKind::Unknown;
+}
+
+void to_json(nlohmann::json& j, const TenantKind& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, TenantKind& value) {
+    value = tenant_kind_from_wire(j.get<std::string>());
+}
+
 std::string to_wire(TenantStatus value) {
     switch (value) {
         case TenantStatus::Active: return "Active";
         case TenantStatus::Suspended: return "Suspended";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case TenantStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -515,9 +641,11 @@ std::string to_wire(TenantStatus value) {
 TenantStatus tenant_status_from_wire(const std::string& value) {
     if (value == "Active") return TenantStatus::Active;
     if (value == "Suspended") return TenantStatus::Suspended;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown TenantStatus value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return TenantStatus::Unknown;
 }
 
 void to_json(nlohmann::json& j, const TenantStatus& value) { j = to_wire(value); }
@@ -529,6 +657,9 @@ std::string to_wire(UnknownAaguidAction value) {
     switch (value) {
         case UnknownAaguidAction::Allow: return "allow";
         case UnknownAaguidAction::Deny: return "deny";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case UnknownAaguidAction::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -538,9 +669,11 @@ std::string to_wire(UnknownAaguidAction value) {
 UnknownAaguidAction unknown_aaguid_action_from_wire(const std::string& value) {
     if (value == "allow") return UnknownAaguidAction::Allow;
     if (value == "deny") return UnknownAaguidAction::Deny;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown UnknownAaguidAction value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return UnknownAaguidAction::Unknown;
 }
 
 void to_json(nlohmann::json& j, const UnknownAaguidAction& value) { j = to_wire(value); }
@@ -556,6 +689,9 @@ std::string to_wire(UserStatus value) {
         case UserStatus::PendingVerification: return "PendingVerification";
         case UserStatus::Anonymized: return "Anonymized";
         case UserStatus::Deleted: return "Deleted";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case UserStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
     // with an out-of-range value is otherwise undefined.
@@ -569,9 +705,11 @@ UserStatus user_status_from_wire(const std::string& value) {
     if (value == "PendingVerification") return UserStatus::PendingVerification;
     if (value == "Anonymized") return UserStatus::Anonymized;
     if (value == "Deleted") return UserStatus::Deleted;
-    // No default enumerator, on purpose: an unrecognised value is reported rather than mapped
-    // to whichever one happens to be first.
-    throw std::invalid_argument("unknown UserStatus value \"" + value + "\" -- the server may be newer than this SDK");
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return UserStatus::Unknown;
 }
 
 void to_json(nlohmann::json& j, const UserStatus& value) { j = to_wire(value); }
@@ -753,6 +891,9 @@ void to_json(nlohmann::json& j, const Certificate& value) {
     j["status"] = to_wire(value.status);
     j["subject"] = value.subject;
     j["tenant_id"] = value.tenant_id;
+    if (value.bound_service_account_id) {
+        j["bound_service_account_id"] = *value.bound_service_account_id;
+    }
 }
 
 void from_json(const nlohmann::json& j, Certificate& value) {
@@ -769,6 +910,9 @@ void from_json(const nlohmann::json& j, Certificate& value) {
     value.status = certificate_status_from_wire(j.at("status").get<std::string>());
     value.subject = j.at("subject").get<std::string>();
     value.tenant_id = j.at("tenant_id").get<std::string>();
+    if (auto it = j.find("bound_service_account_id"); it != j.end() && !it->is_null()) {
+        value.bound_service_account_id = it->get<std::string>();
+    }
 }
 
 void to_json(nlohmann::json& j, const CertificatePolicy& value) {
@@ -1926,6 +2070,9 @@ void to_json(nlohmann::json& j, const MtlsTrustAnchorResponse& value) {
     j["message"] = value.message;
     j["mtls_trust_anchor"] = value.mtls_trust_anchor;
     j["restart_required"] = value.restart_required;
+    if (value.trusted_anchors) {
+        j["trusted_anchors"] = *value.trusted_anchors;
+    }
 }
 
 void from_json(const nlohmann::json& j, MtlsTrustAnchorResponse& value) {
@@ -1933,6 +2080,9 @@ void from_json(const nlohmann::json& j, MtlsTrustAnchorResponse& value) {
     value.message = j.at("message").get<std::string>();
     value.mtls_trust_anchor = j.at("mtls_trust_anchor").get<bool>();
     value.restart_required = j.at("restart_required").get<bool>();
+    if (auto it = j.find("trusted_anchors"); it != j.end() && !it->is_null()) {
+        value.trusted_anchors = it->get<std::int64_t>();
+    }
 }
 
 void to_json(nlohmann::json& j, const NotificationPolicy& value) {
@@ -2814,6 +2964,9 @@ void to_json(nlohmann::json& j, const Tenant& value) {
     j = nlohmann::json::object();
     j["created_at"] = value.created_at;
     j["id"] = value.id;
+    if (value.kind) {
+        j["kind"] = to_wire(*value.kind);
+    }
     { auto parsed = nlohmann::json::parse(value.metadata, nullptr, false); if (!parsed.is_discarded()) j["metadata"] = parsed; }
     j["name"] = value.name;
     j["organization_id"] = value.organization_id;
@@ -2825,6 +2978,9 @@ void to_json(nlohmann::json& j, const Tenant& value) {
 void from_json(const nlohmann::json& j, Tenant& value) {
     value.created_at = j.at("created_at").get<std::string>();
     value.id = j.at("id").get<std::string>();
+    if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+        value.kind = tenant_kind_from_wire(it->get<std::string>());
+    }
     value.metadata = j.at("metadata").dump();
     value.name = j.at("name").get<std::string>();
     value.organization_id = j.at("organization_id").get<std::string>();

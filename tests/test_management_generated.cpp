@@ -54,7 +54,7 @@ AXIAM_TEST("management organizations.update reaches its route") {
 
 AXIAM_TEST("management tenants.list reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+        R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "kind": "standard", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
     const auto result = fixture.client.management().tenants().list();
     (void) result;
 
@@ -64,7 +64,7 @@ AXIAM_TEST("management tenants.list reaches its route") {
 
 AXIAM_TEST("management tenants.create reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "kind": "standard", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"})json");
     CreateTenantRequest body{};
     const auto result = fixture.client.management().tenants().create(body);
     (void) result;
@@ -75,7 +75,7 @@ AXIAM_TEST("management tenants.create reaches its route") {
 
 AXIAM_TEST("management tenants.get reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "kind": "standard", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"})json");
     const auto result = fixture.client.management().tenants().get("11111111-1111-4111-8111-111111111111");
     (void) result;
 
@@ -85,7 +85,7 @@ AXIAM_TEST("management tenants.get reaches its route") {
 
 AXIAM_TEST("management tenants.update reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "kind": "standard", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"})json");
     UpdateTenant body{};
     const auto result = fixture.client.management().tenants().update("11111111-1111-4111-8111-111111111111", body);
     (void) result;
@@ -756,7 +756,7 @@ AXIAM_TEST("management ca_certificates.migrate_custody reaches its route") {
 
 AXIAM_TEST("management ca_certificates.set_mtls_trust_anchor reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"ca_certificate_id": "11111111-1111-4111-8111-111111111111", "message": "example", "mtls_trust_anchor": true, "restart_required": true})json");
+        R"json({"ca_certificate_id": "11111111-1111-4111-8111-111111111111", "message": "example", "mtls_trust_anchor": true, "restart_required": true, "trusted_anchors": 1})json");
     SetMtlsTrustAnchor body{};
     const auto result = fixture.client.management().ca_certificates().set_mtls_trust_anchor("11111111-1111-4111-8111-111111111111", body);
     (void) result;

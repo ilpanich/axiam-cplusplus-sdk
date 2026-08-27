@@ -289,6 +289,13 @@ UserInfo parse_user(const json& u) {
         info.org_slug = u["org_slug"].get<std::string>();
     if (u.contains("tenant_slug") && u["tenant_slug"].is_string())
         info.tenant_slug = u["tenant_slug"].get<std::string>();
+    // §5.2: derived from the server's own answer, never asserted by the caller and never
+    // sent. Anything but the JSON literal `true` -- absent included -- means false, which
+    // is what a server older than contract 1.31 answers and the safe direction in both
+    // cases: the application then offers no cross-tenant action.
+    info.organization_level = u.contains("organization_level") &&
+                              u["organization_level"].is_boolean() &&
+                              u["organization_level"].get<bool>();
     return info;
 }
 

@@ -2,6 +2,7 @@
 
 #include "management_transport.hpp"
 
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <sstream>
@@ -77,13 +78,40 @@ PageRequest PageRequest::next() const {
     PageRequest out;
     out.limit = limit < 1 ? 50 : limit;
     out.offset = (offset < 0 ? 0 : offset) + out.limit;
+    // §27.4 rule 4: the term is part of WHICH PAGE this is, so it travels with the walk.
+    // Dropping it here would return the matches followed by the unfiltered tail, which
+    // reads as a server bug from the caller's side.
+    out.search = search;
     return out;
+}
+
+PageRequest PageRequest::matching(std::string term) const {
+    PageRequest out = *this;
+    out.search = std::move(term);
+    return out;
+}
+
+std::string PageRequest::normalize_search(const std::string& term) {
+    const auto is_space = [](unsigned char c) { return std::isspace(c) != 0; };
+    auto begin = term.begin();
+    while (begin != term.end() && is_space(static_cast<unsigned char>(*begin))) ++begin;
+    auto end = term.end();
+    while (end != begin && is_space(static_cast<unsigned char>(*(end - 1)))) --end;
+    return std::string(begin, end);
 }
 
 std::vector<QueryValue> Transport::paging(const PageRequest& page) {
     const std::int64_t offset = page.offset < 0 ? 0 : page.offset;
     const std::int64_t limit = page.limit < 1 ? 50 : page.limit;
-    return {{"offset", std::to_string(offset)}, {"limit", std::to_string(limit)}};
+    std::vector<QueryValue> query{{"offset", std::to_string(offset)},
+                                  {"limit", std::to_string(limit)}};
+    // Absent and blank are the SAME request (§27.4 rule 4), so a term that normalises away
+    // adds no key at all rather than an empty one: `?search=` is a filter matching nothing,
+    // which is a different question from not filtering.
+    if (auto term = PageRequest::normalize_search(page.search); !term.empty()) {
+        query.push_back({"search", std::move(term)});
+    }
+    return query;
 }
 
 std::string Transport::org_id(const CallScope& scope) const {

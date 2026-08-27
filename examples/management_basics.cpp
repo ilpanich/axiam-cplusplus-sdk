@@ -82,6 +82,82 @@ int main() {
         }
         std::cout << "walked " << seen << " roles across every page\n";
 
+        // ---- 1b. Searching a list (§27.4 rule 4) ----------------------
+        //
+        // The term rides on the PAGE REQUEST, beside offset and limit, not as
+        // an extra argument on each of the twenty paginated list methods. That
+        // is what lets the walk below carry it: an argument has nowhere to live
+        // between one request and the next, and a walk that filtered only its
+        // first request would return the matches followed by the unfiltered
+        // tail.
+        //
+        // The server does the matching, case-insensitively, against the
+        // identifying fields of whatever is being listed — a name, plus the
+        // record id, so a UUID pasted out of a log line finds its row. `total`
+        // then counts MATCHES, not rows.
+        axiam::management::PageRequest filtered{};
+        filtered.search = env_or("AXIAM_SEARCH", "editor");
+        const auto matches = client.roles().list(filtered);
+        std::cout << "matching roles: " << matches.size() << " on this page, "
+                  << matches.total << " in total\n";
+
+        // The whole filtered set: next_request() carries the term, so every
+        // request of the walk asks the same question.
+        std::int64_t matched = 0;
+        for (auto req = filtered; ; ) {
+            const auto batch = client.roles().list(req);
+            if (batch.empty()) break;
+            matched += static_cast<std::int64_t>(batch.size());
+            req = batch.next_request();
+        }
+        std::cout << "walked " << matched << " matching roles\n";
+
+        // An empty or all-whitespace term is the SAME request as none: no
+        // `search` parameter is sent at all. A search box that fires on every
+        // keystroke sends one the moment it is cleared, and "rows containing
+        // the empty string" is a different question from "all rows".
+        axiam::management::PageRequest cleared{};
+        cleared.search = "   ";
+        std::cout << "after clearing the box: " << client.roles().list(cleared).total
+                  << " roles\n";
+
+        // ---- 1c. Open enums and the list-only projection (§27.11) ------
+        //
+        // Rule 1: a value this SDK's copy of the spec does not list decodes to
+        // the enum's `Unknown` enumerator rather than throwing. Throwing would
+        // fail the WHOLE response, so one field of one tenant would take down
+        // the page it was on — including the tenants you did ask for. It is
+        // never confused with a known enumerator, so a switch needs an arm.
+        for (const auto& tenant : client.tenants().list()) {
+            const char* what = "an ordinary tenant";
+            if (tenant.kind) {
+                switch (*tenant.kind) {
+                    case axiam::management::TenantKind::Organization:
+                        what = "the organization's own scope";
+                        break;
+                    case axiam::management::TenantKind::Unknown:
+                        what = "a kind this SDK predates — upgrade to name it";
+                        break;
+                    case axiam::management::TenantKind::Standard:
+                        break;
+                }
+            }
+            std::cout << "  " << tenant.slug << ": " << what << "\n";
+        }
+
+        // Rule 4: bound_service_account_id is a PROJECTION, not a member of the
+        // certificate. The server resolves it for a whole page in one query, so
+        // list() populates it and get() leaves it empty. Empty there means
+        // "this read does not carry it", not "there is nothing bound" — and
+        // this SDK does not go and fetch it, because a get() that silently
+        // costs two round trips is what §27.4 rule 3 forbids elsewhere.
+        for (const auto& cert : client.certificates().list()) {
+            std::cout << "  " << cert.subject << " -> "
+                      << cert.bound_service_account_id.value_or(
+                             "not bound to a service account")
+                      << "\n";
+        }
+
         // ---- 2. Per-call scope (§27.4 rule 3) -------------------------
         //
         // for_tenant() returns a NEW handle rather than repointing this one. On

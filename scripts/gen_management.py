@@ -410,6 +410,42 @@ def cpp_field(schema: Any, secret: bool = False) -> dict[str, str]:
     return {"decl": "std::string", "kind": "json_text", "ref": ""}
 
 
+PROJECTION_DOC = (
+    "Resolved by the list projection only.\n\n"
+    "The server resolves this for a whole page in one query, so it is populated by "
+    "`list` and is empty on `get` (CONTRACT.md \u00a727.11 rule 4). Empty there means "
+    "\"this read does not carry it\", not \"there is nothing bound\" -- this SDK does not "
+    "issue a second request to fill it in."
+)
+
+
+def projection_map() -> dict[str, list[dict[str, Any]]]:
+    """Members a list projection ADDS to its base schema, keyed by the base's name.
+
+    \u00a727.11 rule 4: the server expresses a projection as an ``allOf`` of the named base
+    and an anonymous object, so the added property belongs to no schema in
+    ``components``. The registry records it as ``response.projected_fields``; this folds
+    it back onto the base struct as an OPTIONAL member, which is what makes it empty on
+    the ``get`` that does not project it rather than absent from the type.
+    """
+    added: dict[str, list[dict[str, Any]]] = {}
+    for ns in REGISTRY["namespaces"].values():
+        for op in ns["operations"].values():
+            response = op.get("response") or {}
+            extras = response.get("projected_fields") or []
+            base = (response.get("schema") or "").lstrip("[]")
+            if not extras or not base:
+                continue
+            known = {f["name"] for f in added.setdefault(base, [])}
+            for extra in extras:
+                if extra["name"] not in known:
+                    added[base].append(extra)
+    return added
+
+
+PROJECTED: dict[str, list[dict[str, Any]]] = projection_map()
+
+
 def fields_of(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]], str | None]:
     """Every member of ``schema_name``, in the spec's own order.
 
@@ -434,6 +470,17 @@ def fields_of(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]]
         ], schema.get("description"))
 
     props, required, description = flatten(schema_name)
+    props = dict(props)
+    for extra in PROJECTED.get(schema_name, []):
+        if extra["name"] in props:
+            continue
+        # Never added to `required`: the whole point is that the operation which does NOT
+        # project it still decodes, with the member empty (\u00a727.11 rule 4).
+        props[extra["name"]] = {
+            "type": extra["type"],
+            "format": extra.get("format"),
+            "description": extra.get("description") or PROJECTION_DOC,
+        }
     out: list[dict[str, Any]] = []
     for wire, sub in props.items():
         info = cpp_field(sub, secret=wire in secrets)
@@ -584,21 +631,37 @@ def emit_models_header() -> str:
             continue
         out.extend(doc((SCHEMAS.get(name) or {}).get("description")
                        or f"The `{rendered}` enumeration from the server's OpenAPI document."))
+        if any(enum_value(v) == enum_value("unknown") for v in values):
+            raise SystemExit(
+                f"enum {rendered}: the spec declares a value whose enumerator collides "
+                "with the open-enum carrier this generator appends."
+            )
         out.append(f"enum class {rendered} {{")
         for value in values:
             out.append(f"    {enum_value(value)},  ///< Wire value `{value}`.")
+        out.append(f"    {enum_value('unknown')},  "
+                   "///< A value this SDK's copy of the spec does not list.")
         out.append("};")
         out.append("")
         out.extend(doc(
-            f"The wire spelling of a {rendered}."))
+            f"The wire spelling of a {rendered}.\n\n"
+            f"`{rendered}::{enum_value('unknown')}` spells as the empty string, which no "
+            "server value is: carrying an unrecognised value back into an update is refused "
+            "by the server rather than written as a spelling it never used."))
         out.append(f"std::string to_wire({rendered} value);")
         out.append("")
         out.extend(doc(
             f"Parse a wire value into a {rendered}.\n\n"
-            "Throws rather than mapping an unrecognised value to a default enumerator: on "
-            "this surface these values gate access, and silently reading a state this SDK "
-            "does not know as whichever enumerator happens to be first turns a newer "
-            "server into a wrong answer."))
+            f"An **open** enum: a value this SDK's copy of the spec does not list becomes "
+            f"`{rendered}::{enum_value('unknown')}` rather than throwing (CONTRACT.md "
+            "\u00a727.11 rule 1). Throwing fails the WHOLE response, so one field of one "
+            "record would take down the page it arrived on -- including the records the "
+            "caller did ask for.\n\n"
+            "It is never mapped to one of the KNOWN enumerators, which is the trap this "
+            "used to avoid by throwing: reading a state this SDK does not know as whichever "
+            "enumerator happens to be first turns a new server state into a wrong one, and "
+            "on this surface these values gate access. A `switch` over this enum needs an "
+            f"`{enum_value('unknown')}` arm."))
         out.append(f"{rendered} {snake(rendered)}_from_wire(const std::string& value);")
         out.append("")
 
@@ -731,6 +794,11 @@ def emit_models_source() -> str:
         out.append("    switch (value) {")
         for v in values:
             out.append(f'        case {rendered}::{enum_value(v)}: return "{v}";')
+        out.extend(comment(
+            "The empty string, which no server value is: an unrecognised value carried "
+            "back into an update is refused by the server rather than written as a "
+            "spelling it never used.", "        "))
+        out.append(f'        case {rendered}::{enum_value("unknown")}: return "";')
         out.append("    }")
         out.extend(comment(
             "Unreachable for a value produced by this SDK; present because a switch over "
@@ -742,10 +810,12 @@ def emit_models_source() -> str:
         for v in values:
             out.append(f'    if (value == "{v}") return {rendered}::{enum_value(v)};')
         out.extend(comment(
-            "No default enumerator, on purpose: an unrecognised value is reported rather "
-            "than mapped to whichever one happens to be first.", "    "))
-        out.append(f'    throw std::invalid_argument("unknown {rendered} value \\"" + value + '
-                   '"\\" -- the server may be newer than this SDK");')
+            "\u00a727.11 rule 1: an unrecognised value decodes, it does not throw. Throwing "
+            "here fails the whole response the value arrived in, so one field of one "
+            "record takes down the page it was on. It is still never mapped to one of the "
+            "KNOWN enumerators -- that would turn a new server state into a wrong one.",
+            "    "))
+        out.append(f"    return {rendered}::{enum_value('unknown')};")
         out.append("}")
         out.append("")
         out.append(f"void to_json(nlohmann::json& j, const {rendered}& value) {{ j = to_wire(value); }}")
@@ -827,7 +897,7 @@ def op_params(namespace: str, op: dict[str, Any]) -> list[dict[str, str]]:
                        "text": f"The `{{{name}}}` path parameter."})
 
     for q in op["query_params"]:
-        if op["paginated"] and q["name"] in {"offset", "limit"}:
+        if op["paginated"] and q["name"] in {"offset", "limit", "search"}:
             continue
         if q["required"]:
             params.append({"name": member(q["name"]), "decl": "const std::string&",
@@ -845,7 +915,7 @@ def op_params(namespace: str, op: dict[str, Any]) -> list[dict[str, str]]:
                        "text": "Which page to fetch; defaults to the first."})
 
     for q in op["query_params"]:
-        if op["paginated"] and q["name"] in {"offset", "limit"}:
+        if op["paginated"] and q["name"] in {"offset", "limit", "search"}:
             continue
         if not q["required"]:
             params.append({"name": member(q["name"]),
@@ -935,19 +1005,55 @@ def emit_api_header() -> str:
     out.append("namespace axiam::management {")
     out.append("")
     out.extend(doc(
-        "One page's worth of `?offset=`/`?limit=` (§27.4 rule 4).\n\n"
-        "Default-constructed means the first page at the server's default size, which is "
-        "what a caller who does not care about paging gets by writing nothing."))
+        "One page's worth of `?offset=`/`?limit=`/`?search=` (§27.4 rule 4).\n\n"
+        "Default-constructed means the first page at the server's default size, "
+        "unfiltered, which is what a caller who does not care about paging gets by "
+        "writing nothing."))
     out.append("struct PageRequest {")
     out.append("    std::int64_t offset = 0;   ///< How many items to skip; clamped at 0.")
     out.append("    std::int64_t limit = 50;   ///< How many to ask for; clamped to at least 1.")
     out.append("")
     out.extend(doc(
-        "The page after this one -- same size, advanced by exactly `limit`.\n\n"
+        "A free-text filter applied by the SERVER, before `offset`/`limit`, or empty for "
+        "none.\n\n"
+        "Matched case-insensitively against the identifying fields of whatever is being "
+        "listed -- a name or username, plus the record id, so a UUID out of a log line "
+        "can be pasted in as-is. `Page::total` then counts MATCHES, not rows, which is "
+        "what lets a pager built on it show a page count belonging to the result set it "
+        "is paging.\n\n"
+        "It lives here, beside `offset` and `limit`, rather than as an extra argument on "
+        "each of the twenty paginated `list` methods. That is what §27.4 rule 4 asks for "
+        "and what makes `next()` -- and so `Page::next_request()` -- carry it across a "
+        "whole walk: a walk that filtered its first request and dropped the term on the "
+        "second would return the matches followed by the unfiltered tail, which reads as "
+        "a server bug from the caller's side.\n\n"
+        "An empty or all-whitespace term is the SAME request as none: no `search` "
+        "parameter is sent at all. A search box that fires on every keystroke sends one "
+        "the moment it is cleared, and \"rows containing the empty string\" is a "
+        "different question from \"all rows\". The server caps the term's LENGTH and this "
+        "SDK deliberately does not re-implement that cap, because a client-side "
+        "truncation the server would not have made is a silently different query the "
+        "caller has no way to see.", "    "))
+    out.append("    std::string search;")
+    out.append("")
+    out.extend(doc(
+        "The page after this one -- same size and same term, advanced by exactly "
+        "`limit`.\n\n"
         "By the requested limit, not by how many items came back: §27.4 rule 4 stops "
         "auto-paging on an EMPTY page, not a short one, and advancing by a short count "
         "would re-request rows the caller has already seen.", "    "))
     out.append("    PageRequest next() const;")
+    out.append("")
+    out.extend(doc(
+        "A COPY of this request filtered by `term`, leaving this one as it was.", "    "))
+    out.append("    PageRequest matching(std::string term) const;")
+    out.append("")
+    out.extend(doc(
+        "The term as it goes on the wire, or empty when there is nothing to send.\n\n"
+        "Trims, then treats a blank result as absent -- the same normalisation the server "
+        "applies, and the reason absent and blank are the same request. Never truncates; "
+        "see the note on `search`.", "    "))
+    out.append("    static std::string normalize_search(const std::string& term);")
     out.append("};")
     out.append("")
     out.extend(doc(
@@ -973,7 +1079,11 @@ def emit_api_header() -> str:
     out.append("    auto begin() const noexcept { return items.begin(); }")
     out.append("    auto end() const noexcept { return items.end(); }")
     out.append("")
-    out.append("    /// The request that would fetch the page after this one.")
+    out.extend(doc(
+        "The request that would fetch the page after this one.\n\n"
+        "Carries this page's `search` term forward with it (§27.4 rule 4) -- that is "
+        "`PageRequest::next()`'s job, so a walk written against `next_request()` filters "
+        "every request of the walk rather than only its first.", "    "))
     out.append("    PageRequest next_request() const { return request.next(); }")
     out.append("};")
     out.append("")
@@ -1575,16 +1685,20 @@ def emit_models_test() -> str:
             out.append(f'    AXIAM_CHECK({fn}("{v}") == {member});')
         out.append("")
         out.extend(comment(
-            "An unrecognised value is REPORTED. Mapping it to whichever enumerator "
-            "happens to be first would turn a server newer than this SDK into silently "
-            "wrong data rather than an error a caller can act on.", "    "))
-        out.append("    bool reported = false;")
-        out.append("    try {")
-        out.append(f'        (void) {fn}("__not_a_{snake(rendered)}__");')
-        out.append("    } catch (const std::invalid_argument&) {")
-        out.append("        reported = true;")
-        out.append("    }")
-        out.append("    AXIAM_CHECK(reported);")
+            "An unrecognised value DECODES, to an enumerator of its own -- it is not "
+            "reported, and it is not mapped to whichever known enumerator happens to be "
+            "first (\u00a727.11 rule 1). Throwing here would fail the whole response the "
+            "value arrived in, so one field of one record would take down the page it "
+            "was on, including the records the caller did ask for.", "    "))
+        unknown = f"{rendered}::{enum_value('unknown')}"
+        out.append(f'    AXIAM_CHECK({fn}("__not_a_{snake(rendered)}__") == {unknown});')
+        for v in values:
+            out.append(f'    AXIAM_CHECK({unknown} != {rendered}::{enum_value(v)});')
+        out.extend(comment(
+            "The empty string, which no server value is: an unrecognised value carried "
+            "back into an update is refused by the server rather than written as a "
+            "spelling it never used.", "    "))
+        out.append(f'    AXIAM_CHECK(to_wire({unknown}).empty());')
         out.append("")
         out.extend(comment(
             "The JSON hooks must agree with the wire functions, or a model carrying "
