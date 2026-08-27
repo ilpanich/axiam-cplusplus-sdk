@@ -19,6 +19,28 @@ struct UserInfo {
     std::string tenant_id;
     std::optional<std::string> org_slug;
     std::optional<std::string> tenant_slug;
+
+    /// True when this is an ORGANIZATION-LEVEL principal (CONTRACT.md §5.2).
+    ///
+    /// Such a principal's record lives in its organization's reserved tenant, so its
+    /// global grants apply in every tenant of that organization, and it can act on a
+    /// different one by sending a different `X-Tenant-ID` on the next request — no
+    /// re-login, because it already is a principal of every tenant there.
+    ///
+    /// An ordinary tenant principal is a principal of exactly one tenant; the same header
+    /// change produces a `403` for it. This flag is therefore what an application checks
+    /// BEFORE offering a tenant switch, rather than discovering the answer from a failed
+    /// request.
+    ///
+    /// DERIVED, NEVER ASSERTED (§5.2 rule 2): resolved server-side from the caller's own
+    /// tenant record, and never sent by this SDK. `false` when the login response omits
+    /// it — which is what a server older than contract 1.31 answers — and `false` when the
+    /// value is anything but the JSON literal `true`. Both are the safe direction: the
+    /// application then offers no cross-tenant action rather than one that would 403.
+    ///
+    /// Appended LAST and defaulted, so every existing aggregate initializer of this struct
+    /// still compiles.
+    bool organization_level = false;
 };
 
 /// Result of login / verify_mfa. `mfa_required` distinguishes the 202 challenge

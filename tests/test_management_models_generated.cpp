@@ -864,7 +864,7 @@ AXIAM_TEST("management model MigrateCustodyResponse round-trips without losing a
 
 AXIAM_TEST("management model MtlsTrustAnchorResponse round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"ca_certificate_id": "11111111-1111-4111-8111-111111111111", "message": "example", "mtls_trust_anchor": true, "restart_required": true})json");
+        R"json({"ca_certificate_id": "11111111-1111-4111-8111-111111111111", "message": "example", "mtls_trust_anchor": true, "restart_required": true, "trusted_anchors": 1})json");
 
     const auto value = wire.get<MtlsTrustAnchorResponse>();
     const nlohmann::json encoded = value;
@@ -1464,7 +1464,7 @@ AXIAM_TEST("management model SmtpConfig round-trips without losing a field") {
 
 AXIAM_TEST("management model Tenant round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "kind": "standard", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"})json");
 
     const auto value = wire.get<Tenant>();
     const nlohmann::json encoded = value;
@@ -1740,16 +1740,17 @@ AXIAM_TEST("management enum ActorType maps every value both ways") {
     AXIAM_CHECK(to_wire(ActorType::System) == "System");
     AXIAM_CHECK(actor_type_from_wire("System") == ActorType::System);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) actor_type_from_wire("__not_a_actor_type__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(actor_type_from_wire("__not_a_actor_type__") == ActorType::Unknown);
+    AXIAM_CHECK(ActorType::Unknown != ActorType::User);
+    AXIAM_CHECK(ActorType::Unknown != ActorType::ServiceAccount);
+    AXIAM_CHECK(ActorType::Unknown != ActorType::System);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(ActorType::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -1766,16 +1767,17 @@ AXIAM_TEST("management enum AttestationMode maps every value both ways") {
     AXIAM_CHECK(to_wire(AttestationMode::DirectRequired) == "direct_required");
     AXIAM_CHECK(attestation_mode_from_wire("direct_required") == AttestationMode::DirectRequired);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) attestation_mode_from_wire("__not_a_attestation_mode__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(attestation_mode_from_wire("__not_a_attestation_mode__") == AttestationMode::Unknown);
+    AXIAM_CHECK(AttestationMode::Unknown != AttestationMode::None);
+    AXIAM_CHECK(AttestationMode::Unknown != AttestationMode::Indirect);
+    AXIAM_CHECK(AttestationMode::Unknown != AttestationMode::DirectRequired);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(AttestationMode::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -1792,16 +1794,17 @@ AXIAM_TEST("management enum AuditOutcome maps every value both ways") {
     AXIAM_CHECK(to_wire(AuditOutcome::Denied) == "Denied");
     AXIAM_CHECK(audit_outcome_from_wire("Denied") == AuditOutcome::Denied);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) audit_outcome_from_wire("__not_a_audit_outcome__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(audit_outcome_from_wire("__not_a_audit_outcome__") == AuditOutcome::Unknown);
+    AXIAM_CHECK(AuditOutcome::Unknown != AuditOutcome::Success);
+    AXIAM_CHECK(AuditOutcome::Unknown != AuditOutcome::Failure);
+    AXIAM_CHECK(AuditOutcome::Unknown != AuditOutcome::Denied);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(AuditOutcome::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -1818,16 +1821,17 @@ AXIAM_TEST("management enum CertificateStatus maps every value both ways") {
     AXIAM_CHECK(to_wire(CertificateStatus::Expired) == "Expired");
     AXIAM_CHECK(certificate_status_from_wire("Expired") == CertificateStatus::Expired);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) certificate_status_from_wire("__not_a_certificate_status__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(certificate_status_from_wire("__not_a_certificate_status__") == CertificateStatus::Unknown);
+    AXIAM_CHECK(CertificateStatus::Unknown != CertificateStatus::Active);
+    AXIAM_CHECK(CertificateStatus::Unknown != CertificateStatus::Revoked);
+    AXIAM_CHECK(CertificateStatus::Unknown != CertificateStatus::Expired);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(CertificateStatus::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -1844,16 +1848,17 @@ AXIAM_TEST("management enum CertificateType maps every value both ways") {
     AXIAM_CHECK(to_wire(CertificateType::Device) == "Device");
     AXIAM_CHECK(certificate_type_from_wire("Device") == CertificateType::Device);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) certificate_type_from_wire("__not_a_certificate_type__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(certificate_type_from_wire("__not_a_certificate_type__") == CertificateType::Unknown);
+    AXIAM_CHECK(CertificateType::Unknown != CertificateType::User);
+    AXIAM_CHECK(CertificateType::Unknown != CertificateType::Service);
+    AXIAM_CHECK(CertificateType::Unknown != CertificateType::Device);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(CertificateType::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -1876,16 +1881,20 @@ AXIAM_TEST("management enum CertificationLevel maps every value both ways") {
     AXIAM_CHECK(to_wire(CertificationLevel::L3Plus) == "L3Plus");
     AXIAM_CHECK(certification_level_from_wire("L3Plus") == CertificationLevel::L3Plus);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) certification_level_from_wire("__not_a_certification_level__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(certification_level_from_wire("__not_a_certification_level__") == CertificationLevel::Unknown);
+    AXIAM_CHECK(CertificationLevel::Unknown != CertificationLevel::L1);
+    AXIAM_CHECK(CertificationLevel::Unknown != CertificationLevel::L1Plus);
+    AXIAM_CHECK(CertificationLevel::Unknown != CertificationLevel::L2);
+    AXIAM_CHECK(CertificationLevel::Unknown != CertificationLevel::L2Plus);
+    AXIAM_CHECK(CertificationLevel::Unknown != CertificationLevel::L3);
+    AXIAM_CHECK(CertificationLevel::Unknown != CertificationLevel::L3Plus);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(CertificationLevel::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -1904,16 +1913,18 @@ AXIAM_TEST("management enum ClientAuthMethod maps every value both ways") {
     AXIAM_CHECK(to_wire(ClientAuthMethod::PrivateKeyJwt) == "private_key_jwt");
     AXIAM_CHECK(client_auth_method_from_wire("private_key_jwt") == ClientAuthMethod::PrivateKeyJwt);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) client_auth_method_from_wire("__not_a_client_auth_method__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(client_auth_method_from_wire("__not_a_client_auth_method__") == ClientAuthMethod::Unknown);
+    AXIAM_CHECK(ClientAuthMethod::Unknown != ClientAuthMethod::ClientSecretPost);
+    AXIAM_CHECK(ClientAuthMethod::Unknown != ClientAuthMethod::TlsClientAuth);
+    AXIAM_CHECK(ClientAuthMethod::Unknown != ClientAuthMethod::SelfSignedTlsClientAuth);
+    AXIAM_CHECK(ClientAuthMethod::Unknown != ClientAuthMethod::PrivateKeyJwt);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(ClientAuthMethod::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -1928,16 +1939,16 @@ AXIAM_TEST("management enum ClientProfile maps every value both ways") {
     AXIAM_CHECK(to_wire(ClientProfile::Fapi2) == "fapi2");
     AXIAM_CHECK(client_profile_from_wire("fapi2") == ClientProfile::Fapi2);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) client_profile_from_wire("__not_a_client_profile__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(client_profile_from_wire("__not_a_client_profile__") == ClientProfile::Unknown);
+    AXIAM_CHECK(ClientProfile::Unknown != ClientProfile::Standard);
+    AXIAM_CHECK(ClientProfile::Unknown != ClientProfile::Fapi2);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(ClientProfile::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -1952,16 +1963,16 @@ AXIAM_TEST("management enum FailurePolicy maps every value both ways") {
     AXIAM_CHECK(to_wire(FailurePolicy::FailOpen) == "fail_open");
     AXIAM_CHECK(failure_policy_from_wire("fail_open") == FailurePolicy::FailOpen);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) failure_policy_from_wire("__not_a_failure_policy__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(failure_policy_from_wire("__not_a_failure_policy__") == FailurePolicy::Unknown);
+    AXIAM_CHECK(FailurePolicy::Unknown != FailurePolicy::FailClosed);
+    AXIAM_CHECK(FailurePolicy::Unknown != FailurePolicy::FailOpen);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(FailurePolicy::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -1976,16 +1987,16 @@ AXIAM_TEST("management enum KeyAlgorithm maps every value both ways") {
     AXIAM_CHECK(to_wire(KeyAlgorithm::Ed25519) == "Ed25519");
     AXIAM_CHECK(key_algorithm_from_wire("Ed25519") == KeyAlgorithm::Ed25519);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) key_algorithm_from_wire("__not_a_key_algorithm__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(key_algorithm_from_wire("__not_a_key_algorithm__") == KeyAlgorithm::Unknown);
+    AXIAM_CHECK(KeyAlgorithm::Unknown != KeyAlgorithm::Rsa4096);
+    AXIAM_CHECK(KeyAlgorithm::Unknown != KeyAlgorithm::Ed25519);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(KeyAlgorithm::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2002,16 +2013,17 @@ AXIAM_TEST("management enum MfaMethodType maps every value both ways") {
     AXIAM_CHECK(to_wire(MfaMethodType::SecurityKey) == "SecurityKey");
     AXIAM_CHECK(mfa_method_type_from_wire("SecurityKey") == MfaMethodType::SecurityKey);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) mfa_method_type_from_wire("__not_a_mfa_method_type__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(mfa_method_type_from_wire("__not_a_mfa_method_type__") == MfaMethodType::Unknown);
+    AXIAM_CHECK(MfaMethodType::Unknown != MfaMethodType::Totp);
+    AXIAM_CHECK(MfaMethodType::Unknown != MfaMethodType::Passkey);
+    AXIAM_CHECK(MfaMethodType::Unknown != MfaMethodType::SecurityKey);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(MfaMethodType::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2056,16 +2068,31 @@ AXIAM_TEST("management enum NotificationEventType maps every value both ways") {
     AXIAM_CHECK(to_wire(NotificationEventType::ServiceAccountDeleted) == "service_account_deleted");
     AXIAM_CHECK(notification_event_type_from_wire("service_account_deleted") == NotificationEventType::ServiceAccountDeleted);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) notification_event_type_from_wire("__not_a_notification_event_type__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(notification_event_type_from_wire("__not_a_notification_event_type__") == NotificationEventType::Unknown);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::LoginFailure);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::AccountLocked);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::MfaEnrollmentChanged);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::PasswordChanged);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::PasswordResetRequested);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::RoleAssigned);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::RoleUnassigned);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::PermissionGranted);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::PermissionRevoked);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::CertificateIssued);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::CertificateRevoked);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::CaCertificateRevoked);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::UserCreated);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::UserDeleted);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::UserUpdated);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::ServiceAccountCreated);
+    AXIAM_CHECK(NotificationEventType::Unknown != NotificationEventType::ServiceAccountDeleted);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(NotificationEventType::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2080,16 +2107,16 @@ AXIAM_TEST("management enum PermissionEffect maps every value both ways") {
     AXIAM_CHECK(to_wire(PermissionEffect::Deny) == "deny");
     AXIAM_CHECK(permission_effect_from_wire("deny") == PermissionEffect::Deny);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) permission_effect_from_wire("__not_a_permission_effect__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(permission_effect_from_wire("__not_a_permission_effect__") == PermissionEffect::Unknown);
+    AXIAM_CHECK(PermissionEffect::Unknown != PermissionEffect::Allow);
+    AXIAM_CHECK(PermissionEffect::Unknown != PermissionEffect::Deny);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(PermissionEffect::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2104,16 +2131,16 @@ AXIAM_TEST("management enum PgpKeyAlgorithm maps every value both ways") {
     AXIAM_CHECK(to_wire(PgpKeyAlgorithm::Ed25519) == "Ed25519");
     AXIAM_CHECK(pgp_key_algorithm_from_wire("Ed25519") == PgpKeyAlgorithm::Ed25519);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) pgp_key_algorithm_from_wire("__not_a_pgp_key_algorithm__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(pgp_key_algorithm_from_wire("__not_a_pgp_key_algorithm__") == PgpKeyAlgorithm::Unknown);
+    AXIAM_CHECK(PgpKeyAlgorithm::Unknown != PgpKeyAlgorithm::Rsa4096);
+    AXIAM_CHECK(PgpKeyAlgorithm::Unknown != PgpKeyAlgorithm::Ed25519);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(PgpKeyAlgorithm::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2128,16 +2155,16 @@ AXIAM_TEST("management enum PgpKeyPurpose maps every value both ways") {
     AXIAM_CHECK(to_wire(PgpKeyPurpose::Export_) == "Export");
     AXIAM_CHECK(pgp_key_purpose_from_wire("Export") == PgpKeyPurpose::Export_);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) pgp_key_purpose_from_wire("__not_a_pgp_key_purpose__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(pgp_key_purpose_from_wire("__not_a_pgp_key_purpose__") == PgpKeyPurpose::Unknown);
+    AXIAM_CHECK(PgpKeyPurpose::Unknown != PgpKeyPurpose::AuditSigning);
+    AXIAM_CHECK(PgpKeyPurpose::Unknown != PgpKeyPurpose::Export_);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(PgpKeyPurpose::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2152,16 +2179,16 @@ AXIAM_TEST("management enum PgpKeyStatus maps every value both ways") {
     AXIAM_CHECK(to_wire(PgpKeyStatus::Revoked) == "Revoked");
     AXIAM_CHECK(pgp_key_status_from_wire("Revoked") == PgpKeyStatus::Revoked);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) pgp_key_status_from_wire("__not_a_pgp_key_status__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(pgp_key_status_from_wire("__not_a_pgp_key_status__") == PgpKeyStatus::Unknown);
+    AXIAM_CHECK(PgpKeyStatus::Unknown != PgpKeyStatus::Active);
+    AXIAM_CHECK(PgpKeyStatus::Unknown != PgpKeyStatus::Revoked);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(PgpKeyStatus::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2176,16 +2203,16 @@ AXIAM_TEST("management enum ReactorMode maps every value both ways") {
     AXIAM_CHECK(to_wire(ReactorMode::Listen) == "listen");
     AXIAM_CHECK(reactor_mode_from_wire("listen") == ReactorMode::Listen);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) reactor_mode_from_wire("__not_a_reactor_mode__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(reactor_mode_from_wire("__not_a_reactor_mode__") == ReactorMode::Unknown);
+    AXIAM_CHECK(ReactorMode::Unknown != ReactorMode::Intercept);
+    AXIAM_CHECK(ReactorMode::Unknown != ReactorMode::Listen);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(ReactorMode::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2202,16 +2229,17 @@ AXIAM_TEST("management enum ScimTokenStatus maps every value both ways") {
     AXIAM_CHECK(to_wire(ScimTokenStatus::Revoked) == "revoked");
     AXIAM_CHECK(scim_token_status_from_wire("revoked") == ScimTokenStatus::Revoked);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) scim_token_status_from_wire("__not_a_scim_token_status__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(scim_token_status_from_wire("__not_a_scim_token_status__") == ScimTokenStatus::Unknown);
+    AXIAM_CHECK(ScimTokenStatus::Unknown != ScimTokenStatus::Active);
+    AXIAM_CHECK(ScimTokenStatus::Unknown != ScimTokenStatus::Expired);
+    AXIAM_CHECK(ScimTokenStatus::Unknown != ScimTokenStatus::Revoked);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(ScimTokenStatus::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2226,16 +2254,16 @@ AXIAM_TEST("management enum SettingsScope maps every value both ways") {
     AXIAM_CHECK(to_wire(SettingsScope::Tenant) == "Tenant");
     AXIAM_CHECK(settings_scope_from_wire("Tenant") == SettingsScope::Tenant);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) settings_scope_from_wire("__not_a_settings_scope__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(settings_scope_from_wire("__not_a_settings_scope__") == SettingsScope::Unknown);
+    AXIAM_CHECK(SettingsScope::Unknown != SettingsScope::Org);
+    AXIAM_CHECK(SettingsScope::Unknown != SettingsScope::Tenant);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(SettingsScope::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2244,22 +2272,46 @@ AXIAM_TEST("management enum SettingsScope maps every value both ways") {
     AXIAM_CHECK(j.get<SettingsScope>() == SettingsScope::Org);
 }
 
+AXIAM_TEST("management enum TenantKind maps every value both ways") {
+    AXIAM_CHECK(to_wire(TenantKind::Standard) == "standard");
+    AXIAM_CHECK(tenant_kind_from_wire("standard") == TenantKind::Standard);
+    AXIAM_CHECK(to_wire(TenantKind::Organization) == "organization");
+    AXIAM_CHECK(tenant_kind_from_wire("organization") == TenantKind::Organization);
+
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(tenant_kind_from_wire("__not_a_tenant_kind__") == TenantKind::Unknown);
+    AXIAM_CHECK(TenantKind::Unknown != TenantKind::Standard);
+    AXIAM_CHECK(TenantKind::Unknown != TenantKind::Organization);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(TenantKind::Unknown).empty());
+
+    // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
+    // differently from the enum itself.
+    const nlohmann::json j = TenantKind::Standard;
+    AXIAM_CHECK(j.get<std::string>() == "standard");
+    AXIAM_CHECK(j.get<TenantKind>() == TenantKind::Standard);
+}
+
 AXIAM_TEST("management enum TenantStatus maps every value both ways") {
     AXIAM_CHECK(to_wire(TenantStatus::Active) == "Active");
     AXIAM_CHECK(tenant_status_from_wire("Active") == TenantStatus::Active);
     AXIAM_CHECK(to_wire(TenantStatus::Suspended) == "Suspended");
     AXIAM_CHECK(tenant_status_from_wire("Suspended") == TenantStatus::Suspended);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) tenant_status_from_wire("__not_a_tenant_status__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(tenant_status_from_wire("__not_a_tenant_status__") == TenantStatus::Unknown);
+    AXIAM_CHECK(TenantStatus::Unknown != TenantStatus::Active);
+    AXIAM_CHECK(TenantStatus::Unknown != TenantStatus::Suspended);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(TenantStatus::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2274,16 +2326,16 @@ AXIAM_TEST("management enum UnknownAaguidAction maps every value both ways") {
     AXIAM_CHECK(to_wire(UnknownAaguidAction::Deny) == "deny");
     AXIAM_CHECK(unknown_aaguid_action_from_wire("deny") == UnknownAaguidAction::Deny);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) unknown_aaguid_action_from_wire("__not_a_unknown_aaguid_action__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(unknown_aaguid_action_from_wire("__not_a_unknown_aaguid_action__") == UnknownAaguidAction::Unknown);
+    AXIAM_CHECK(UnknownAaguidAction::Unknown != UnknownAaguidAction::Allow);
+    AXIAM_CHECK(UnknownAaguidAction::Unknown != UnknownAaguidAction::Deny);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(UnknownAaguidAction::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2306,16 +2358,20 @@ AXIAM_TEST("management enum UserStatus maps every value both ways") {
     AXIAM_CHECK(to_wire(UserStatus::Deleted) == "Deleted");
     AXIAM_CHECK(user_status_from_wire("Deleted") == UserStatus::Deleted);
 
-    // An unrecognised value is REPORTED. Mapping it to whichever enumerator happens to be first
-    // would turn a server newer than this SDK into silently wrong data rather than an error a
-    // caller can act on.
-    bool reported = false;
-    try {
-        (void) user_status_from_wire("__not_a_user_status__");
-    } catch (const std::invalid_argument&) {
-        reported = true;
-    }
-    AXIAM_CHECK(reported);
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(user_status_from_wire("__not_a_user_status__") == UserStatus::Unknown);
+    AXIAM_CHECK(UserStatus::Unknown != UserStatus::Active);
+    AXIAM_CHECK(UserStatus::Unknown != UserStatus::Inactive);
+    AXIAM_CHECK(UserStatus::Unknown != UserStatus::Locked);
+    AXIAM_CHECK(UserStatus::Unknown != UserStatus::PendingVerification);
+    AXIAM_CHECK(UserStatus::Unknown != UserStatus::Anonymized);
+    AXIAM_CHECK(UserStatus::Unknown != UserStatus::Deleted);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(UserStatus::Unknown).empty());
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2345,8 +2401,8 @@ AXIAM_TEST("management organizations: re-scoping returns a new handle (§27.4 ru
 }
 
 AXIAM_TEST("management tenants: re-scoping returns a new handle (§27.4 rule 3)") {
-    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
-                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "kind": "standard", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "kind": "standard", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
     auto mgmt = fixture.client.management();
     auto handle = mgmt.tenants();
 
@@ -2817,8 +2873,8 @@ AXIAM_TEST("management organizations: client.organizations() and management().or
 }
 
 AXIAM_TEST("management tenants: client.tenants() and management().tenants() are equivalent (§27.2 rule 4)") {
-    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
-                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "kind": "standard", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "id": "11111111-1111-4111-8111-111111111111", "kind": "standard", "metadata": {}, "name": "example", "organization_id": "11111111-1111-4111-8111-111111111111", "slug": "example", "status": "Active", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
 
     // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
     // Equivalent means the same request, not merely the same type -- so this compares the
@@ -3207,7 +3263,7 @@ AXIAM_TEST("management platform: client.platform() and management().platform() a
     AXIAM_CHECK(direct_path == "/health");
 }
 
-// §27.9: 114 models, 22 enums and 24 namespaces are covered above. Counted from the test
+// §27.9: 114 models, 23 enums and 24 namespaces are covered above. Counted from the test
 // registry rather than restated as a literal on both sides -- a case dropped by a bad
 // regeneration would still satisfy a tautology, and fails this instead.
 AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
@@ -3227,7 +3283,7 @@ AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
         }
     }
     AXIAM_CHECK(round_trips == 114);
-    AXIAM_CHECK(enum_maps == 22);
+    AXIAM_CHECK(enum_maps == 23);
     AXIAM_CHECK(rescopes == 24);
     AXIAM_CHECK(equivalents == 24);
 }

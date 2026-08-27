@@ -171,7 +171,10 @@ bool has_description(ManifestKind kind) {
 // scanned: a manifest declaring two permissions has no business listing every group in
 // the tenant, and on a large tenant that is one request instead of dozens.
 ExistingSet read_existing(const ManagementApi& api, ManifestKind kind) {
-    const PageRequest page{0, kScanLimit};
+    // No `search`: a manifest scan reads the tenant's current state for one kind in
+    // full, and a filtered read would make the plan's "does this exist?" answer depend
+    // on a term nobody asked for.
+    const PageRequest page{0, kScanLimit, {}};
     ExistingSet out;
 
     switch (kind) {
