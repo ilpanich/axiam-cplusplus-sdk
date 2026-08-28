@@ -24,6 +24,41 @@ AXIAM_TEST("builder requires a tenant (no default tenant, §5)") {
     AXIAM_REQUIRE_THROWS_AS(Client::builder().base_url("https://x").build(), AuthError);
 }
 
+// §5.2.1 rule 2: an SDK MUST NOT send an empty-string slug. `std::optional`
+// makes this easy to get wrong — an engaged optional holding "" satisfies
+// has_value(), so the §5 check above passes and the empty slug reaches the
+// wire.
+//
+// It matters because nothing can carry an empty slug: the server resolves
+// nothing, and on /auth/opaque/login/start it fails on the workspace *before*
+// the tenant's OPAQUE mode is read — so the 404 that means "OPAQUE is not
+// offered here" never arrives, this SDK has no fallback to take, and sign-in
+// fails even against a tenant with OPAQUE disabled.
+AXIAM_TEST("builder refuses a blank tenant_slug (§5.2.1)") {
+    AXIAM_REQUIRE_THROWS_AS(Client::builder().base_url("https://x").tenant_slug("").build(),
+                            AuthError);
+    AXIAM_REQUIRE_THROWS_AS(Client::builder().base_url("https://x").tenant_slug("   ").build(),
+                            AuthError);
+}
+
+AXIAM_TEST("builder refuses a blank org_slug (§5.2.1)") {
+    AXIAM_REQUIRE_THROWS_AS(
+        Client::builder().base_url("https://x").tenant_slug("acme").org_slug("").build(), AuthError);
+}
+
+// §5.2.1: an organization-level principal signs in by naming the organization's
+// reserved tenant, whose slug is fixed in every deployment. No new surface.
+AXIAM_TEST("builder accepts the reserved organization tenant (§5.2.1)") {
+    auto st = std::make_shared<axtest::FakeState>();
+    Client c = Client::builder()
+                   .base_url("https://api.example.test/")
+                   .tenant_slug("organization")
+                   .org_slug("globex")
+                   .transport(axtest::make_fake(st))
+                   .build();
+    AXIAM_CHECK(c.tenant_header() == "organization");
+}
+
 AXIAM_TEST("builder accepts tenant_slug and sets X-Tenant-ID header value") {
     auto st = std::make_shared<axtest::FakeState>();
     Client c = Client::builder()
