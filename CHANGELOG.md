@@ -6,22 +6,13 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
-### Fixed
-
-- **`Client::Builder::build()` now refuses a blank `tenant_slug`, `tenant_id` or
-  `org_slug`** (CONTRACT.md §5, §5.2.1 rule 2). The §5 check tested only
-  `has_value()`, and an engaged `std::optional<std::string>` holding `""`
-  satisfies it — so `.tenant_slug("")` built a client that put
-  `tenant_slug: ""` on the wire on every login.
-
-  Nothing can carry an empty slug, so the server resolved nothing; on
-  `/auth/opaque/login/start` it failed on the workspace *before* the tenant's
-  OPAQUE mode was read, so the `404` of §23.4 rule 10 never arrived, this SDK
-  had no fallback to take, and sign-in failed even against a tenant with OPAQUE
-  **disabled** — answered as "invalid credentials", which sends a user off to
-  reset a password that works.
+## [1.0.0-beta04] - 2026-08-28
 
 ### Changed
+
+- Re-vendor the 1.0.0-beta03 spec stamp
+
+- Pin actions by digest, attest the release tarball, re-vendor contract 1.33
 
 - **CONTRACT 1.32 — signing in an organization-level principal (§5.2.1).**
   `CONTRACT.md`, `openapi.json` and `management-registry.json` re-vendored from
@@ -39,6 +30,23 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
   Prefer that over omitting the tenant: §5 rule 2 still requires one on the
   `X-Tenant-ID` header of every request after the login.
+
+### Fixed
+
+- Refuse a blank tenant_slug instead of sending it as ""
+
+- **`Client::Builder::build()` now refuses a blank `tenant_slug`, `tenant_id` or
+  `org_slug`** (CONTRACT.md §5, §5.2.1 rule 2). The §5 check tested only
+  `has_value()`, and an engaged `std::optional<std::string>` holding `""`
+  satisfies it — so `.tenant_slug("")` built a client that put
+  `tenant_slug: ""` on the wire on every login.
+
+  Nothing can carry an empty slug, so the server resolved nothing; on
+  `/auth/opaque/login/start` it failed on the workspace *before* the tenant's
+  OPAQUE mode was read, so the `404` of §23.4 rule 10 never arrived, this SDK
+  had no fallback to take, and sign-in failed even against a tenant with OPAQUE
+  **disabled** — answered as "invalid credentials", which sends a user off to
+  reset a password that works.
 
 ## [1.0.0-beta02] - 2026-08-28
 
