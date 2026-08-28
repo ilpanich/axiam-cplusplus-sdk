@@ -1226,7 +1226,7 @@ sign path, in both directions. Worked example, including a transport skeleton:
 
 ## §27 Management API
 
-146 operations across 24 namespaces, reached through namespace handles that sit
+147 operations across 24 namespaces, reached through namespace handles that sit
 directly on the client — the form §27.3's C++ row specifies:
 
 ```cpp
@@ -1262,7 +1262,7 @@ makes committed generated code trustworthy rather than merely convenient.
 **It sits on the SDK's existing request path** (§27.8), not beside it. Every
 operation inherits §5's tenant/org headers, §6's TLS floor, §9's single-flight
 refresh, §16's retry policy and §19's telemetry by construction. An SDK whose
-management layer opened its own connection would have 146 endpoints outside its
+management layer opened its own connection would have 147 endpoints outside its
 own refresh guard; the suite asserts against that by driving the fake transport
 at the bottom of a real client, so a §27.8 violation fails the tests rather than
 passing them.

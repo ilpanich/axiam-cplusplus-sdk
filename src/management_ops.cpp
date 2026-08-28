@@ -130,6 +130,14 @@ void TenantsApi::delete_(const std::string& tenant_id) {
                                             values, query, payload);
 }
 
+void TenantsApi::export_audit(const std::string& tenant_id) {
+    const std::vector<PathValue> values{{"org_id", transport_->org_id(scope_)}, {"tenant_id", tenant_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    transport_->send("tenants.export_audit", "POST", "/api/v1/organizations/{org_id}/tenants/{tenant_id}/audit-export",
+                                            values, query, payload);
+}
+
 UsersApi::UsersApi(std::shared_ptr<Transport> transport, CallScope scope)
     : transport_(std::move(transport)), scope_(std::move(scope)) {}
 
@@ -1974,7 +1982,7 @@ PlatformApi ManagementApi::platform() const {
 namespace axiam {
 
 // The one place the §27 surface is attached to a Client. Defined here rather than in client.cpp
-// so that translation unit keeps knowing nothing about the 146 generated operations.
+// so that translation unit keeps knowing nothing about the 147 generated operations.
 management::ManagementApi Client::management() {
     p_->ensure_open();
     management::CallScope scope;
