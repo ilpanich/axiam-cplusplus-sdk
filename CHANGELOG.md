@@ -6,6 +6,8 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+## [1.0.0-beta02] - 2026-08-28
+
 ### Added
 
 - **CONTRACT.md contract 1.31 — list search, the truthful resend, and organization scope.**
@@ -77,6 +79,26 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Changed
 
+- Re-vendor openapi.json and management-registry.json from axiam main (#49)
+
+- Contract 1.31: list search, the truthful resend, organization scope (#48)
+
+- Re-vendor the contract artifacts: spec digest + §27.10 posture (#47)
+
+- Delete the dead PHP helpers the C++ generator inherited
+
+- Remove PHP copy-paste residue from the C++ generator
+
+- Put the §27 namespace handles directly on the client, per §27.2/§27.3
+
+- Finish the §27 management port: examples, drift gate, docs, coverage
+
+- Add the §27.6/§27.7 declarative manifest layer to the C++ SDK
+
+- Add the CONTRACT.md §27 management surface to the C++ SDK
+
+- Re-vendor CONTRACT.md, openapi.json and the §27 registry
+
 - **Generated enums are now open (§27.11 rule 1).** Every generated enum gained a trailing
   `Unknown` enumerator, and `*_from_wire()` returns it for a value this SDK's copy of the
   spec does not list instead of throwing `std::invalid_argument`.
@@ -97,7 +119,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   `"an unknown enum value is refused"` test was rewritten rather than removed, under a
   name that records the inversion, and it kept the two assertions the old one was really
   making.
-
 
 - **CONTRACT.md §27 — the management API.** 146 operations across 24 namespaces,
   reached through namespace handles hung off `client.management()`
@@ -159,8 +180,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   certificate binding, mTLS trust anchor) and then authenticating as it over §6.1
   mTLS from a second client.
 
-### Changed
-
 - **Coverage floor 96 → 98.** The §27 surface adds ~5,000 instrumented lines,
   which moves this number on its own: measured, it landed at 74.68% before the
   §27 suites existed. With the generated round-trip, enum and re-scope passes and
@@ -177,7 +196,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   requires apply-then-plan to be all-`Unchanged`; drift is now computed only for
   the kinds the server actually stores a description for. Caught by the
   every-kind manifest tests added here.
-
 
 ## [1.0.0-alpha44] - 2026-08-25
 
