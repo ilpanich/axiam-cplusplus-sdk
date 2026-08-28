@@ -1068,6 +1068,37 @@ login response omits it — what a server older than contract 1.31 answers — a
 direction. The member is appended last and defaulted, so every existing aggregate
 initializer of `UserInfo` still compiles.
 
+#### Signing one in (§5.2.1)
+
+The reserved tenant has a fixed slug, `organization`, the same in every
+deployment — so signing in as an organization-level principal needs no new
+surface, only the ordinary builder:
+
+```cpp
+Client c = Client::builder()
+               .base_url("https://iam.example.com")
+               .tenant_slug("organization")
+               .org_slug("globex")
+               .build();
+c.login("root@example.com", password);
+```
+
+Prefer that form. The server also reads a login body naming *no* tenant as "the
+organization's own scope", but §5 rule 2 still requires a tenant on the
+`X-Tenant-ID` header of every request after the login, so the client needs one
+either way.
+
+What §5.2.1 forbids is the third possibility: an empty-string slug. Nothing can
+carry one, so `tenant_slug: ""` resolves nothing — and on
+`/auth/opaque/login/start` it fails on the workspace *before* the tenant's
+OPAQUE mode is read, so the `404` that means "OPAQUE is not offered here" never
+arrives and this SDK has no fallback to take. Sign-in then fails even against a
+tenant with OPAQUE disabled.
+
+`build()` refuses a blank `tenant_slug`, `tenant_id` or `org_slug`. The §5 check
+above is not enough on its own: an engaged `std::optional<std::string>` holding
+`""` satisfies `has_value()`, so it passed, and the empty slug reached the wire.
+
 Worked example: [`examples/account_lifecycle.cpp`](examples/account_lifecycle.cpp).
 
 ## §26 Pushed Authorization Requests (RFC 9126)

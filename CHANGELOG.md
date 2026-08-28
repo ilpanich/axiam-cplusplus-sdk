@@ -6,6 +6,40 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Client::Builder::build()` now refuses a blank `tenant_slug`, `tenant_id` or
+  `org_slug`** (CONTRACT.md §5, §5.2.1 rule 2). The §5 check tested only
+  `has_value()`, and an engaged `std::optional<std::string>` holding `""`
+  satisfies it — so `.tenant_slug("")` built a client that put
+  `tenant_slug: ""` on the wire on every login.
+
+  Nothing can carry an empty slug, so the server resolved nothing; on
+  `/auth/opaque/login/start` it failed on the workspace *before* the tenant's
+  OPAQUE mode was read, so the `404` of §23.4 rule 10 never arrived, this SDK
+  had no fallback to take, and sign-in failed even against a tenant with OPAQUE
+  **disabled** — answered as "invalid credentials", which sends a user off to
+  reset a password that works.
+
+### Changed
+
+- **CONTRACT 1.32 — signing in an organization-level principal (§5.2.1).**
+  `CONTRACT.md`, `openapi.json` and `management-registry.json` re-vendored from
+  the AXIAM server, where the same bug class had made an organization-level
+  administrator unable to sign in at all (ilpanich/axiam#388).
+
+  Naming no tenant now resolves the organization's own reserved scope on
+  `/auth/login`, `/auth/opaque/login/start`, `/auth/opaque/register/start` and
+  `/auth/webauthn/authenticate/discoverable/start`. That reserved tenant's slug
+  is `organization`, so this SDK reaches it through the ordinary builder:
+
+  ```cpp
+  Client::builder().base_url(url).tenant_slug("organization").org_slug("globex").build()
+  ```
+
+  Prefer that over omitting the tenant: §5 rule 2 still requires one on the
+  `X-Tenant-ID` header of every request after the login.
+
 ## [1.0.0-beta02] - 2026-08-28
 
 ### Added

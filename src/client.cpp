@@ -6,6 +6,8 @@
 #include <atomic>
 #include <functional>
 #include <mutex>
+#include <optional>
+#include <string>
 #include <random>
 #include <thread>
 
@@ -205,6 +207,16 @@ Client::Builder& Client::Builder::transport(Transport t) {
     return *this;
 }
 
+namespace {
+/// An engaged optional holding only whitespace is not an identifier (§5.2.1
+/// rule 2). Disengaged is fine — that is what "not named" looks like, and the
+/// server reads it as the organization's own scope.
+bool is_blank(const std::optional<std::string>& v) {
+    if (!v.has_value()) return false;
+    return v->find_first_not_of(" \t\r\n") == std::string::npos;
+}
+}  // namespace
+
 Client Client::Builder::build() {
     if (base_url_.empty()) {
         throw std::invalid_argument("AxiamClient: base_url is required");
@@ -214,6 +226,31 @@ Client Client::Builder::build() {
     // §5: tenant context is non-optional. No default tenant.
     if (!tenant_slug_.has_value() && !tenant_id_.has_value()) {
         throw AuthError("AxiamClient: tenant_slug or tenant_id is required (no default tenant)");
+    }
+    // §5.2.1 rule 2: an engaged optional holding "" satisfies has_value() and is
+    // not a tenant. Nothing can carry an empty slug, so `tenant_slug: ""` on the
+    // wire resolves nothing — and on /auth/opaque/login/start it fails on the
+    // workspace *before* the tenant's OPAQUE mode is read, so the 404 that means
+    // "OPAQUE is not offered here" never arrives and this SDK has no fallback to
+    // take. Sign-in then fails even against a tenant with OPAQUE disabled, and
+    // the server answers "invalid credentials", which sends a user off to reset
+    // a password that works.
+    //
+    // An organization-level principal names the organization's reserved tenant
+    // instead; its slug is "organization" in every deployment (§5.2.1).
+    if (is_blank(tenant_slug_)) {
+        throw AuthError(
+            "AxiamClient: tenant_slug must not be blank — there is no default tenant; to sign in "
+            "an organization-level principal, name the organization's reserved tenant, whose slug "
+            "is \"organization\" (§5, §5.2.1)");
+    }
+    if (is_blank(tenant_id_)) {
+        throw AuthError("AxiamClient: tenant_id must not be blank (§5, §5.2.1)");
+    }
+    if (is_blank(org_slug_)) {
+        throw AuthError(
+            "AxiamClient: org_slug must not be blank — omit it entirely, or name the organization "
+            "(§5.1, §5.2.1)");
     }
 
     auto impl = std::make_shared<Client::Impl>();
