@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the CONTRACT §27 management surface for the C++ SDK.
 
-Reads ``management-registry.json`` (the 146 operations across 24 namespaces,
+Reads ``management-registry.json`` (the 147 operations across 24 namespaces,
 maintained in ``ilpanich/axiam`` and vendored here) plus ``openapi.json``, and writes:
 
 - ``include/axiam/management_models.hpp`` — one struct or enum per request and response
@@ -1184,7 +1184,7 @@ def emit_api_header() -> str:
 
     # ---- root ----
     out.extend(doc(
-        "The CONTRACT.md §27 management surface: 146 operations across 24 namespaces.\n\n"
+        "The CONTRACT.md §27 management surface: 147 operations across 24 namespaces.\n\n"
         "Reached as `client.management()`. Each accessor hands back a namespace handle "
         "(§27.2) that can be re-scoped per call with `in_org()` / `for_tenant()`.\n\n"
         "Handles are constructed on demand rather than cached. §27.4 rule 10 forbids "
@@ -1383,7 +1383,7 @@ def emit_ops_source() -> str:
     out.append("")
     out.extend(comment(
         "The one place the §27 surface is attached to a Client. Defined here rather than "
-        "in client.cpp so that translation unit keeps knowing nothing about the 146 "
+        "in client.cpp so that translation unit keeps knowing nothing about the 147 "
         "generated operations."))
     out.append("management::ManagementApi Client::management() {")
     out.append("    p_->ensure_open();")
@@ -1511,7 +1511,7 @@ def emit_test() -> str:
     out.append('#include "management_test_util.hpp"')
     out.append("")
     out.extend(comment(
-        "One case per CONTRACT.md §27 operation -- all 146 of them.\n\n"
+        "One case per CONTRACT.md §27 operation -- all 147 of them.\n\n"
         "Each asserts the operation issues the METHOD the registry names against the PATH "
         "the registry names, and that the response decodes into the model without "
         "throwing. The fake transport sits at the BOTTOM of the real client, so a §27.8 "
@@ -1565,9 +1565,9 @@ def emit_test() -> str:
             out.append("")
 
     out.extend(comment(
-        "§27.9: all 146 registry operations are covered by a case above.\n\n"
+        "§27.9: all 147 registry operations are covered by a case above.\n\n"
         "Counted from the test registry rather than written as a literal on both sides. "
-        "`AXIAM_CHECK(146 == 146)` is a tautology, and a case removed by a bad "
+        "`AXIAM_CHECK(147 == 147)` is a tautology, and a case removed by a bad "
         "regeneration would still pass it -- this fails instead."))
     out.append(f'AXIAM_TEST("management surface covers all {count} registry operations") {{')
     out.append("    int reached = 0;")

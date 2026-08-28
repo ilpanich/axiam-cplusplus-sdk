@@ -336,7 +336,7 @@ ApplyReport ManifestApi::apply(const Manifest& manifest) const {
 namespace axiam::management {
 
 // Defined here rather than in the generated ops so management_ops.cpp keeps knowing
-// nothing about the manifest layer -- the generated file's only job is the 146
+// nothing about the manifest layer -- the generated file's only job is the 147
 // operations.
 ManifestApi ManagementApi::manifest() const { return ManifestApi(transport_, scope_); }
 

@@ -10,7 +10,7 @@
 #include "axiam/management.hpp"
 #include "management_test_util.hpp"
 
-// One case per CONTRACT.md §27 operation -- all 146 of them. Each asserts the operation issues
+// One case per CONTRACT.md §27 operation -- all 147 of them. Each asserts the operation issues
 // the METHOD the registry names against the PATH the registry names, and that the response
 // decodes into the model without throwing. The fake transport sits at the BOTTOM of the real
 // client, so a §27.8 violation (an operation opening its own request path) fails these rather
@@ -100,6 +100,14 @@ AXIAM_TEST("management tenants.delete reaches its route") {
 
     AXIAM_CHECK(fixture.state->last().method == "DELETE");
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/organizations/11111111-1111-4111-8111-111111111111/tenants/11111111-1111-4111-8111-111111111111");
+}
+
+AXIAM_TEST("management tenants.export_audit reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(204, "");
+    fixture.client.management().tenants().export_audit("11111111-1111-4111-8111-111111111111");
+
+    AXIAM_CHECK(fixture.state->last().method == "POST");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/organizations/11111111-1111-4111-8111-111111111111/tenants/11111111-1111-4111-8111-111111111111/audit-export");
 }
 
 AXIAM_TEST("management users.list reaches its route") {
@@ -1459,11 +1467,11 @@ AXIAM_TEST("management platform.mds_refresh reaches its route") {
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/mds/refresh");
 }
 
-// §27.9: all 146 registry operations are covered by a case above. Counted from the test
-// registry rather than written as a literal on both sides. `AXIAM_CHECK(146 == 146)` is a
+// §27.9: all 147 registry operations are covered by a case above. Counted from the test
+// registry rather than written as a literal on both sides. `AXIAM_CHECK(147 == 147)` is a
 // tautology, and a case removed by a bad regeneration would still pass it -- this fails
 // instead.
-AXIAM_TEST("management surface covers all 146 registry operations") {
+AXIAM_TEST("management surface covers all 147 registry operations") {
     int reached = 0;
     for (const auto& test : axtest::registry()) {
         if (test.name.rfind("management ", 0) == 0 &&
@@ -1471,7 +1479,7 @@ AXIAM_TEST("management surface covers all 146 registry operations") {
             ++reached;
         }
     }
-    AXIAM_CHECK(reached == 146);
+    AXIAM_CHECK(reached == 147);
 }
 
 }  // namespace

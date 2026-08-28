@@ -4,7 +4,7 @@
 // See README.md.
 //
 // §27's management surface is the one part deliberately NOT pulled in here.
-// It is 146 operations and their model types — around five thousand lines of
+// It is 147 operations and their model types — around five thousand lines of
 // declarations — and most programs that talk to AXIAM authenticate and check
 // access without ever administering a tenant. Making every translation unit pay
 // for it would be a compile-time tax on the common case, so it is opt-in:

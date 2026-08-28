@@ -2,7 +2,7 @@
 //
 // Not installed; not part of the public ABI. The generated handles hold a
 // shared_ptr<Transport> and nothing else, so §27.8's "the generated layer sits on the
-// SDK's existing request path" is a property of the type rather than of 146 call sites
+// SDK's existing request path" is a property of the type rather than of 147 call sites
 // each remembering to use it.
 
 #ifndef AXIAM_MANAGEMENT_TRANSPORT_HPP

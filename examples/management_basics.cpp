@@ -1,6 +1,6 @@
 // management_basics — the CONTRACT.md §27 management surface.
 //
-// 146 operations across 24 namespaces, reached through namespace handles hung
+// 147 operations across 24 namespaces, reached through namespace handles hung
 // off `client.management()`. Nothing here opens its own connection: §27.8
 // requires the generated layer sit on the SDK's existing request path, so every
 // call below inherits §5's tenant headers, §6's TLS floor, §9's single-flight

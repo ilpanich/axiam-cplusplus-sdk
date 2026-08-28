@@ -261,6 +261,15 @@ public:
     /// @param tenant_id The `{tenant_id}` path parameter.
     void delete_(const std::string& tenant_id);
 
+    /// `POST /api/v1/organizations/{org_id}/tenants/{tenant_id}/audit-export`
+    ///
+    /// `POST /api/v1/organizations/{org_id}/tenants/{tenant_id}/audit-export`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// @param tenant_id The `{tenant_id}` path parameter.
+    void export_audit(const std::string& tenant_id);
+
 private:
     std::shared_ptr<Transport> transport_;
     CallScope scope_;
@@ -2054,7 +2063,7 @@ private:
     CallScope scope_;
 };
 
-/// The CONTRACT.md §27 management surface: 146 operations across 24 namespaces.
+/// The CONTRACT.md §27 management surface: 147 operations across 24 namespaces.
 ///
 /// Reached as `client.management()`. Each accessor hands back a namespace handle (§27.2) that
 /// can be re-scoped per call with `in_org()` / `for_tenant()`.
