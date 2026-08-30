@@ -24,7 +24,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y doxygen graphviz
       - name: Generate docs
-        run: doxygen Doxyfile
+        run: |
+          set -euo pipefail
+          # PROJECT_NUMBER is printed in the header of every generated page.
+          # Read it from vcpkg.json, which the release bump does touch, rather
+          # than from the Doxyfile literal, which it does not: that literal sat
+          # at 1.0.0-alpha8 and was published as the version of every beta.
+          # (axiam.hpp's kVersion is only "1.0.0" — it carries no pre-release
+          # qualifier, so it cannot serve as the documented version.) Doxygen
+          # keeps the LAST assignment of a tag, so appending one overrides the
+          # file's own.
+          version=$(jq -er .version vcpkg.json)
+          echo "Documenting $version"
+          { cat Doxyfile; echo "PROJECT_NUMBER = $version"; } | doxygen -
       - name: Publish to gh-pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
