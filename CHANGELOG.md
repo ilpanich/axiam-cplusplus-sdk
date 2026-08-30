@@ -6,7 +6,11 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+## [1.0.0-beta05] - 2026-08-30
+
 ### Added
+
+- Contract 1.35 (carrying 1.34) — principal tenant, tenant_scope, service-account RBAC
 
 - **Contract 1.35, which carries contract 1.34 with it.** Nothing had been fanned
   out since 1.33, so this re-vendors `CONTRACT.md`, `openapi.json` and
@@ -47,6 +51,13 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 - **`Client::opaque_enrollment_for_self()`** — see below.
 
+### Changed
+
+- `parse_user()` is now shared (`axiam::detail`) rather than duplicated. The
+  `mfa_setup_confirm` path had its own hand-rolled reader, and §25.2 rule 2 makes
+  that call the completion of a login — so the copy was a second place for
+  §5.2.2's "absent means equal" fallback to be forgotten.
+
 ### Fixed
 
 - **A registration record for your own password was sealed against the wrong
@@ -78,13 +89,6 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   The allowlist is one field wide on purpose: elsewhere an empty array is
   meaningful — a replacement body clearing a list — and `test_contract_135` pins
   that an `UpdateWebhookRequest` with `events = {}` still sends `"events":[]`.
-
-### Changed
-
-- `parse_user()` is now shared (`axiam::detail`) rather than duplicated. The
-  `mfa_setup_confirm` path had its own hand-rolled reader, and §25.2 rule 2 makes
-  that call the completion of a login — so the copy was a second place for
-  §5.2.2's "absent means equal" fallback to be forgotten.
 
 ### Note on `X-Tenant-ID` vs `X-Axiam-Tenant`
 
