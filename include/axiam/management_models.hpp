@@ -730,8 +730,10 @@ UserStatus user_status_from_wire(const std::string& value);
 // Forward declarations. The spec's types reference each other freely and in both directions, so
 // every struct is named before any is defined.
 struct AddMemberRequest;
+struct AddServiceAccountMemberRequest;
 struct ApiProviderConfig;
 struct AssignRoleToGroupRequest;
+struct AssignRoleToServiceAccountRequest;
 struct AssignRoleToUserRequest;
 struct AuditLogEntry;
 struct BindCertificate;
@@ -807,6 +809,7 @@ struct RetryPolicy;
 struct Role;
 struct RoleAssignment;
 struct RoleGroupAssignment;
+struct RoleServiceAccountAssignment;
 struct RoleUserAssignment;
 struct RotateSecretResponse;
 struct ScimTokenResponse;
@@ -850,6 +853,12 @@ struct AddMemberRequest {
     std::string user_id;
 };
 
+/// The `AddServiceAccountMemberRequest` schema from the server's OpenAPI document.
+struct AddServiceAccountMemberRequest {
+    /// The server's `service_account_id` field.
+    std::string service_account_id;
+};
+
 /// API-based provider configuration (SendGrid, Postmark, Resend, Brevo). `api_key` follows the
 /// same write-only + omit-preserving contract as [`SmtpConfig::password`] (D-01/D-02).
 ///
@@ -867,12 +876,41 @@ struct AssignRoleToGroupRequest {
     std::string group_id;
     /// The server's `resource_id` field. Optional.
     std::optional<std::string> resource_id = std::nullopt;
+    /// The tenants this assignment reaches. Only meaningful for an assignment made in an
+    /// organization's scope, whose global roles otherwise reach every tenant of the
+    /// organization; naming tenants here confines the assignment to those and to nothing else,
+    /// the organization's own scope included. Omitted — the default — reaches wherever the role
+    /// does. Refused with 400 outside an organization scope, when empty, and when it names a
+    /// tenant of another organization or the organization's own scope tenant. Optional.
+    std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
+};
+
+/// The `AssignRoleToServiceAccountRequest` schema from the server's OpenAPI document.
+struct AssignRoleToServiceAccountRequest {
+    /// The server's `resource_id` field. Optional.
+    std::optional<std::string> resource_id = std::nullopt;
+    /// The server's `service_account_id` field.
+    std::string service_account_id;
+    /// The tenants this assignment reaches. Only meaningful for an assignment made in an
+    /// organization's scope, whose global roles otherwise reach every tenant of the
+    /// organization; naming tenants here confines the assignment to those and to nothing else,
+    /// the organization's own scope included. Omitted — the default — reaches wherever the role
+    /// does. Refused with 400 outside an organization scope, when empty, and when it names a
+    /// tenant of another organization or the organization's own scope tenant. Optional.
+    std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
 };
 
 /// The `AssignRoleToUserRequest` schema from the server's OpenAPI document.
 struct AssignRoleToUserRequest {
     /// The server's `resource_id` field. Optional.
     std::optional<std::string> resource_id = std::nullopt;
+    /// The tenants this assignment reaches. Only meaningful for an assignment made in an
+    /// organization's scope, whose global roles otherwise reach every tenant of the
+    /// organization; naming tenants here confines the assignment to those and to nothing else,
+    /// the organization's own scope included. Omitted — the default — reaches wherever the role
+    /// does. Refused with 400 outside an organization scope, when empty, and when it names a
+    /// tenant of another organization or the organization's own scope tenant. Optional.
+    std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
     /// The server's `user_id` field.
     std::string user_id;
 };
@@ -2270,6 +2308,8 @@ struct RoleAssignment {
     std::optional<std::string> resource_id = std::nullopt;
     /// The server's `role` field.
     Role role;
+    /// The tenants this assignment reaches. See [`TenantScope`]. Optional.
+    std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
 };
 
 /// A group together with the resource scope of its assignment of this role.
@@ -2278,6 +2318,43 @@ struct RoleGroupAssignment {
     Group group;
     /// `None` means the role was assigned globally (no resource scope). Optional.
     std::optional<std::string> resource_id = std::nullopt;
+    /// The tenants this assignment reaches, or omitted for "wherever the role does". Shown next
+    /// to the assignment so an operator can tell a deliberately narrowed grant from an
+    /// organization-wide one. Optional.
+    std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
+};
+
+/// Public-safe service account representation.
+struct ServiceAccountResponse {
+    /// The server's `client_id` field.
+    std::string client_id;
+    /// The server's `created_at` field.
+    std::string created_at;
+    /// The server's `description` field. Optional.
+    std::optional<std::string> description = std::nullopt;
+    /// The server's `id` field.
+    std::string id;
+    /// The server's `name` field.
+    std::string name;
+    /// The server's `status` field.
+    UserStatus status;
+    /// The server's `tenant_id` field.
+    std::string tenant_id;
+    /// The server's `updated_at` field.
+    std::string updated_at;
+};
+
+/// A service account together with the resource scope of its assignment.
+struct RoleServiceAccountAssignment {
+    /// `None` means the role was assigned globally (no resource scope). Optional.
+    std::optional<std::string> resource_id = std::nullopt;
+    /// The assigned service account. Carries no secret — the client secret is returned once, at
+    /// creation, and never again.
+    ServiceAccountResponse service_account;
+    /// The tenants this assignment reaches, or omitted for "wherever the role does". Shown next
+    /// to the assignment so an operator can tell a deliberately narrowed grant from an
+    /// organization-wide one. Optional.
+    std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
 };
 
 /// Public-safe user representation (no password_hash, no mfa_secret).
@@ -2315,6 +2392,10 @@ struct UserResponse {
 struct RoleUserAssignment {
     /// `None` means the role was assigned globally (no resource scope). Optional.
     std::optional<std::string> resource_id = std::nullopt;
+    /// The tenants this assignment reaches, or omitted for "wherever the role does". Shown next
+    /// to the assignment so an operator can tell a deliberately narrowed grant from an
+    /// organization-wide one. Optional.
+    std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
     /// The assigned user.
     UserResponse user;
 };
@@ -2414,26 +2495,6 @@ struct ServiceAccountCreatedResponse {
     std::string client_id;
     /// The server's `client_secret` field -- a ONE-TIME secret (§27.5).
     Sensitive<std::string> client_secret;
-    /// The server's `created_at` field.
-    std::string created_at;
-    /// The server's `description` field. Optional.
-    std::optional<std::string> description = std::nullopt;
-    /// The server's `id` field.
-    std::string id;
-    /// The server's `name` field.
-    std::string name;
-    /// The server's `status` field.
-    UserStatus status;
-    /// The server's `tenant_id` field.
-    std::string tenant_id;
-    /// The server's `updated_at` field.
-    std::string updated_at;
-};
-
-/// Public-safe service account representation.
-struct ServiceAccountResponse {
-    /// The server's `client_id` field.
-    std::string client_id;
     /// The server's `created_at` field.
     std::string created_at;
     /// The server's `description` field. Optional.

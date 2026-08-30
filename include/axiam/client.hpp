@@ -309,6 +309,25 @@ public:
     /// \throws NetworkError in the same cases as \ref login_opaque.
     OpaqueEnrollment opaque_enrollment(const std::string& password);
 
+    /// Builds a registration record for the CALLER'S OWN new password, sealed against
+    /// the tenant the caller's account lives in.
+    ///
+    /// CONTRACT.md §5.2.2 rule 2. `POST /auth/password/change` and the record that
+    /// accompanies it are about the ACCOUNT, not about whatever tenant the client is
+    /// currently pointed at, and a record sealed against the acting tenant is refused
+    /// with *"the OPAQUE session was issued for a different tenant"*.
+    ///
+    /// The distinction only bites for an organization-level principal that has selected
+    /// another tenant to act on; for everyone else the two tenants are the same value
+    /// and this behaves identically to `opaque_enrollment()`. It is still the method to
+    /// call for a self-service password change, because which principal is signed in is
+    /// not something the call site usually knows.
+    ///
+    /// @throws NetworkError when no login has completed on this client yet — the
+    ///   principal tenant is reported by the login response, so there is nothing to seal
+    ///   against before then — and on the same terms as `opaque_enrollment()` otherwise.
+    OpaqueEnrollment opaque_enrollment_for_self(const std::string& password);
+
     /// Whether this installation can perform OPAQUE (§23.2).
     ///
     /// Genuinely able to answer `false`: the protocol comes from
@@ -1037,6 +1056,11 @@ public:
 private:
     std::shared_ptr<Impl> p_;
     explicit Client(std::shared_ptr<Impl> impl);
+
+    /// The shared body of the two enrolment methods; they differ only in the tenant the
+    /// record is sealed against. `std::nullopt` is the ordinary case.
+    OpaqueEnrollment enroll(const std::string& password,
+                            const std::optional<std::string>& principal_tenant_id);
 };
 
 }  // namespace axiam

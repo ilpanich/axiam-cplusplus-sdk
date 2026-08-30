@@ -37,6 +37,21 @@ AXIAM_TEST("management model AddMemberRequest round-trips without losing a field
     AXIAM_CHECK(again == encoded);
 }
 
+AXIAM_TEST("management model AddServiceAccountMemberRequest round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"service_account_id": "11111111-1111-4111-8111-111111111111"})json");
+
+    const auto value = wire.get<AddServiceAccountMemberRequest>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<AddServiceAccountMemberRequest>();
+    AXIAM_CHECK(again == encoded);
+}
+
 AXIAM_TEST("management model ApiProviderConfig round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
         R"json({"api_url": "example"})json");
@@ -54,7 +69,7 @@ AXIAM_TEST("management model ApiProviderConfig round-trips without losing a fiel
 
 AXIAM_TEST("management model AssignRoleToGroupRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"group_id": "11111111-1111-4111-8111-111111111111", "resource_id": "11111111-1111-4111-8111-111111111111"})json");
+        R"json({"group_id": "11111111-1111-4111-8111-111111111111", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_scope": ["11111111-1111-4111-8111-111111111111"]})json");
 
     const auto value = wire.get<AssignRoleToGroupRequest>();
     const nlohmann::json encoded = value;
@@ -67,9 +82,24 @@ AXIAM_TEST("management model AssignRoleToGroupRequest round-trips without losing
     AXIAM_CHECK(again == encoded);
 }
 
+AXIAM_TEST("management model AssignRoleToServiceAccountRequest round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"resource_id": "11111111-1111-4111-8111-111111111111", "service_account_id": "11111111-1111-4111-8111-111111111111", "tenant_scope": ["11111111-1111-4111-8111-111111111111"]})json");
+
+    const auto value = wire.get<AssignRoleToServiceAccountRequest>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<AssignRoleToServiceAccountRequest>();
+    AXIAM_CHECK(again == encoded);
+}
+
 AXIAM_TEST("management model AssignRoleToUserRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"resource_id": "11111111-1111-4111-8111-111111111111", "user_id": "11111111-1111-4111-8111-111111111111"})json");
+        R"json({"resource_id": "11111111-1111-4111-8111-111111111111", "tenant_scope": ["11111111-1111-4111-8111-111111111111"], "user_id": "11111111-1111-4111-8111-111111111111"})json");
 
     const auto value = wire.get<AssignRoleToUserRequest>();
     const nlohmann::json encoded = value;
@@ -1194,7 +1224,7 @@ AXIAM_TEST("management model Role round-trips without losing a field") {
 
 AXIAM_TEST("management model RoleAssignment round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"resource_id": "11111111-1111-4111-8111-111111111111", "role": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "is_global": true, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}})json");
+        R"json({"resource_id": "11111111-1111-4111-8111-111111111111", "role": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "is_global": true, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "tenant_scope": ["11111111-1111-4111-8111-111111111111"]})json");
 
     const auto value = wire.get<RoleAssignment>();
     const nlohmann::json encoded = value;
@@ -1209,7 +1239,7 @@ AXIAM_TEST("management model RoleAssignment round-trips without losing a field")
 
 AXIAM_TEST("management model RoleGroupAssignment round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"group": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "resource_id": "11111111-1111-4111-8111-111111111111"})json");
+        R"json({"group": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_scope": ["11111111-1111-4111-8111-111111111111"]})json");
 
     const auto value = wire.get<RoleGroupAssignment>();
     const nlohmann::json encoded = value;
@@ -1219,6 +1249,36 @@ AXIAM_TEST("management model RoleGroupAssignment round-trips without losing a fi
 
     // And encoding is a fixed point -- a second pass changes nothing.
     const nlohmann::json again = encoded.get<RoleGroupAssignment>();
+    AXIAM_CHECK(again == encoded);
+}
+
+AXIAM_TEST("management model ServiceAccountResponse round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"})json");
+
+    const auto value = wire.get<ServiceAccountResponse>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<ServiceAccountResponse>();
+    AXIAM_CHECK(again == encoded);
+}
+
+AXIAM_TEST("management model RoleServiceAccountAssignment round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"resource_id": "11111111-1111-4111-8111-111111111111", "service_account": {"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "tenant_scope": ["11111111-1111-4111-8111-111111111111"]})json");
+
+    const auto value = wire.get<RoleServiceAccountAssignment>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<RoleServiceAccountAssignment>();
     AXIAM_CHECK(again == encoded);
 }
 
@@ -1239,7 +1299,7 @@ AXIAM_TEST("management model UserResponse round-trips without losing a field") {
 
 AXIAM_TEST("management model RoleUserAssignment round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"resource_id": "11111111-1111-4111-8111-111111111111", "user": {"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}})json");
+        R"json({"resource_id": "11111111-1111-4111-8111-111111111111", "tenant_scope": ["11111111-1111-4111-8111-111111111111"], "user": {"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}})json");
 
     const auto value = wire.get<RoleUserAssignment>();
     const nlohmann::json encoded = value;
@@ -1339,21 +1399,6 @@ AXIAM_TEST("management model ServiceAccountCreatedResponse round-trips without l
 
     // And encoding is a fixed point -- a second pass changes nothing.
     const nlohmann::json again = encoded.get<ServiceAccountCreatedResponse>();
-    AXIAM_CHECK(again == encoded);
-}
-
-AXIAM_TEST("management model ServiceAccountResponse round-trips without losing a field") {
-    const auto wire = nlohmann::json::parse(
-        R"json({"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"})json");
-
-    const auto value = wire.get<ServiceAccountResponse>();
-    const nlohmann::json encoded = value;
-    // Exact equality, not "the fields I remembered to check". The wire object above carries
-    // every property the spec declares, so a dropped field and an invented one both fail here.
-    AXIAM_CHECK(encoded == wire);
-
-    // And encoding is a fixed point -- a second pass changes nothing.
-    const nlohmann::json again = encoded.get<ServiceAccountResponse>();
     AXIAM_CHECK(again == encoded);
 }
 
@@ -3263,7 +3308,7 @@ AXIAM_TEST("management platform: client.platform() and management().platform() a
     AXIAM_CHECK(direct_path == "/health");
 }
 
-// §27.9: 114 models, 23 enums and 24 namespaces are covered above. Counted from the test
+// §27.9: 117 models, 23 enums and 24 namespaces are covered above. Counted from the test
 // registry rather than restated as a literal on both sides -- a case dropped by a bad
 // regeneration would still satisfy a tautology, and fails this instead.
 AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
@@ -3282,7 +3327,7 @@ AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
             ++equivalents;
         }
     }
-    AXIAM_CHECK(round_trips == 114);
+    AXIAM_CHECK(round_trips == 117);
     AXIAM_CHECK(enum_maps == 23);
     AXIAM_CHECK(rescopes == 24);
     AXIAM_CHECK(equivalents == 24);

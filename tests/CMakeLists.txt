@@ -20,6 +20,10 @@ add_executable(axiam_cpp_tests
   test_management_generated.cpp
   test_management_models_generated.cpp
   test_management_semantics.cpp
+  # The contract 1.34 §5.2.2 / 1.35 §5.2.3 rules. Uses the management rig AND the
+  # OPAQUE fake: the acting-tenant/principal-tenant distinction shows up on both
+  # surfaces, and splitting it in two would hide that they are one rule.
+  test_contract_135.cpp
   test_management_manifest.cpp
   test_sensitive.cpp
   test_version_policy.cpp

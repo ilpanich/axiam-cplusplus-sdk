@@ -701,6 +701,20 @@ def emit_models_header() -> str:
     return "\n".join(out) + "\n"
 
 
+#: The one wire field an EMPTY array must not be sent as.
+#:
+#: CONTRACT.md 5.2.3 rule 1: `tenant_scope: []` is refused with 400, and an empty
+#: vector is exactly what building the field from a filtered collection produces for
+#: "no tenants named". The ordinary optional guard is `if (value.field)`, which an
+#: ENGAGED optional holding an empty vector passes -- so the empty array reaches the
+#: wire and the whole assignment is refused.
+#:
+#: Deliberately an allowlist of ONE, not a blanket "skip empty arrays". Elsewhere an
+#: empty array is meaningful -- a replacement body clearing a list -- and dropping it
+#: would make "remove every entry" inexpressible.
+OMIT_WHEN_EMPTY = {"tenant_scope"}
+
+
 def emit_to_json_member(f: dict[str, Any]) -> list[str]:
     """Serialize one member. A disengaged optional is OMITTED, never emitted as null."""
     w, n, kind = f["wire"], f["name"], f["kind"]
@@ -730,8 +744,14 @@ def emit_to_json_member(f: dict[str, Any]) -> list[str]:
 
     if f["required"]:
         return [f'    j["{w}"] = {expr};']
+    # 5.2.3 rule 1 -- see OMIT_WHEN_EMPTY.
+    guard = (
+        f"if (value.{n} && !value.{n}->empty())"
+        if w in OMIT_WHEN_EMPTY
+        else f"if (value.{n})"
+    )
     return [
-        f"    if (value.{n}) {{",
+        f"    {guard} {{",
         f'        j["{w}"] = {expr};',
         "    }",
     ]

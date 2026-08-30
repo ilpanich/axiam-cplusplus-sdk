@@ -726,6 +726,15 @@ void from_json(const nlohmann::json& j, AddMemberRequest& value) {
     value.user_id = j.at("user_id").get<std::string>();
 }
 
+void to_json(nlohmann::json& j, const AddServiceAccountMemberRequest& value) {
+    j = nlohmann::json::object();
+    j["service_account_id"] = value.service_account_id;
+}
+
+void from_json(const nlohmann::json& j, AddServiceAccountMemberRequest& value) {
+    value.service_account_id = j.at("service_account_id").get<std::string>();
+}
+
 void to_json(nlohmann::json& j, const ApiProviderConfig& value) {
     j = nlohmann::json::object();
     if (value.api_url) {
@@ -745,12 +754,39 @@ void to_json(nlohmann::json& j, const AssignRoleToGroupRequest& value) {
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
+    if (value.tenant_scope && !value.tenant_scope->empty()) {
+        j["tenant_scope"] = *value.tenant_scope;
+    }
 }
 
 void from_json(const nlohmann::json& j, AssignRoleToGroupRequest& value) {
     value.group_id = j.at("group_id").get<std::string>();
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
+    }
+    if (auto it = j.find("tenant_scope"); it != j.end() && !it->is_null()) {
+        value.tenant_scope = it->get<std::vector<std::string>>();
+    }
+}
+
+void to_json(nlohmann::json& j, const AssignRoleToServiceAccountRequest& value) {
+    j = nlohmann::json::object();
+    if (value.resource_id) {
+        j["resource_id"] = *value.resource_id;
+    }
+    j["service_account_id"] = value.service_account_id;
+    if (value.tenant_scope && !value.tenant_scope->empty()) {
+        j["tenant_scope"] = *value.tenant_scope;
+    }
+}
+
+void from_json(const nlohmann::json& j, AssignRoleToServiceAccountRequest& value) {
+    if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
+        value.resource_id = it->get<std::string>();
+    }
+    value.service_account_id = j.at("service_account_id").get<std::string>();
+    if (auto it = j.find("tenant_scope"); it != j.end() && !it->is_null()) {
+        value.tenant_scope = it->get<std::vector<std::string>>();
     }
 }
 
@@ -759,12 +795,18 @@ void to_json(nlohmann::json& j, const AssignRoleToUserRequest& value) {
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
+    if (value.tenant_scope && !value.tenant_scope->empty()) {
+        j["tenant_scope"] = *value.tenant_scope;
+    }
     j["user_id"] = value.user_id;
 }
 
 void from_json(const nlohmann::json& j, AssignRoleToUserRequest& value) {
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
+    }
+    if (auto it = j.find("tenant_scope"); it != j.end() && !it->is_null()) {
+        value.tenant_scope = it->get<std::vector<std::string>>();
     }
     value.user_id = j.at("user_id").get<std::string>();
 }
@@ -2560,6 +2602,9 @@ void to_json(nlohmann::json& j, const RoleAssignment& value) {
         j["resource_id"] = *value.resource_id;
     }
     j["role"] = value.role;
+    if (value.tenant_scope && !value.tenant_scope->empty()) {
+        j["tenant_scope"] = *value.tenant_scope;
+    }
 }
 
 void from_json(const nlohmann::json& j, RoleAssignment& value) {
@@ -2567,6 +2612,9 @@ void from_json(const nlohmann::json& j, RoleAssignment& value) {
         value.resource_id = it->get<std::string>();
     }
     value.role = j.at("role").get<Role>();
+    if (auto it = j.find("tenant_scope"); it != j.end() && !it->is_null()) {
+        value.tenant_scope = it->get<std::vector<std::string>>();
+    }
 }
 
 void to_json(nlohmann::json& j, const RoleGroupAssignment& value) {
@@ -2575,12 +2623,66 @@ void to_json(nlohmann::json& j, const RoleGroupAssignment& value) {
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
+    if (value.tenant_scope && !value.tenant_scope->empty()) {
+        j["tenant_scope"] = *value.tenant_scope;
+    }
 }
 
 void from_json(const nlohmann::json& j, RoleGroupAssignment& value) {
     value.group = j.at("group").get<Group>();
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
+    }
+    if (auto it = j.find("tenant_scope"); it != j.end() && !it->is_null()) {
+        value.tenant_scope = it->get<std::vector<std::string>>();
+    }
+}
+
+void to_json(nlohmann::json& j, const ServiceAccountResponse& value) {
+    j = nlohmann::json::object();
+    j["client_id"] = value.client_id;
+    j["created_at"] = value.created_at;
+    if (value.description) {
+        j["description"] = *value.description;
+    }
+    j["id"] = value.id;
+    j["name"] = value.name;
+    j["status"] = to_wire(value.status);
+    j["tenant_id"] = value.tenant_id;
+    j["updated_at"] = value.updated_at;
+}
+
+void from_json(const nlohmann::json& j, ServiceAccountResponse& value) {
+    value.client_id = j.at("client_id").get<std::string>();
+    value.created_at = j.at("created_at").get<std::string>();
+    if (auto it = j.find("description"); it != j.end() && !it->is_null()) {
+        value.description = it->get<std::string>();
+    }
+    value.id = j.at("id").get<std::string>();
+    value.name = j.at("name").get<std::string>();
+    value.status = user_status_from_wire(j.at("status").get<std::string>());
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+    value.updated_at = j.at("updated_at").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const RoleServiceAccountAssignment& value) {
+    j = nlohmann::json::object();
+    if (value.resource_id) {
+        j["resource_id"] = *value.resource_id;
+    }
+    j["service_account"] = value.service_account;
+    if (value.tenant_scope && !value.tenant_scope->empty()) {
+        j["tenant_scope"] = *value.tenant_scope;
+    }
+}
+
+void from_json(const nlohmann::json& j, RoleServiceAccountAssignment& value) {
+    if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
+        value.resource_id = it->get<std::string>();
+    }
+    value.service_account = j.at("service_account").get<ServiceAccountResponse>();
+    if (auto it = j.find("tenant_scope"); it != j.end() && !it->is_null()) {
+        value.tenant_scope = it->get<std::vector<std::string>>();
     }
 }
 
@@ -2626,12 +2728,18 @@ void to_json(nlohmann::json& j, const RoleUserAssignment& value) {
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
+    if (value.tenant_scope && !value.tenant_scope->empty()) {
+        j["tenant_scope"] = *value.tenant_scope;
+    }
     j["user"] = value.user;
 }
 
 void from_json(const nlohmann::json& j, RoleUserAssignment& value) {
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
+    }
+    if (auto it = j.find("tenant_scope"); it != j.end() && !it->is_null()) {
+        value.tenant_scope = it->get<std::vector<std::string>>();
     }
     value.user = j.at("user").get<UserResponse>();
 }
@@ -2765,33 +2873,6 @@ void to_json(nlohmann::json& j, const ServiceAccountCreatedResponse& value) {
 void from_json(const nlohmann::json& j, ServiceAccountCreatedResponse& value) {
     value.client_id = j.at("client_id").get<std::string>();
     value.client_secret = Sensitive<std::string>(j.at("client_secret").get<std::string>());
-    value.created_at = j.at("created_at").get<std::string>();
-    if (auto it = j.find("description"); it != j.end() && !it->is_null()) {
-        value.description = it->get<std::string>();
-    }
-    value.id = j.at("id").get<std::string>();
-    value.name = j.at("name").get<std::string>();
-    value.status = user_status_from_wire(j.at("status").get<std::string>());
-    value.tenant_id = j.at("tenant_id").get<std::string>();
-    value.updated_at = j.at("updated_at").get<std::string>();
-}
-
-void to_json(nlohmann::json& j, const ServiceAccountResponse& value) {
-    j = nlohmann::json::object();
-    j["client_id"] = value.client_id;
-    j["created_at"] = value.created_at;
-    if (value.description) {
-        j["description"] = *value.description;
-    }
-    j["id"] = value.id;
-    j["name"] = value.name;
-    j["status"] = to_wire(value.status);
-    j["tenant_id"] = value.tenant_id;
-    j["updated_at"] = value.updated_at;
-}
-
-void from_json(const nlohmann::json& j, ServiceAccountResponse& value) {
-    value.client_id = j.at("client_id").get<std::string>();
     value.created_at = j.at("created_at").get<std::string>();
     if (auto it = j.find("description"); it != j.end() && !it->is_null()) {
         value.description = it->get<std::string>();

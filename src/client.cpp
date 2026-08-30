@@ -315,7 +315,41 @@ Client Client::Builder::build() {
 
 Client::Client(std::shared_ptr<Impl> impl) : p_(std::move(impl)) {}
 
-namespace {
+namespace detail {
+/// A string member, or `std::nullopt` when absent or not a string.
+std::optional<std::string> opt_str(const json& u, const char* key) {
+    if (u.contains(key) && u[key].is_string()) return u[key].get<std::string>();
+    return std::nullopt;
+}
+
+/// CONTRACT.md §5.2.2 / §5.2.3: where this principal LIVES and how far it reaches.
+///
+/// Two rules are applied here rather than left to the caller, because both are easy to
+/// lose and each is the whole point of its field:
+///
+/// - An absent `principal_tenant_id` means EQUAL to the acting tenant, not unknown. A
+///   server older than contract 1.34 omits it and cannot switch the acting tenant
+///   either, so `tenant_id` is not a guess there — it is the only value the field could
+///   have had.
+/// - An empty `reachable_tenant_ids` stays disengaged. A zero-length list would read as
+///   "reaches nothing", the exact opposite of what an omitted field means.
+///
+/// Shared by the login path and by mfa_setup_confirm, which §25.2 rule 2 makes the
+/// completion of a login: a principal established there carries the same scope.
+void read_principal_scope(const json& u, UserInfo& info) {
+    info.principal_tenant_id =
+        opt_str(u, "principal_tenant_id").value_or(info.tenant_id);
+    info.principal_tenant_slug = opt_str(u, "principal_tenant_slug");
+    info.org_id = opt_str(u, "org_id");
+    if (u.contains("reachable_tenant_ids") && u["reachable_tenant_ids"].is_array()) {
+        std::vector<std::string> ids;
+        for (const auto& entry : u["reachable_tenant_ids"]) {
+            if (entry.is_string()) ids.push_back(entry.get<std::string>());
+        }
+        if (!ids.empty()) info.reachable_tenant_ids = std::move(ids);
+    }
+}
+
 UserInfo parse_user(const json& u) {
     UserInfo info;
     info.id = u.value("id", "");
@@ -333,8 +367,13 @@ UserInfo parse_user(const json& u) {
     info.organization_level = u.contains("organization_level") &&
                               u["organization_level"].is_boolean() &&
                               u["organization_level"].get<bool>();
+    read_principal_scope(u, info);
     return info;
 }
+}  // namespace detail
+
+namespace {
+using detail::parse_user;
 
 AccessDecision parse_decision(const json& d) {
     AccessDecision dec;
@@ -410,7 +449,13 @@ LoginResult Client::login(const std::string& username_or_email, const std::strin
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
-        if (result.user) p_->resolved_tenant_id = result.user->tenant_id;
+        if (result.user) {
+            p_->resolved_tenant_id = result.user->tenant_id;
+            // §5.2.2 rule 2: remembered so a later opaque_enrollment_for_self() can
+            // seal against the account's own tenant with no second round trip.
+            if (!result.user->principal_tenant_id.empty())
+                p_->principal_tenant_id = result.user->principal_tenant_id;
+        }
         // D-14: the login response body carries tenant_id/org_slug but NOT
         // org_id — recover the org_id UUID from the access-token cookie so
         // refresh() can supply it even when the client was built with a slug.
@@ -631,13 +676,41 @@ LoginResult Client::login_opaque(const std::string& username_or_email,
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
-        if (result.user) p_->resolved_tenant_id = result.user->tenant_id;
+        if (result.user) {
+            p_->resolved_tenant_id = result.user->tenant_id;
+            // §5.2.2 rule 2: remembered so a later opaque_enrollment_for_self() can
+            // seal against the account's own tenant with no second round trip.
+            if (!result.user->principal_tenant_id.empty())
+                p_->principal_tenant_id = result.user->principal_tenant_id;
+        }
         if (auto oid = org_id_from_cookies(resp.set_cookies)) p_->resolved_org_id = *oid;
     }
     return result;
 }
 
 OpaqueEnrollment Client::opaque_enrollment(const std::string& password) {
+    return enroll(password, std::nullopt);
+}
+
+OpaqueEnrollment Client::opaque_enrollment_for_self(const std::string& password) {
+    std::optional<std::string> principal;
+    {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        principal = p_->principal_tenant_id;
+    }
+    if (!principal) {
+        // §5.2.2 rule 2: there is nothing to seal against before a login, and falling
+        // back to the acting tenant is exactly the bug this overload exists to prevent.
+        throw NetworkError(
+            "OPAQUE: no principal tenant is known yet — sign in before building a "
+            "registration record for your own password",
+            "opaque_no_principal_tenant");
+    }
+    return enroll(password, principal);
+}
+
+OpaqueEnrollment Client::enroll(const std::string& password,
+                                const std::optional<std::string>& principal_tenant_id) {
     p_->ensure_open();
 
     opaque::RegistrationExchange exchange = opaque::start_registration(password);
@@ -648,7 +721,17 @@ OpaqueEnrollment Client::opaque_enrollment(const std::string& password) {
     // cannot invalidate a credential, and why the SRP enrolment's `identity`
     // argument has no successor.
     body["registration_request"] = exchange.request();
-    add_scope_fields(*p_, body);
+    if (principal_tenant_id) {
+        // §5.2.2 rule 2: name the principal tenant by id and send NO tenant_slug. A
+        // slug naming the acting tenant would out-vote the id server-side, which is
+        // the exact confusion this overload exists to avoid. The organization fields
+        // still apply — they identify the organization, not the tenant.
+        body["tenant_id"] = *principal_tenant_id;
+        if (p_->org_slug) body["org_slug"] = *p_->org_slug;
+        if (p_->org_id) body["org_id"] = *p_->org_id;
+    } else {
+        add_scope_fields(*p_, body);
+    }
 
     const json started =
         opaque_start(*p_, "/api/v1/auth/opaque/register/start", body,
@@ -690,7 +773,13 @@ LoginResult Client::verify_mfa(const std::string& challenge_token, const std::st
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
-        if (result.user) p_->resolved_tenant_id = result.user->tenant_id;
+        if (result.user) {
+            p_->resolved_tenant_id = result.user->tenant_id;
+            // §5.2.2 rule 2: remembered so a later opaque_enrollment_for_self() can
+            // seal against the account's own tenant with no second round trip.
+            if (!result.user->principal_tenant_id.empty())
+                p_->principal_tenant_id = result.user->principal_tenant_id;
+        }
         // D-14: the login response body carries tenant_id/org_slug but NOT
         // org_id — recover the org_id UUID from the access-token cookie so
         // refresh() can supply it even when the client was built with a slug.

@@ -24,7 +24,7 @@ struct UserInfo {
     ///
     /// Such a principal's record lives in its organization's reserved tenant, so its
     /// global grants apply in every tenant of that organization, and it can act on a
-    /// different one by sending a different `X-Tenant-ID` on the next request — no
+    /// different one by sending a different `X-Axiam-Tenant` on the next request — no
     /// re-login, because it already is a principal of every tenant there.
     ///
     /// An ordinary tenant principal is a principal of exactly one tenant; the same header
@@ -38,9 +38,52 @@ struct UserInfo {
     /// value is anything but the JSON literal `true`. Both are the safe direction: the
     /// application then offers no cross-tenant action rather than one that would 403.
     ///
+    /// Since contract 1.35 that reach can be narrowed per assignment, so this flag alone
+    /// no longer decides what to offer: consult `reachable_tenant_ids` as well
+    /// (§5.2.3 rule 3).
+    ///
     /// Appended LAST and defaulted, so every existing aggregate initializer of this struct
     /// still compiles.
     bool organization_level = false;
+
+    /// The tenant this principal's record LIVES in (CONTRACT.md §5.2.2).
+    ///
+    /// Distinct from `tenant_id`, which is the tenant being ACTED ON — what the
+    /// `X-Axiam-Tenant` header names. The two hold the same value for every ordinary
+    /// principal and diverge only once an organization-level principal selects another
+    /// tenant to act on.
+    ///
+    /// This is where the account's own credentials belong, and what a §23 registration
+    /// record for THIS account must be sealed against — see
+    /// `Client::opaque_enrollment_for_self()`. Filled from `tenant_id` when the server
+    /// omits `principal_tenant_id`, which is exactly right there: absent means EQUAL, not
+    /// unknown, because a server that cannot switch the acting tenant cannot make the two
+    /// differ.
+    ///
+    /// Appended after `organization_level` for the same reason it was: every existing
+    /// aggregate initializer still compiles.
+    std::string principal_tenant_id;
+
+    /// Slug of `principal_tenant_id` — `"organization"` for an organization-level
+    /// principal. Absent when the server omits it.
+    std::optional<std::string> principal_tenant_slug;
+
+    /// The caller's organization as a UUID (§5.2.2 rule 3).
+    ///
+    /// Read this rather than resolving an organization slug through
+    /// `GET /api/v1/organizations`, which is `super-admin`-only and returns only the
+    /// caller's own organization — a resolver that cannot work for an ordinary
+    /// administrator.
+    std::optional<std::string> org_id;
+
+    /// The tenants this caller's roles reach, when they are narrowed (§5.2.3).
+    ///
+    /// Disengaged means UNRESTRICTED, which is both the common case and the only thing a
+    /// server older than contract 1.35 can mean — never "reaches nothing". A present list
+    /// is a deliberately narrowed organization-level account: confine any tenant switch to
+    /// it, because naming anything outside is refused at the header. An empty list on the
+    /// wire arrives disengaged, for the same reason.
+    std::optional<std::vector<std::string>> reachable_tenant_ids;
 };
 
 /// Result of login / verify_mfa. `mfa_required` distinguishes the 202 challenge
