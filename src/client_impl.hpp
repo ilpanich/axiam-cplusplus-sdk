@@ -38,6 +38,15 @@
 
 namespace axiam {
 
+namespace detail {
+/// Builds a `UserInfo` from a login response's `user` object.
+///
+/// Shared rather than duplicated because §5.2.2's "absent means EQUAL" fallback lives
+/// inside it, and mfa_setup_confirm is the completion of a login (§25.2 rule 2) — a
+/// second hand-rolled reader there is a second place for that rule to be forgotten.
+UserInfo parse_user(const nlohmann::json& u);
+}  // namespace detail
+
 using json = nlohmann::json;
 
 struct Client::Impl {
@@ -56,6 +65,15 @@ struct Client::Impl {
     bool session = false;
     std::optional<std::string> resolved_tenant_id;  // captured from login user info
     std::optional<std::string> resolved_org_id;     // decoded from the access-token org_id claim (D-14)
+
+    // CONTRACT.md §5.2.2 — the tenant the signed-in principal's record LIVES in, as
+    // reported by the login response. Distinct from `tenant_id`/`tenant_slug`, which
+    // name the tenant being ACTED ON: the two diverge for an organization-level
+    // principal that has selected another one. Read by
+    // Client::opaque_enrollment_for_self(), which must seal a §23 record against the
+    // account's own tenant rather than whichever one this client is pointed at.
+    // Disengaged until a login completes. Guarded by state_mtx.
+    std::optional<std::string> principal_tenant_id;
 
     // §9 single-flight refresh. The guard owns all of the coalescing state and
     // its invariants (see src/refresh_guard.hpp); this class only supplies the

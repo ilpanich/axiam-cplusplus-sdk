@@ -502,6 +502,40 @@ public:
     /// @param group_id The `{group_id}` path parameter.
     std::vector<RoleAssignment> list_roles(const std::string& group_id);
 
+    /// `GET /api/v1/groups/{group_id}/service-accounts`
+    ///
+    /// `GET /api/v1/groups/{group_id}/service-accounts`.
+    ///
+    /// Returns ONE page. `Page::total` is the server's count across all pages and is not
+    /// `items.size()` -- see §27.4 rule 4.
+    ///
+    /// @param group_id The `{group_id}` path parameter.
+    /// @param page Which page to fetch; defaults to the first.
+    Page<ServiceAccountResponse> list_service_accounts(const std::string& group_id, const PageRequest& page = {});
+
+    /// `POST /api/v1/groups/{group_id}/service-accounts`
+    ///
+    /// `POST /api/v1/groups/{group_id}/service-accounts`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// @param group_id The `{group_id}` path parameter.
+    /// @param body The request body.
+    void add_service_account(const std::string& group_id, const AddServiceAccountMemberRequest& body);
+
+    /// `DELETE /api/v1/groups/{group_id}/service-accounts/{service_account_id}`
+    ///
+    /// `DELETE /api/v1/groups/{group_id}/service-accounts/{service_account_id}`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
+    /// rather than succeeding quietly.
+    ///
+    /// @param group_id The `{group_id}` path parameter.
+    /// @param service_account_id The `{service_account_id}` path parameter.
+    void remove_service_account(const std::string& group_id, const std::string& service_account_id);
+
 private:
     std::shared_ptr<Transport> transport_;
     CallScope scope_;
@@ -671,6 +705,40 @@ public:
     /// @param role_id The `{role_id}` path parameter.
     /// @param permission_id The `{permission_id}` path parameter.
     void revoke_permission(const std::string& role_id, const std::string& permission_id);
+
+    /// `GET /api/v1/roles/{role_id}/service-accounts`
+    ///
+    /// `GET /api/v1/roles/{role_id}/service-accounts`.
+    ///
+    /// Returns the server's complete list. This endpoint is NOT paginated, so the result is a
+    /// plain vector and never a Page (§27.4 rule 4).
+    ///
+    /// @param role_id The `{role_id}` path parameter.
+    std::vector<RoleServiceAccountAssignment> list_service_accounts(const std::string& role_id);
+
+    /// `POST /api/v1/roles/{role_id}/service-accounts`
+    ///
+    /// `POST /api/v1/roles/{role_id}/service-accounts`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// @param role_id The `{role_id}` path parameter.
+    /// @param body The request body.
+    void assign_to_service_account(const std::string& role_id, const AssignRoleToServiceAccountRequest& body);
+
+    /// `DELETE /api/v1/roles/{role_id}/service-accounts/{service_account_id}`
+    ///
+    /// `DELETE /api/v1/roles/{role_id}/service-accounts/{service_account_id}`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
+    /// rather than succeeding quietly.
+    ///
+    /// @param role_id The `{role_id}` path parameter.
+    /// @param service_account_id The `{service_account_id}` path parameter.
+    /// @param resource_id The optional `resource_id` query parameter.
+    void unassign_from_service_account(const std::string& role_id, const std::string& service_account_id, const std::optional<std::string>& resource_id = std::nullopt);
 
 private:
     std::shared_ptr<Transport> transport_;
@@ -996,6 +1064,26 @@ public:
     /// @param sa_id The `{sa_id}` path parameter.
     /// @param body The request body.
     void bind_certificate(const std::string& sa_id, const BindCertificate& body);
+
+    /// `GET /api/v1/service-accounts/{service_account_id}/roles`
+    ///
+    /// `GET /api/v1/service-accounts/{service_account_id}/roles`.
+    ///
+    /// Returns the server's complete list. This endpoint is NOT paginated, so the result is a
+    /// plain vector and never a Page (§27.4 rule 4).
+    ///
+    /// @param service_account_id The `{service_account_id}` path parameter.
+    std::vector<RoleAssignment> list_roles(const std::string& service_account_id);
+
+    /// `GET /api/v1/service-accounts/{service_account_id}/groups`
+    ///
+    /// `GET /api/v1/service-accounts/{service_account_id}/groups`.
+    ///
+    /// Returns the server's complete list. This endpoint is NOT paginated, so the result is a
+    /// plain vector and never a Page (§27.4 rule 4).
+    ///
+    /// @param service_account_id The `{service_account_id}` path parameter.
+    std::vector<Group> list_groups(const std::string& service_account_id);
 
 private:
     std::shared_ptr<Transport> transport_;

@@ -144,25 +144,23 @@ LoginResult Client::mfa_setup_confirm(const Sensitive<std::string>& setup_token,
     if (!j.is_discarded() && j.is_object()) {
         result.session_id = j.value("session_id", std::string{});
         result.expires_in = j.value("expires_in", static_cast<std::int64_t>(0));
-        if (j.contains("user") && j["user"].is_object()) {
-            UserInfo user;
-            user.id = j["user"].value("id", std::string{});
-            user.username = j["user"].value("username", std::string{});
-            user.email = j["user"].value("email", std::string{});
-            user.tenant_id = j["user"].value("tenant_id", std::string{});
-            // §5.2, and for the same reason as in the login path: mfa_setup_confirm IS
-            // the completion of a login (§25.2 rule 2), so the principal it establishes
-            // carries the same flag.
-            user.organization_level = j["user"].contains("organization_level") &&
-                                      j["user"]["organization_level"].is_boolean() &&
-                                      j["user"]["organization_level"].get<bool>();
-            result.user = user;
-        }
+        // §5.2 / §5.2.2 / §5.2.3, through the SAME reader the login path uses:
+        // mfa_setup_confirm IS the completion of a login (§25.2 rule 2), so the
+        // principal it establishes carries the same flag and the same scope. A
+        // second hand-rolled reader here was one more place for §5.2.2's "absent
+        // means EQUAL" fallback to be forgotten.
+        if (j.contains("user") && j["user"].is_object())
+            result.user = detail::parse_user(j["user"]);
     }
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
-        if (result.user) p_->resolved_tenant_id = result.user->tenant_id;
+        if (result.user) {
+            p_->resolved_tenant_id = result.user->tenant_id;
+            // §5.2.2 rule 2, as in the login path: mfa_setup_confirm completes a login.
+            if (!result.user->principal_tenant_id.empty())
+                p_->principal_tenant_id = result.user->principal_tenant_id;
+        }
     }
     return result;
 }

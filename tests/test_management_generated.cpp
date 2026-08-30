@@ -198,7 +198,7 @@ AXIAM_TEST("management users.unlock reaches its route") {
 
 AXIAM_TEST("management users.list_roles reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json([{"resource_id": "11111111-1111-4111-8111-111111111111", "role": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "is_global": true, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}}])json");
+        R"json([{"resource_id": "11111111-1111-4111-8111-111111111111", "role": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "is_global": true, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "tenant_scope": ["11111111-1111-4111-8111-111111111111"]}])json");
     const auto result = fixture.client.management().users().list_roles("11111111-1111-4111-8111-111111111111");
     (void) result;
 
@@ -285,12 +285,39 @@ AXIAM_TEST("management groups.remove_member reaches its route") {
 
 AXIAM_TEST("management groups.list_roles reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json([{"resource_id": "11111111-1111-4111-8111-111111111111", "role": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "is_global": true, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}}])json");
+        R"json([{"resource_id": "11111111-1111-4111-8111-111111111111", "role": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "is_global": true, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "tenant_scope": ["11111111-1111-4111-8111-111111111111"]}])json");
     const auto result = fixture.client.management().groups().list_roles("11111111-1111-4111-8111-111111111111");
     (void) result;
 
     AXIAM_CHECK(fixture.state->last().method == "GET");
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/groups/11111111-1111-4111-8111-111111111111/roles");
+}
+
+AXIAM_TEST("management groups.list_service_accounts reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"items": [{"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+    const auto result = fixture.client.management().groups().list_service_accounts("11111111-1111-4111-8111-111111111111");
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/groups/11111111-1111-4111-8111-111111111111/service-accounts");
+}
+
+AXIAM_TEST("management groups.add_service_account reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(204, "");
+    AddServiceAccountMemberRequest body{};
+    fixture.client.management().groups().add_service_account("11111111-1111-4111-8111-111111111111", body);
+
+    AXIAM_CHECK(fixture.state->last().method == "POST");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/groups/11111111-1111-4111-8111-111111111111/service-accounts");
+}
+
+AXIAM_TEST("management groups.remove_service_account reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(204, "");
+    fixture.client.management().groups().remove_service_account("11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111");
+
+    AXIAM_CHECK(fixture.state->last().method == "DELETE");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/groups/11111111-1111-4111-8111-111111111111/service-accounts/11111111-1111-4111-8111-111111111111");
 }
 
 AXIAM_TEST("management roles.list reaches its route") {
@@ -345,7 +372,7 @@ AXIAM_TEST("management roles.delete reaches its route") {
 
 AXIAM_TEST("management roles.list_users reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json([{"resource_id": "11111111-1111-4111-8111-111111111111", "user": {"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}}])json");
+        R"json([{"resource_id": "11111111-1111-4111-8111-111111111111", "tenant_scope": ["11111111-1111-4111-8111-111111111111"], "user": {"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}}])json");
     const auto result = fixture.client.management().roles().list_users("11111111-1111-4111-8111-111111111111");
     (void) result;
 
@@ -372,7 +399,7 @@ AXIAM_TEST("management roles.unassign_from_user reaches its route") {
 
 AXIAM_TEST("management roles.list_groups reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json([{"group": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "resource_id": "11111111-1111-4111-8111-111111111111"}])json");
+        R"json([{"group": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_scope": ["11111111-1111-4111-8111-111111111111"]}])json");
     const auto result = fixture.client.management().roles().list_groups("11111111-1111-4111-8111-111111111111");
     (void) result;
 
@@ -422,6 +449,33 @@ AXIAM_TEST("management roles.revoke_permission reaches its route") {
 
     AXIAM_CHECK(fixture.state->last().method == "DELETE");
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/roles/11111111-1111-4111-8111-111111111111/permissions/11111111-1111-4111-8111-111111111111");
+}
+
+AXIAM_TEST("management roles.list_service_accounts reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json([{"resource_id": "11111111-1111-4111-8111-111111111111", "service_account": {"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "tenant_scope": ["11111111-1111-4111-8111-111111111111"]}])json");
+    const auto result = fixture.client.management().roles().list_service_accounts("11111111-1111-4111-8111-111111111111");
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/roles/11111111-1111-4111-8111-111111111111/service-accounts");
+}
+
+AXIAM_TEST("management roles.assign_to_service_account reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(204, "");
+    AssignRoleToServiceAccountRequest body{};
+    fixture.client.management().roles().assign_to_service_account("11111111-1111-4111-8111-111111111111", body);
+
+    AXIAM_CHECK(fixture.state->last().method == "POST");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/roles/11111111-1111-4111-8111-111111111111/service-accounts");
+}
+
+AXIAM_TEST("management roles.unassign_from_service_account reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(204, "");
+    fixture.client.management().roles().unassign_from_service_account("11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111");
+
+    AXIAM_CHECK(fixture.state->last().method == "DELETE");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/roles/11111111-1111-4111-8111-111111111111/service-accounts/11111111-1111-4111-8111-111111111111");
 }
 
 AXIAM_TEST("management permissions.list reaches its route") {
@@ -661,6 +715,26 @@ AXIAM_TEST("management service_accounts.bind_certificate reaches its route") {
 
     AXIAM_CHECK(fixture.state->last().method == "POST");
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/service-accounts/11111111-1111-4111-8111-111111111111/bind-certificate");
+}
+
+AXIAM_TEST("management service_accounts.list_roles reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json([{"resource_id": "11111111-1111-4111-8111-111111111111", "role": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "is_global": true, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "tenant_scope": ["11111111-1111-4111-8111-111111111111"]}])json");
+    const auto result = fixture.client.management().service_accounts().list_roles("11111111-1111-4111-8111-111111111111");
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/service-accounts/11111111-1111-4111-8111-111111111111/roles");
+}
+
+AXIAM_TEST("management service_accounts.list_groups reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json([{"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}])json");
+    const auto result = fixture.client.management().service_accounts().list_groups("11111111-1111-4111-8111-111111111111");
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/service-accounts/11111111-1111-4111-8111-111111111111/groups");
 }
 
 AXIAM_TEST("management certificates.list reaches its route") {
@@ -1471,7 +1545,7 @@ AXIAM_TEST("management platform.mds_refresh reaches its route") {
 // registry rather than written as a literal on both sides. `AXIAM_CHECK(147 == 147)` is a
 // tautology, and a case removed by a bad regeneration would still pass it -- this fails
 // instead.
-AXIAM_TEST("management surface covers all 147 registry operations") {
+AXIAM_TEST("management surface covers all 155 registry operations") {
     int reached = 0;
     for (const auto& test : axtest::registry()) {
         if (test.name.rfind("management ", 0) == 0 &&
@@ -1479,7 +1553,7 @@ AXIAM_TEST("management surface covers all 147 registry operations") {
             ++reached;
         }
     }
-    AXIAM_CHECK(reached == 147);
+    AXIAM_CHECK(reached == 155);
 }
 
 }  // namespace

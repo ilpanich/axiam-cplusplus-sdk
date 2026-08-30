@@ -354,6 +354,32 @@ std::vector<RoleAssignment> GroupsApi::list_roles(const std::string& group_id) {
     return Transport::decode<std::vector<RoleAssignment>>(response, "groups.list_roles");
 }
 
+Page<ServiceAccountResponse> GroupsApi::list_service_accounts(const std::string& group_id, const PageRequest& page) {
+    const std::vector<PathValue> values{{"group_id", group_id}};
+    auto query = Transport::paging(page);
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("groups.list_service_accounts", "GET", "/api/v1/groups/{group_id}/service-accounts",
+                                            values, query, payload);
+
+    return Transport::to_page<ServiceAccountResponse>(response, page, "groups.list_service_accounts");
+}
+
+void GroupsApi::add_service_account(const std::string& group_id, const AddServiceAccountMemberRequest& body) {
+    const std::vector<PathValue> values{{"group_id", group_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    transport_->send("groups.add_service_account", "POST", "/api/v1/groups/{group_id}/service-accounts",
+                                            values, query, payload);
+}
+
+void GroupsApi::remove_service_account(const std::string& group_id, const std::string& service_account_id) {
+    const std::vector<PathValue> values{{"group_id", group_id}, {"service_account_id", service_account_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    transport_->send("groups.remove_service_account", "DELETE", "/api/v1/groups/{group_id}/service-accounts/{service_account_id}",
+                                            values, query, payload);
+}
+
 RolesApi::RolesApi(std::shared_ptr<Transport> transport, CallScope scope)
     : transport_(std::move(transport)), scope_(std::move(scope)) {}
 
@@ -496,6 +522,32 @@ void RolesApi::revoke_permission(const std::string& role_id, const std::string& 
     const std::vector<QueryValue> query{};
     const std::optional<nlohmann::json> payload = std::nullopt;
     transport_->send("roles.revoke_permission", "DELETE", "/api/v1/roles/{role_id}/permissions/{permission_id}",
+                                            values, query, payload);
+}
+
+std::vector<RoleServiceAccountAssignment> RolesApi::list_service_accounts(const std::string& role_id) {
+    const std::vector<PathValue> values{{"role_id", role_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("roles.list_service_accounts", "GET", "/api/v1/roles/{role_id}/service-accounts",
+                                            values, query, payload);
+
+    return Transport::decode<std::vector<RoleServiceAccountAssignment>>(response, "roles.list_service_accounts");
+}
+
+void RolesApi::assign_to_service_account(const std::string& role_id, const AssignRoleToServiceAccountRequest& body) {
+    const std::vector<PathValue> values{{"role_id", role_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    transport_->send("roles.assign_to_service_account", "POST", "/api/v1/roles/{role_id}/service-accounts",
+                                            values, query, payload);
+}
+
+void RolesApi::unassign_from_service_account(const std::string& role_id, const std::string& service_account_id, const std::optional<std::string>& resource_id) {
+    const std::vector<PathValue> values{{"role_id", role_id}, {"service_account_id", service_account_id}};
+    const std::vector<QueryValue> query{{"resource_id", resource_id}};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    transport_->send("roles.unassign_from_service_account", "DELETE", "/api/v1/roles/{role_id}/service-accounts/{service_account_id}",
                                             values, query, payload);
 }
 
@@ -803,6 +855,26 @@ void ServiceAccountsApi::bind_certificate(const std::string& sa_id, const BindCe
     const std::optional<nlohmann::json> payload = nlohmann::json(body);
     transport_->send("service_accounts.bind_certificate", "POST", "/api/v1/service-accounts/{sa_id}/bind-certificate",
                                             values, query, payload);
+}
+
+std::vector<RoleAssignment> ServiceAccountsApi::list_roles(const std::string& service_account_id) {
+    const std::vector<PathValue> values{{"service_account_id", service_account_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("service_accounts.list_roles", "GET", "/api/v1/service-accounts/{service_account_id}/roles",
+                                            values, query, payload);
+
+    return Transport::decode<std::vector<RoleAssignment>>(response, "service_accounts.list_roles");
+}
+
+std::vector<Group> ServiceAccountsApi::list_groups(const std::string& service_account_id) {
+    const std::vector<PathValue> values{{"service_account_id", service_account_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("service_accounts.list_groups", "GET", "/api/v1/service-accounts/{service_account_id}/groups",
+                                            values, query, payload);
+
+    return Transport::decode<std::vector<Group>>(response, "service_accounts.list_groups");
 }
 
 CertificatesApi::CertificatesApi(std::shared_ptr<Transport> transport, CallScope scope)
