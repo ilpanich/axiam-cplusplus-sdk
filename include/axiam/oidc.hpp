@@ -4,7 +4,8 @@
 // Swift, C and C++ SDKs: these are device- and IoT-oriented, and the
 // browser-redirect relying-party flow has no natural home in any of them.
 // Contract 1.11 (§12.6) reverses that, and the reason is worth keeping next to
-// the code. The persona argument only ever covered two of the nine operations —
+// the code. The persona argument only ever covered two of the thirteen
+// operations —
 // `oidc_begin` and `oidc_exchange`, the pair that genuinely assumes a browser.
 // The other seven are exactly what an embedded consumer wants:
 // `login_client_credentials` is machine-to-machine login, `introspect` and
