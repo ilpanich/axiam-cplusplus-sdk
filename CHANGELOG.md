@@ -6,6 +6,8 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+## [1.0.0-beta08] - 2026-09-02
+
 ### Added
 
 - **The four public login-provider operations (CONTRACT §12.1, contract 1.38).**
@@ -40,6 +42,10 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
     it is not retried.
 
 ### Changed
+
+- §12.1: the four public login-provider operations (contract 1.38) (#54)
+
+- Publish the real version, not a Doxyfile literal stuck at alpha8
 
 - **Re-vendored contract 1.38.** `CONTRACT.md`, `openapi.json` and
   `management-registry.json` are byte-for-byte copies of the `sdks/` sources in
