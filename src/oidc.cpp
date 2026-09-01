@@ -1017,6 +1017,161 @@ SsoCompleteResult Client::sso_complete(const std::string& code, const std::strin
 }
 
 // ---------------------------------------------------------------------------
+// §12.1 login providers (contract 1.37; rule 12a added at 1.38)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The shared body of the two session-establishing federation POSTs.
+///
+/// §12.1 note 6 applies to both: the response carries NO token material — the
+/// session is the `Set-Cookie` the §4 jar keeps. Neither is retried, so note
+/// 12's terminal `401` and rule 12a's `400` each cost exactly one request.
+SsoCompleteResult parse_federation_session(const json& j, const char* context) {
+    SsoCompleteResult r;
+    const auto user_id = opt_string(j, "user_id");
+    const auto session_id = opt_string(j, "session_id");
+    if (!user_id || !session_id) {
+        throw NetworkError(std::string(context) + ": malformed SsoLoginSuccessResponse",
+                           "malformed_body");
+    }
+    r.user_id = *user_id;
+    r.session_id = *session_id;
+    r.expires_in = opt_int(j, "expires_in").value_or(0);
+    r.redirect_uri = opt_string(j, "redirect_uri");
+    return r;
+}
+
+}  // namespace
+
+std::vector<FederationProvider> Client::sso_providers(std::optional<std::string> org_id,
+                                                      std::optional<std::string> org_slug,
+                                                      std::optional<std::string> tenant_id,
+                                                      std::optional<std::string> tenant_slug) {
+    p_->ensure_open();
+
+    // §12.1 note 9: NOTHING here is required and nothing is refused client-side.
+    // A request naming no workspace at all is still a request and still answers
+    // 200 with an empty list — a client-side 400 would restore exactly the
+    // two-valued organization-slug oracle the empty list removes.
+    const auto eff_org_id = org_id ? org_id : p_->org_id;
+    const auto eff_org_slug = org_slug ? org_slug : p_->org_slug;
+    const auto eff_tenant_id = tenant_id ? tenant_id : p_->tenant_id;
+    const auto eff_tenant_slug = tenant_slug ? tenant_slug : p_->tenant_slug;
+
+    std::string path = "/api/v1/auth/federation/providers";
+    char sep = '?';
+    // §5.1: the UUID form replaces the matching slug form, as everywhere else.
+    const auto add = [&](const char* name, const std::string& value) {
+        path += sep;
+        sep = '&';
+        path += name;
+        path += '=';
+        path += pct(value);
+    };
+    if (eff_org_id && !eff_org_id->empty()) add("org_id", *eff_org_id);
+    else if (eff_org_slug && !eff_org_slug->empty()) add("org_slug", *eff_org_slug);
+    if (eff_tenant_id && !eff_tenant_id->empty()) add("tenant_id", *eff_tenant_id);
+    else if (eff_tenant_slug && !eff_tenant_slug->empty()) add("tenant_slug", *eff_tenant_slug);
+
+    const HttpResponse resp = p_->execute("GET", path, "", /*allow_refresh=*/false);
+    const json j = parse_or_object(resp.body);
+    if (!j.contains("providers") || !j["providers"].is_array()) {
+        throw NetworkError("sso providers: malformed PublicFederationProvidersResponse",
+                           "malformed_body");
+    }
+
+    std::vector<FederationProvider> out;
+    for (const auto& entry : j["providers"]) {
+        if (!entry.is_object()) continue;
+        FederationProvider p;
+        const auto id = opt_string(entry, "id");
+        // The wire string, never an enum: a protocol the server adds later must
+        // not fail the parse of the whole list (§12.1 note 10).
+        const auto protocol = opt_string(entry, "protocol");
+        if (!id || !protocol) {
+            // An entry with no id or no protocol cannot start a login. Drop it
+            // rather than failing the listing: the buttons that ARE usable must
+            // still render.
+            continue;
+        }
+        p.id = *id;
+        p.protocol = *protocol;
+        p.provider_kind = opt_string(entry, "provider_kind").value_or("");
+        p.display_name = opt_string(entry, "display_name").value_or("");
+        p.button_icon = opt_string(entry, "button_icon");  // absent for most
+        p.has_bundled_mark =
+            entry.contains("has_bundled_mark") && entry["has_bundled_mark"].is_boolean() &&
+            entry["has_bundled_mark"].get<bool>();
+        p.inherited = entry.contains("inherited") && entry["inherited"].is_boolean() &&
+                      entry["inherited"].get<bool>();
+        out.push_back(std::move(p));
+    }
+    return out;
+}
+
+SsoStartResult Client::sso_start_oauth2(const std::string& federation_config_id,
+                                        const std::string& redirect_uri) {
+    p_->ensure_open();
+    json body;
+    body["federation_config_id"] = federation_config_id;
+    body["redirect_uri"] = redirect_uri;
+    // §5.1, identical to sso_start(). And NO PKCE field anywhere: the verifier
+    // is generated and held server-side (§12.1 note 11), so there is nothing for
+    // this SDK to compute and nothing it may send.
+    if (p_->tenant_id) body["tenant_id"] = *p_->tenant_id;
+    else if (p_->tenant_slug) body["tenant_slug"] = *p_->tenant_slug;
+    if (p_->org_id) body["org_id"] = *p_->org_id;
+    else if (p_->org_slug) body["org_slug"] = *p_->org_slug;
+
+    // Rule 12a: a 400 here means the deployment does not accept this
+    // redirect_uri's ORIGIN. execute() puts that on §2's NetworkError row — the
+    // configuration error — as distinct from the AuthError a 401 gets, and with
+    // allow_refresh false it is issued exactly once.
+    const HttpResponse resp =
+        p_->execute("POST", "/api/v1/auth/federation/oauth2/start", body.dump(),
+                    /*allow_refresh=*/false);
+    const json j = parse_or_object(resp.body);
+    SsoStartResult r;
+    const auto url = opt_string(j, "authorize_url");
+    const auto state = opt_string(j, "state");
+    if (!url || !state) {
+        throw NetworkError("sso start oauth2: malformed OAuth2StartResponse", "malformed_body");
+    }
+    r.authorize_url = *url;
+    r.state = *state;
+    r.expires_in_secs = opt_int(j, "expires_in_secs").value_or(0);
+    return r;
+}
+
+SsoCompleteResult Client::sso_complete_oauth2(const std::string& code, const std::string& state) {
+    p_->ensure_open();
+    json body;
+    body["state"] = state;
+    body["code"] = code;
+
+    const HttpResponse resp =
+        p_->execute("POST", "/api/v1/auth/federation/oauth2/callback", body.dump(),
+                    /*allow_refresh=*/false);
+    return parse_federation_session(parse_or_object(resp.body), "sso complete oauth2");
+}
+
+SsoCompleteResult Client::sso_complete_handoff(const std::string& code) {
+    p_->ensure_open();
+    // The code is the whole request: no state, no workspace.
+    json body;
+    body["code"] = code;
+
+    // §12.1 note 12: a 401 is TERMINAL — unknown, expired and already-redeemed
+    // answer alike and the code is spent either way — so this is issued exactly
+    // once and never retried.
+    const HttpResponse resp =
+        p_->execute("POST", "/api/v1/auth/federation/handoff", body.dump(),
+                    /*allow_refresh=*/false);
+    return parse_federation_session(parse_or_object(resp.body), "sso complete handoff");
+}
+
+// ---------------------------------------------------------------------------
 // §12.7.3 verify_logout_token
 // ---------------------------------------------------------------------------
 

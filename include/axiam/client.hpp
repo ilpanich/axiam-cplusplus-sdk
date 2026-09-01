@@ -570,6 +570,73 @@ public:
     /// requirement applies verbatim.
     SsoCompleteResult sso_complete(const std::string& code, const std::string& state);
 
+    /// `GET /api/v1/auth/federation/providers` (§12.1) — which "Sign in with X"
+    /// buttons to render for a workspace.
+    ///
+    /// The workspace travels as **query parameters**, not a body: this is the one
+    /// §12 operation that is a `GET`. Each argument overrides what this client
+    /// was constructed with; §5.1's precedence applies, so a UUID form replaces
+    /// the matching slug form. Nothing is required.
+    ///
+    /// **An empty vector is a success, and the only success there is** (§12.1
+    /// note 9). An unknown organization, a known one with no providers, and a
+    /// request naming no organization at all all answer `200` with an empty
+    /// array. This never becomes a not-found error and is never refused
+    /// client-side: the endpoint is shaped so it cannot enumerate org or tenant
+    /// slugs, and restoring the distinction would restore the oracle. A caller
+    /// learns it named the workspace wrongly at the start operations, where every
+    /// failure is a uniform `401`.
+    ///
+    /// Dispatch on each provider's `protocol` to choose the start operation
+    /// (note 10) — never on `provider_kind`.
+    std::vector<FederationProvider> sso_providers(
+        std::optional<std::string> org_id = std::nullopt,
+        std::optional<std::string> org_slug = std::nullopt,
+        std::optional<std::string> tenant_id = std::nullopt,
+        std::optional<std::string> tenant_slug = std::nullopt);
+
+    /// `POST /api/v1/auth/federation/oauth2/start` (§12.1) — begin a login through
+    /// a **plain-OAuth2** upstream (GitHub, Facebook, any `generic_oauth2`).
+    ///
+    /// Call this, and not sso_start(), exactly when the provider's `protocol` is
+    /// `kFederationProtocolOAuth2` (note 10). The server refuses a mismatch with
+    /// `400` rather than accepting it silently.
+    ///
+    /// **PKCE is mandatory here and entirely server-side** (note 11): the server
+    /// generates and stores the verifier and never returns it, so this SDK
+    /// computes none and sends none. The OAuth2 variant also carries reduced
+    /// assurance — no ID token, so no signature, no `nonce` and no `aud`.
+    ///
+    /// A `400` can also mean the deployment does not accept `redirect_uri`'s
+    /// **origin** (§12.1 rule 12a). §2 maps `400` to NetworkError — this
+    /// taxonomy's configuration/programming-error member, as distinct from the
+    /// AuthError a `401` gets — and it is not retried. Never build a
+    /// `redirect_uri` from a value the identity provider supplied.
+    SsoStartResult sso_start_oauth2(const std::string& federation_config_id,
+                                    const std::string& redirect_uri);
+
+    /// `POST /api/v1/auth/federation/oauth2/callback` (§12.1) — finish a
+    /// plain-OAuth2 login.
+    ///
+    /// The SPA calls this same-origin, so the session arrives directly as
+    /// `Set-Cookie` and the §4 cookie-jar requirement applies verbatim. The
+    /// server recovers the whole context from the single-use `state`.
+    SsoCompleteResult sso_complete_oauth2(const std::string& code, const std::string& state);
+
+    /// `POST /api/v1/auth/federation/handoff` (§12.1) — redeem a handoff code.
+    ///
+    /// SAML and Apple's `response_mode=form_post` return **cross-site**, so the
+    /// server cannot set `SameSite=Strict` cookies on that response. It redirects
+    /// the browser to the SPA callback with the code in the `kHandoffQueryParam`
+    /// query parameter; *this* same-origin POST is the one that carries
+    /// `Set-Cookie` (note 12).
+    ///
+    /// The code is single-use and lives `kHandoffCodeTtlSeconds` seconds.
+    /// Unknown, expired and already-redeemed all answer the same `401`,
+    /// deliberately — so a `401` here is **terminal**: the code is gone either
+    /// way, and this SDK issues the redemption exactly once and never retries it.
+    SsoCompleteResult sso_complete_handoff(const std::string& code);
+
     /// Verify a back-channel logout token the OP POSTed to this RP (§12.7.1).
     ///
     /// No network I/O of its own: it verifies against the JWKS this client
