@@ -4,7 +4,8 @@
 // Swift, C and C++ SDKs: these are device- and IoT-oriented, and the
 // browser-redirect relying-party flow has no natural home in any of them.
 // Contract 1.11 (§12.6) reverses that, and the reason is worth keeping next to
-// the code. The persona argument only ever covered two of the nine operations —
+// the code. The persona argument only ever covered two of the thirteen
+// operations —
 // `oidc_begin` and `oidc_exchange`, the pair that genuinely assumes a browser.
 // The other seven are exactly what an embedded consumer wants:
 // `login_client_credentials` is machine-to-machine login, `introspect` and
@@ -315,6 +316,56 @@ struct SsoCompleteResult {
     std::string session_id;
     std::int64_t expires_in = 0;
     std::optional<std::string> redirect_uri;
+};
+
+// --- §12.1 login providers (contract 1.37; rule 12a added at 1.38) ---------
+
+/// `protocol` value selecting Client::sso_start() (§12.1 note 10).
+inline constexpr const char* kFederationProtocolOidcConnect = "OidcConnect";
+/// `protocol` value selecting Client::sso_start_oauth2() (§12.1 note 10).
+inline constexpr const char* kFederationProtocolOAuth2 = "OAuth2";
+/// `protocol` value selecting the SAML login endpoint, which is **not** a §12
+/// vocabulary operation and therefore has no method on Client.
+inline constexpr const char* kFederationProtocolSaml = "Saml";
+
+/// The query parameter a handoff code arrives in on the SPA callback route
+/// (§12.1 note 12).
+inline constexpr const char* kHandoffQueryParam = "axiam_handoff";
+/// How long a handoff code stays redeemable, in seconds (§12.1 note 12).
+inline constexpr int kHandoffCodeTtlSeconds = 60;
+
+/// One sign-in button, from `GET /api/v1/auth/federation/providers` (§12.1).
+///
+/// Carries what a button needs and nothing else: there is no `client_id`, no
+/// `metadata_url`, no endpoint URL and no secret in this shape. The server
+/// builds it as a dedicated unauthenticated response rather than narrowing the
+/// admin one, so a field added to the admin response cannot reach here by
+/// inheritance.
+struct FederationProvider {
+    /// Config id, echoed back to whichever start operation `protocol` selects.
+    std::string id;
+    /// Branding only. **Never** what selects the start operation: a SAML config
+    /// can carry `provider_kind` "google" (§12.1 note 10).
+    std::string provider_kind;
+    /// The operator's display name for the provider.
+    std::string display_name;
+    /// `OidcConnect`, `Saml` or `OAuth2` — selects the start operation.
+    ///
+    /// Deliberately the wire string and not an enum: the server may add a
+    /// protocol, and a closed enum would fail the parse of the whole list over
+    /// one provider this build predates. Compare against
+    /// `kFederationProtocolOidcConnect`, `kFederationProtocolOAuth2` and
+    /// `kFederationProtocolSaml`, and treat anything else as "cannot start this
+    /// one here".
+    std::string protocol;
+    /// The operator's uploaded button icon, as a bounded raster `data:` URL.
+    /// Absent for most providers.
+    std::optional<std::string> button_icon;
+    /// `true` when AXIAM ships this provider's own sign-in mark.
+    bool has_bundled_mark = false;
+    /// `true` when the provider is inherited from the organization (note 13).
+    /// Resolution is entirely server-side; nothing is computed here.
+    bool inherited = false;
 };
 
 /// A verified back-channel logout token (§12.7.3).

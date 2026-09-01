@@ -44,6 +44,7 @@ add_executable(axiam_cpp_tests
   test_oidc.cpp
   test_oidc_grants.cpp
   test_oidc_errors.cpp
+  test_oidc_login_providers.cpp
   # §23 OPAQUE: the binding — exchange lifetime, key-stretching selection,
   # error taxonomy — driven against a fake Native that counts every handle the
   # SDK is given, plus the REAL dlopen loader against a stub shared library.

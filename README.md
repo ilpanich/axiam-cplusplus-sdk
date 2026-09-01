@@ -827,6 +827,67 @@ Worked examples: [`examples/oidc_login.cpp`](examples/oidc_login.cpp),
 [`examples/device_login.cpp`](examples/device_login.cpp),
 [`examples/token_exchange.cpp`](examples/token_exchange.cpp).
 
+### The four public login-provider operations (contract 1.37; rule 12a at 1.38)
+
+Contract 1.37 added the operations a login *page* needs — which buttons to
+render, and how to finish the two flows that cannot set a `SameSite=Strict`
+cookie on their own response. They bring §12 to **thirteen** operations.
+
+| Canonical | C++ | Endpoint |
+|---|---|---|
+| `sso_providers` | `sso_providers()` | `GET /api/v1/auth/federation/providers` |
+| `sso_start_oauth2` | `sso_start_oauth2()` | `POST /api/v1/auth/federation/oauth2/start` |
+| `sso_complete_oauth2` | `sso_complete_oauth2()` | `POST /api/v1/auth/federation/oauth2/callback` |
+| `sso_complete_handoff` | `sso_complete_handoff()` | `POST /api/v1/auth/federation/handoff` |
+
+```cpp
+for (const auto& p : client.sso_providers(std::nullopt, typed_by_the_user)) {
+    // §12.1 note 10: `protocol` selects the start operation. NEVER
+    // provider_kind — a SAML config can carry provider_kind "google", and
+    // guessing sends it to an endpoint the server refuses with 400.
+    if (p.protocol == axiam::kFederationProtocolOidcConnect) {
+        navigate(client.sso_start(p.id, callback_uri).authorize_url);
+    } else if (p.protocol == axiam::kFederationProtocolOAuth2) {
+        navigate(client.sso_start_oauth2(p.id, callback_uri).authorize_url);
+    } else if (p.protocol == axiam::kFederationProtocolSaml) {
+        begin_saml_login(p.id);        // not a §12 vocabulary operation
+    }
+    // anything else is a protocol this build predates — skip the button
+}
+```
+
+- **An empty vector is a success, and the only success there is** (§12.1 note
+  9). An unknown organization, a known one with no providers, and a request
+  naming no organization at all all answer `200` with an empty array.
+  `sso_providers()` never turns that into a not-found error and never refuses
+  client-side for missing workspace context — the endpoint is shaped so it
+  cannot enumerate org or tenant slugs, and restoring the distinction would
+  restore the oracle. A caller learns it named the workspace wrongly at the
+  start operations, where every failure is a uniform `401`.
+- **`protocol` is the wire string, not an enum.** A closed enum would fail the
+  parse of the whole list over one provider this build predates. An entry with
+  no `id` or no `protocol` is dropped rather than failing the listing, so the
+  buttons that *are* usable still render.
+- **PKCE on the OAuth2 path is mandatory and entirely server-side** (note 11).
+  This SDK computes no verifier and no challenge and sends neither. That path
+  also carries **reduced assurance** — no ID token, so no signature, no `nonce`,
+  no `aud`.
+- **A handoff code is single-use and lives `kHandoffCodeTtlSeconds` seconds**
+  (note 12). It arrives on the SPA callback in the `kHandoffQueryParam`
+  (`axiam_handoff`) query parameter; redeem it from the same origin. Unknown,
+  expired and already-redeemed all answer the same `401`, so a `401` is
+  **terminal** — the code is gone either way, and this SDK issues the
+  redemption exactly once.
+- **A `400` is a configuration error, not a retry** (§12.1 rule 12a). On the
+  SAML and Apple flows the `redirect_uri` must be on an origin the deployment
+  accepts. §2 maps `400` to `NetworkError` — this taxonomy's
+  configuration/programming-error member, as distinct from the `AuthError` a
+  `401` gets. Never build a `redirect_uri` from a value the identity provider
+  supplied.
+- **Inheritance is resolved server-side** (note 13). `FederationProvider::inherited`
+  tells you a provider belongs to the organization rather than the tenant; pass
+  the `id` you were handed and let the server work out the rest.
+
 ### Sender-constrained tokens and DPoP (§10.1 rule 9, §21.7.3)
 
 A token carrying a `cnf` claim is **not** a bearer token: it names a key, and

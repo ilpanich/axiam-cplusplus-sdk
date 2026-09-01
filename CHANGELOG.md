@@ -6,6 +6,49 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Added
+
+- **The four public login-provider operations (CONTRACT §12.1, contract 1.38).**
+  `Client::sso_providers()`, `Client::sso_start_oauth2()`,
+  `Client::sso_complete_oauth2()` and `Client::sso_complete_handoff()` bring §12
+  to thirteen operations, under the snake_case names §12.2 reserves for C++.
+  They are what a login *page* needs: which "Sign in with X" buttons to render,
+  and how to finish the two flows that cannot set a `SameSite=Strict` cookie on
+  their own response. `FederationProvider` models the public provider shape
+  faithfully, including the nullable `button_icon` data URL, `has_bundled_mark`
+  and `inherited`; `kHandoffQueryParam` and `kHandoffCodeTtlSeconds` carry the
+  handoff mechanism's two constants.
+
+  Five rules are load-bearing, and each has a test.
+
+  - **An empty vector is a success, and the only success there is** (note 9). An
+    unknown organization, a known one with no providers, and a request naming no
+    organization at all all answer `200` with an empty array. `sso_providers()`
+    never turns that into a not-found error and never refuses client-side for
+    missing workspace context — a client-side `400` would restore exactly the
+    two-valued organization-slug oracle the empty list exists to remove.
+  - **`protocol` selects the start operation, never `provider_kind`** (note 10).
+    It is the wire string rather than an enum, so a protocol the server adds
+    later cannot fail the parse of the whole list; an entry with no `id` or no
+    `protocol` is dropped rather than failing the listing.
+  - **PKCE on the OAuth2 path is generated and held server-side** (note 11). No
+    verifier and no challenge is computed or sent.
+  - **A handoff `401` is terminal** (note 12). The redemption is issued exactly
+    once and never retried.
+  - **A `400` is a configuration error** (rule 12a, new at 1.38). §2 puts it on
+    the `NetworkError` row, as distinct from the `AuthError` a `401` gets, and
+    it is not retried.
+
+### Changed
+
+- **Re-vendored contract 1.38.** `CONTRACT.md`, `openapi.json` and
+  `management-registry.json` are byte-for-byte copies of the `sdks/` sources in
+  [`ilpanich/axiam`](https://github.com/ilpanich/axiam) (ilpanich/axiam#398);
+  `opaque-test-vectors.json` did not change. The §27 management surface was
+  regenerated with `scripts/gen_management.py`, as §27.8 requires whenever the
+  vendored artifacts move: `openapi.json` gained fields on the
+  federation-config schemas.
+
 ## [1.0.0-beta07] - 2026-08-30
 
 ### Changed
