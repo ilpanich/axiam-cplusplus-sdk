@@ -1149,11 +1149,31 @@ struct TokenExchangeTrustRequest {
 
 /// The `CreateFederationConfigRequest` schema from the server's OpenAPI document.
 struct CreateFederationConfigRequest {
+    /// Whether tenants of this organization may inherit this provider. Only meaningful on a
+    /// config in the organization-scope tenant. Optional.
+    std::optional<bool> allow_tenant_inheritance = std::nullopt;
     /// Accepted JWT signing algorithms (OIDC) or signature algorithms (SAML). Defaults to
     /// `["RS256"]` when not provided (CQ-B40/REQ-14 AC-5). Optional.
     std::optional<std::vector<std::string>> allowed_algorithms = std::nullopt;
+    /// External IdP tenant identifiers accepted when the provider publishes a templated issuer
+    /// (Entra ID's `{tenantid}`). Optional.
+    std::optional<std::vector<std::string>> allowed_issuer_tenants = std::nullopt;
+    /// Apple Key ID of the `.p8` signing key (10 characters). With both Apple identifiers set,
+    /// `client_secret` is the `.p8` key itself and AXIAM mints a fresh five-minute client
+    /// secret per token exchange. Optional.
+    std::optional<std::string> apple_key_id = std::nullopt;
+    /// Apple Team ID (10 characters). Optional.
+    std::optional<std::string> apple_team_id = std::nullopt;
     /// Maps external IdP attributes to AXIAM user fields. Optional.
     std::optional<std::string> attribute_map = std::nullopt;
+    /// OAuth2-variant authorization endpoint. Required for `OAuth2`. Optional.
+    std::optional<std::string> authorization_endpoint = std::nullopt;
+    /// Sign-in-button icon for a **generic** provider, as a base64 raster data URL
+    /// (`data:image/png;base64,…`), already cropped to `PROVIDER_ICON_SIZE_PX` square by the
+    /// client. Refused for the branded kinds: Google, Apple and Microsoft all publish
+    /// sign-in-button rules that require their own mark, so substituting a picture would
+    /// produce a button that breaks the guidelines it exists to follow. Optional.
+    std::optional<std::string> button_icon = std::nullopt;
     /// OAuth2 client ID registered with the external IdP.
     std::string client_id;
     /// OAuth2 client secret registered with the external IdP.
@@ -1167,8 +1187,25 @@ struct CreateFederationConfigRequest {
     std::string protocol;
     /// Display name for the identity provider (e.g., "Google", "Okta").
     std::string provider;
+    /// Which provider this is: `google`, `github`, `facebook`, `apple`, `microsoft`,
+    /// `generic_oidc`, `generic_oauth2` or `generic_saml`. Selects the sign-in button's
+    /// branding, the per-kind defaults, and the key on which a tenant config overrides an
+    /// inherited organization one. Omitted ⇒ derived from `protocol`, which is what every
+    /// config written before this field existed means. Optional.
+    std::optional<std::string> provider_kind = std::nullopt;
+    /// Operator-chosen identifier, **required** for the `generic_*` kinds and refused for the
+    /// branded ones. Optional.
+    std::optional<std::string> provider_slug = std::nullopt;
+    /// Send PKCE on the authorization request. Forced on for `OAuth2`. Optional.
+    std::optional<bool> require_pkce = std::nullopt;
+    /// Scopes to request. Omitted or empty ⇒ the per-kind default. Optional.
+    std::optional<std::vector<std::string>> scopes = std::nullopt;
+    /// OAuth2-variant token endpoint. Required for `OAuth2`. Optional.
+    std::optional<std::string> token_endpoint = std::nullopt;
     /// The server's `token_exchange` field. Optional.
     std::optional<TokenExchangeTrustRequest> token_exchange = std::nullopt;
+    /// OAuth2-variant userinfo endpoint. Required for `OAuth2`. Optional.
+    std::optional<std::string> userinfo_endpoint = std::nullopt;
 };
 
 /// The `CreateGroupRequest` schema from the server's OpenAPI document.
@@ -1554,28 +1591,67 @@ struct TokenExchangeTrustResponse {
 
 /// Federation config response -- omits client_secret.
 struct FederationConfigResponse {
+    /// Whether tenants of this organization may inherit this provider.
+    bool allow_tenant_inheritance;
+    /// Accepted signing algorithms. Returned for OIDC and SAML; meaningless, and therefore
+    /// empty, for the OAuth2 variant.
+    std::vector<std::string> allowed_algorithms;
+    /// Accepted external IdP tenants for a templated issuer.
+    std::vector<std::string> allowed_issuer_tenants;
+    /// Apple Key ID. Optional.
+    std::optional<std::string> apple_key_id = std::nullopt;
+    /// Apple Team ID. Not secret — the `.p8` key is, and it is never returned. Optional.
+    std::optional<std::string> apple_team_id = std::nullopt;
     /// The server's `attribute_map` field.
     std::string attribute_map;
+    /// OAuth2-variant authorization endpoint. Optional.
+    std::optional<std::string> authorization_endpoint = std::nullopt;
+    /// Custom sign-in-button icon, when one is set. Optional.
+    std::optional<std::string> button_icon = std::nullopt;
     /// The server's `client_id` field.
     std::string client_id;
     /// The server's `created_at` field.
     std::string created_at;
+    /// The per-kind default that an empty `scopes` resolves to. Returned so the admin UI can
+    /// show what will actually be requested without duplicating the table.
+    std::vector<std::string> effective_scopes;
     /// The server's `enabled` field.
     bool enabled;
+    /// Whether AXIAM ships this provider's own mark. When true the button uses it and
+    /// `button_icon` is refused; when false the button reads "Sign in with <provider>" and may
+    /// carry a custom icon.
+    bool has_bundled_mark;
     /// The server's `id` field.
     std::string id;
     /// The server's `metadata_url` field. Optional.
     std::optional<std::string> metadata_url = std::nullopt;
+    /// Whether AXIAM mints this provider's client secret itself, per exchange, rather than
+    /// sending a stored one. True only for an Apple config with both identifiers set.
+    bool mints_client_secret;
+    /// Whether PKCE is sent on the authorization request. Always true for the OAuth2 variant
+    /// regardless of the stored flag.
+    bool pkce_required;
     /// The server's `protocol` field.
     std::string protocol;
     /// The server's `provider` field.
     std::string provider;
+    /// Which provider this is. Derived from `protocol` for a config written before the field
+    /// existed.
+    std::string provider_kind;
+    /// Operator-chosen identifier for a `generic_*` kind. Optional.
+    std::optional<std::string> provider_slug = std::nullopt;
+    /// Scopes as stored. Empty means "use the per-kind default"; see `effective_scopes`.
+    std::vector<std::string> scopes;
     /// The server's `tenant_id` field.
     std::string tenant_id;
+    /// OAuth2-variant token endpoint. Optional.
+    std::optional<std::string> token_endpoint = std::nullopt;
     /// X4 external token-exchange trust.
     TokenExchangeTrustResponse token_exchange;
     /// The server's `updated_at` field.
     std::string updated_at;
+    /// OAuth2-variant userinfo endpoint. Optional.
+    std::optional<std::string> userinfo_endpoint = std::nullopt;
 };
 
 /// The `FederationLinkResponse` schema from the server's OpenAPI document.
@@ -2722,10 +2798,22 @@ struct TenantSettingsOverride {
 /// disengaged one is OMITTED from the request entirely, rather than sent as null (§27.4 rule
 /// 5). On a sparse update those say opposite things, and only omission means "leave it alone".
 struct UpdateFederationConfigRequest {
+    /// Whether tenants may inherit this organization-level provider. Optional.
+    std::optional<bool> allow_tenant_inheritance = std::nullopt;
     /// Accepted signature algorithms (CQ-B40/REQ-14 AC-5). Optional.
     std::optional<std::vector<std::string>> allowed_algorithms = std::nullopt;
+    /// Accepted external IdP tenants for a templated issuer. Replaced wholesale. Optional.
+    std::optional<std::vector<std::string>> allowed_issuer_tenants = std::nullopt;
+    /// Apple Key ID. `Some(None)` clears it. Optional.
+    std::optional<std::string> apple_key_id = std::nullopt;
+    /// Apple Team ID. `Some(None)` clears it. Optional.
+    std::optional<std::string> apple_team_id = std::nullopt;
     /// The server's `attribute_map` field. Optional.
     std::optional<std::string> attribute_map = std::nullopt;
+    /// OAuth2-variant authorization endpoint. `Some(None)` clears it. Optional.
+    std::optional<std::string> authorization_endpoint = std::nullopt;
+    /// Sign-in-button icon for a generic provider. `Some(None)` clears it. Optional.
+    std::optional<std::string> button_icon = std::nullopt;
     /// The server's `client_id` field. Optional.
     std::optional<std::string> client_id = std::nullopt;
     /// The server's `client_secret` field -- a ONE-TIME secret (§27.5). Optional.
@@ -2739,8 +2827,18 @@ struct UpdateFederationConfigRequest {
     std::optional<std::string> metadata_url = std::nullopt;
     /// The server's `provider` field. Optional.
     std::optional<std::string> provider = std::nullopt;
+    /// Operator-chosen identifier for a `generic_*` kind. `Some(None)` clears it. Optional.
+    std::optional<std::string> provider_slug = std::nullopt;
+    /// Send PKCE on the authorization request. Optional.
+    std::optional<bool> require_pkce = std::nullopt;
+    /// Scopes to request. Replaced wholesale; empty restores the per-kind default. Optional.
+    std::optional<std::vector<std::string>> scopes = std::nullopt;
+    /// OAuth2-variant token endpoint. `Some(None)` clears it. Optional.
+    std::optional<std::string> token_endpoint = std::nullopt;
     /// The server's `token_exchange` field. Optional.
     std::optional<TokenExchangeTrustRequest> token_exchange = std::nullopt;
+    /// OAuth2-variant userinfo endpoint. `Some(None)` clears it. Optional.
+    std::optional<std::string> userinfo_endpoint = std::nullopt;
 };
 
 /// The `UpdateGroup` schema from the server's OpenAPI document.
