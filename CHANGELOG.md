@@ -6,6 +6,12 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+## [1.0.0-beta09] - 2026-09-02
+
+### Changed
+
+- Maintenance release — no notable changes since v1.0.0-beta08.
+
 ## [1.0.0-beta08] - 2026-09-02
 
 ### Added
