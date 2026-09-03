@@ -2952,6 +2952,15 @@ void from_json(const nlohmann::json& j, TokenPolicy& value) {
     value.refresh_token_lifetime_secs = j.at("refresh_token_lifetime_secs").get<std::int64_t>();
 }
 
+void to_json(nlohmann::json& j, const WebauthnPolicy& value) {
+    j = nlohmann::json::object();
+    j["webauthn_user_verification"] = value.webauthn_user_verification;
+}
+
+void from_json(const nlohmann::json& j, WebauthnPolicy& value) {
+    value.webauthn_user_verification = j.at("webauthn_user_verification").get<std::string>();
+}
+
 void to_json(nlohmann::json& j, const SecuritySettings& value) {
     j = nlohmann::json::object();
     j["certificate"] = value.certificate;
@@ -2968,6 +2977,7 @@ void to_json(nlohmann::json& j, const SecuritySettings& value) {
     j["scope_id"] = value.scope_id;
     j["token"] = value.token;
     j["updated_at"] = value.updated_at;
+    j["webauthn"] = value.webauthn;
 }
 
 void from_json(const nlohmann::json& j, SecuritySettings& value) {
@@ -2985,6 +2995,7 @@ void from_json(const nlohmann::json& j, SecuritySettings& value) {
     value.scope_id = j.at("scope_id").get<std::string>();
     value.token = j.at("token").get<TokenPolicy>();
     value.updated_at = j.at("updated_at").get<std::string>();
+    value.webauthn = j.at("webauthn").get<WebauthnPolicy>();
 }
 
 void to_json(nlohmann::json& j, const ServiceAccountCreatedResponse& value) {
@@ -3080,6 +3091,9 @@ void to_json(nlohmann::json& j, const SetOrgSettings& value) {
     j["require_lowercase"] = value.require_lowercase;
     j["require_symbols"] = value.require_symbols;
     j["require_uppercase"] = value.require_uppercase;
+    if (value.webauthn_user_verification) {
+        j["webauthn_user_verification"] = *value.webauthn_user_verification;
+    }
 }
 
 void from_json(const nlohmann::json& j, SetOrgSettings& value) {
@@ -3115,6 +3129,9 @@ void from_json(const nlohmann::json& j, SetOrgSettings& value) {
     value.require_lowercase = j.at("require_lowercase").get<bool>();
     value.require_symbols = j.at("require_symbols").get<bool>();
     value.require_uppercase = j.at("require_uppercase").get<bool>();
+    if (auto it = j.find("webauthn_user_verification"); it != j.end() && !it->is_null()) {
+        value.webauthn_user_verification = it->get<std::string>();
+    }
 }
 
 void to_json(nlohmann::json& j, const SignAuditBatchRequest& value) {
@@ -3276,6 +3293,9 @@ void to_json(nlohmann::json& j, const TenantSettingsOverride& value) {
     if (value.require_uppercase) {
         j["require_uppercase"] = *value.require_uppercase;
     }
+    if (value.webauthn_user_verification) {
+        j["webauthn_user_verification"] = *value.webauthn_user_verification;
+    }
 }
 
 void from_json(const nlohmann::json& j, TenantSettingsOverride& value) {
@@ -3350,6 +3370,9 @@ void from_json(const nlohmann::json& j, TenantSettingsOverride& value) {
     }
     if (auto it = j.find("require_uppercase"); it != j.end() && !it->is_null()) {
         value.require_uppercase = it->get<bool>();
+    }
+    if (auto it = j.find("webauthn_user_verification"); it != j.end() && !it->is_null()) {
+        value.webauthn_user_verification = it->get<std::string>();
     }
 }
 
