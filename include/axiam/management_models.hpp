@@ -845,6 +845,7 @@ struct UpdateUserRequest;
 struct UpdateWebhookRequest;
 struct UserResponse;
 struct WebauthnAttestationPolicy;
+struct WebauthnPolicy;
 struct WebhookResponse;
 
 /// The `AddMemberRequest` schema from the server's OpenAPI document.
@@ -2533,6 +2534,19 @@ struct TokenPolicy {
     std::int64_t refresh_token_lifetime_secs;
 };
 
+/// WebAuthn ceremony policy. One field today. It is a struct rather than a bare field on
+/// [`SecuritySettings`] so that the next WebAuthn control has an obvious home, and so the admin
+/// UI can group them. The *attestation* policy is deliberately not here: it lives in
+/// [`crate::models::webauthn_policy::WebauthnAttestationPolicy`], is tenant-only, and cannot
+/// join this model because AAGUID allow/block lists have no "more restrictive than" ordering to
+/// validate an override against. User verification does, so it can.
+struct WebauthnPolicy {
+    /// How hard the authenticator must prove *who* is present. Applies to enrolment and to
+    /// second-factor authentication. Usernameless sign-in is held to `required` whatever this
+    /// says — see [`WebauthnUserVerification`].
+    std::string webauthn_user_verification;
+};
+
 /// Fully resolved security settings (all fields present).
 struct SecuritySettings {
     /// The server's `certificate` field.
@@ -2563,6 +2577,8 @@ struct SecuritySettings {
     TokenPolicy token;
     /// The server's `updated_at` field.
     std::string updated_at;
+    /// The server's `webauthn` field.
+    WebauthnPolicy webauthn;
 };
 
 /// Response for service account creation — includes the one-time plaintext secret.
@@ -2657,6 +2673,8 @@ struct SetOrgSettings {
     bool require_symbols;
     /// The server's `require_uppercase` field.
     bool require_uppercase;
+    /// The server's `webauthn_user_verification` field. Optional.
+    std::optional<std::string> webauthn_user_verification = std::nullopt;
 };
 
 /// Request body for signing an audit batch.
@@ -2790,6 +2808,8 @@ struct TenantSettingsOverride {
     std::optional<bool> require_symbols = std::nullopt;
     /// The server's `require_uppercase` field. Optional.
     std::optional<bool> require_uppercase = std::nullopt;
+    /// The server's `webauthn_user_verification` field. Optional.
+    std::optional<std::string> webauthn_user_verification = std::nullopt;
 };
 
 /// The `UpdateFederationConfigRequest` schema from the server's OpenAPI document.

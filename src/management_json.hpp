@@ -242,6 +242,8 @@ void to_json(nlohmann::json& j, const Scope& value);
 void from_json(const nlohmann::json& j, Scope& value);
 void to_json(nlohmann::json& j, const TokenPolicy& value);
 void from_json(const nlohmann::json& j, TokenPolicy& value);
+void to_json(nlohmann::json& j, const WebauthnPolicy& value);
+void from_json(const nlohmann::json& j, WebauthnPolicy& value);
 void to_json(nlohmann::json& j, const SecuritySettings& value);
 void from_json(const nlohmann::json& j, SecuritySettings& value);
 void to_json(nlohmann::json& j, const ServiceAccountCreatedResponse& value);
