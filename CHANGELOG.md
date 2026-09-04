@@ -6,7 +6,11 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+## [1.0.0-beta11] - 2026-09-04
+
 ### Fixed
+
+- Regenerate the §27 surface for the WebAuthn policy fields
 
 - Regenerated the §27 management surface from the vendored
   `management-registry.json` / `openapi.json`. The v1.0.0-beta09 re-vendor
