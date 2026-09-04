@@ -1,0 +1,27 @@
+var searchData=
+[
+  ['action_0',['action',['../classaxiam_1_1AuthzError.html#ae57eaeb2a7574768200e3e38fc4a2caf',1,'axiam::AuthzError']]],
+  ['actor_5ftype_5ffrom_5fwire_1',['actor_type_from_wire',['../namespaceaxiam_1_1management.html#ae34a22765e93aba6015f0032ada43f1a',1,'axiam::management']]],
+  ['add_5fmember_2',['add_member',['../classaxiam_1_1management_1_1GroupsApi.html#a4aa100da5c2aae75518a4f32ee831bf4',1,'axiam::management::GroupsApi']]],
+  ['add_5fservice_5faccount_3',['add_service_account',['../classaxiam_1_1management_1_1GroupsApi.html#a6320f8bc83dae5b280d137a7fb9f2fa4',1,'axiam::management::GroupsApi']]],
+  ['allow_4',['allow',['../classaxiam_1_1ReactorDecision.html#a76dfc644116ebd1989c2d9ff625d9779',1,'axiam::ReactorDecision']]],
+  ['allow_5fwith_5fstep_5fup_5',['allow_with_step_up',['../classaxiam_1_1ReactorDecision.html#a1d6015d8c66a4218edbcf0f6925eef4f',1,'axiam::ReactorDecision']]],
+  ['amqps_5fendpoint_6',['amqps_endpoint',['../namespaceaxiam.html#acdde77cc4822f065ec5983db502cba12',1,'axiam']]],
+  ['apply_7',['apply',['../classaxiam_1_1management_1_1ManifestApi.html#a24a06985a75ecbf13d22d0d8ece8bd60',1,'axiam::management::ManifestApi']]],
+  ['assign_5fto_5fgroup_8',['assign_to_group',['../classaxiam_1_1management_1_1RolesApi.html#a4a8fd79e92ad780b96c9c92526984511',1,'axiam::management::RolesApi']]],
+  ['assign_5fto_5fservice_5faccount_9',['assign_to_service_account',['../classaxiam_1_1management_1_1RolesApi.html#a2be61155734b8ccd8742c09d3d737815',1,'axiam::management::RolesApi']]],
+  ['assign_5fto_5fuser_10',['assign_to_user',['../classaxiam_1_1management_1_1RolesApi.html#aa6c200ae7642c37be112d3d2f405d9af',1,'axiam::management::RolesApi']]],
+  ['attestation_5fmode_5ffrom_5fwire_11',['attestation_mode_from_wire',['../namespaceaxiam_1_1management.html#a15f5e0d585706061b2ba81c8e0d59dad',1,'axiam::management']]],
+  ['audit_12',['audit',['../classaxiam_1_1Client.html#a7ee0d8bc2ff1dcc1fefad2ed5113b28e',1,'axiam::Client::audit()'],['../classaxiam_1_1management_1_1ManagementApi.html#a2c47c648378eccc4f19c168014a79e84',1,'axiam::management::ManagementApi::audit()']]],
+  ['audit_5foutcome_5ffrom_5fwire_13',['audit_outcome_from_wire',['../namespaceaxiam_1_1management.html#af50e147673594285f5b98f2ac55d9256',1,'axiam::management']]],
+  ['auditapi_14',['AuditApi',['../classaxiam_1_1management_1_1AuditApi.html#a0601451d5d3eb160a9e184155411eddb',1,'axiam::management::AuditApi']]],
+  ['authenticate_15',['authenticate',['../classaxiam_1_1TokenAuthenticator.html#a9746e97b68cd16421e5ed0319ced8b2f',1,'axiam::TokenAuthenticator']]],
+  ['authenticate_5fdevice_16',['authenticate_device',['../classaxiam_1_1Client.html#a99ae4f5b8b40da1100d5fc86e59ba8b7',1,'axiam::Client']]],
+  ['authenticate_5fsender_5fconstrained_17',['authenticate_sender_constrained',['../classaxiam_1_1TokenAuthenticator.html#ae9b202148e6014ec0e383e7ea1896ecc',1,'axiam::TokenAuthenticator']]],
+  ['autherror_18',['AuthError',['../classaxiam_1_1AuthError.html#a1ccff59025ef69cbfd76244d8891e75f',1,'axiam::AuthError']]],
+  ['authzchallengeerror_19',['AuthzChallengeError',['../classaxiam_1_1AuthzChallengeError.html#aaf29de082588a35f5415105291ab9893',1,'axiam::AuthzChallengeError']]],
+  ['authzerror_20',['authzerror',['../classaxiam_1_1AuthzError.html#ab58fd7de0e18e3aa952f5ca18c5149e2',1,'axiam::AuthzError::AuthzError(const std::string &amp;message, std::optional&lt; std::string &gt; action, std::optional&lt; std::string &gt; resource_id)'],['../classaxiam_1_1AuthzError.html#a6ab0aba8370bffc3c109d3054e6ba2cf',1,'axiam::AuthzError::AuthzError(const std::string &amp;message)']]],
+  ['available_21',['available',['../classaxiam_1_1opaque_1_1Native.html#a4981932f1f19fc9ed383d9d815afc34f',1,'axiam::opaque::Native::available()'],['../namespaceaxiam_1_1opaque.html#a45141232a50706f77ec319ecc3cdfc42',1,'axiam::opaque::available()']]],
+  ['axiamerror_22',['AxiamError',['../classaxiam_1_1AxiamError.html#a7f5b01cc022bb52f2c6ed3d39c9498f1',1,'axiam::AxiamError']]],
+  ['axiamguard_23',['AxiamGuard',['../classaxiam_1_1AxiamGuard.html#a4a1e42ee04c8e5e789aa9f33e3287cef',1,'axiam::AxiamGuard']]]
+];
