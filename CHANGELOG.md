@@ -6,6 +6,12 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+## [1.0.0-beta12] - 2026-09-06
+
+### Changed
+
+- Make the §27 drift-check gate the release
+
 ## [1.0.0-beta11] - 2026-09-04
 
 ### Fixed
