@@ -81,6 +81,15 @@ struct Client::Impl {
     detail::RefreshGuard refresh_guard;
     std::atomic<int> refresh_count{0};
 
+    /// Whether this client was built with a §6.1 mTLS identity
+    /// (`with_client_cert`), and so whether CONTRACT.md §21.3 rule 2 applies to
+    /// the calls it makes.
+    ///
+    /// The identity is configured once and presented on every request, so "is
+    /// this call going over mutual TLS" has a whole-client answer here rather
+    /// than a per-call one. Set at construction and never written again.
+    bool presents_client_certificate = false;
+
     std::unique_ptr<JwksVerifier> jwks_verifier;
 
     // §16. The seams are internal on purpose: §16.1 forbids raising the table,

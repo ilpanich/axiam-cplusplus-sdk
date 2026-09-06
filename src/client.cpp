@@ -273,6 +273,10 @@ Client Client::Builder::build() {
         tls.max_concurrent_requests = max_concurrent_requests_;
         impl->transport = CurlTransport::make_transport(std::move(tls));
     }
+    // §6.1 is all-or-nothing: with_client_cert refuses a half-configured pair,
+    // so either half implies both. Recorded independently of the transport so a
+    // test that injects a fake transport still exercises §21.3 rule 2.
+    impl->presents_client_certificate = !client_cert_pem_.empty();
 
     impl->jwks_verifier = std::make_unique<JwksVerifier>(impl->transport, impl->base_url);
 
