@@ -79,6 +79,72 @@ private:
 /// §12.1 note 2: tenant_id is a QUERY parameter and never a body field —
 /// TokenRequest, IntrospectRequest and RevokeRequest have no such property. Any
 /// query the discovered endpoint already carries is preserved.
+/// The endpoint a call should use, preferring its RFC 8705 §5 alias when this
+/// client presents a §6.1 certificate (CONTRACT.md §21.3 rule 2).
+///
+/// Three things this deliberately does NOT do, each of them a documented way to
+/// get rule 2 wrong:
+///
+///  - An absent `mtls_endpoint_aliases` is never an error. It means "no separate
+///    mTLS host", not "mTLS unsupported" — a deployment running
+///    `client_auth = optional` on one listener serves both populations at the
+///    conventional endpoints and correctly publishes nothing.
+///  - `pick` can only reach MtlsEndpointAliases, so `authorization_endpoint`,
+///    `end_session_endpoint` and `jwks_uri` are unreachable rather than merely
+///    unused: they are front-channel or public, and an mTLS host would raise a
+///    certificate-chooser dialog in the user's browser.
+///  - `issuer` is untouched. It is an identifier, not an endpoint, and §12.4
+///    rule 3 still compares a token's `iss` against `config.issuer` by exact
+///    string — including for a token minted at an alias endpoint.
+///
+/// A disengaged result for a conditionally-advertised endpoint still means "this
+/// server does not support the feature" — the caller raises that, and never
+/// concatenates a URL onto the issuer.
+std::optional<std::string> preferred_endpoint(
+    const Client::Impl& impl, const OidcConfiguration& config,
+    const std::optional<std::string>& (*pick)(const MtlsEndpointAliases&),
+    const std::optional<std::string>& top_level) {
+    if (impl.presents_client_certificate && config.mtls_endpoint_aliases) {
+        const std::optional<std::string>& alias = pick(*config.mtls_endpoint_aliases);
+        if (alias && !alias->empty()) return alias;
+    }
+    return top_level;
+}
+
+/// preferred_endpoint() for an always-advertised endpoint.
+std::string preferred_endpoint(const Client::Impl& impl, const OidcConfiguration& config,
+                               const std::optional<std::string>& (*pick)(
+                                   const MtlsEndpointAliases&),
+                               const std::string& top_level) {
+    if (impl.presents_client_certificate && config.mtls_endpoint_aliases) {
+        const std::optional<std::string>& alias = pick(*config.mtls_endpoint_aliases);
+        if (alias && !alias->empty()) return *alias;
+    }
+    return top_level;
+}
+
+/// The six aliasable endpoints, as selectors. Naming them as a closed set is
+/// what keeps `authorization_endpoint`, `end_session_endpoint` and `jwks_uri`
+/// unreachable through preferred_endpoint() rather than merely unused.
+namespace alias_of {
+const std::optional<std::string>& token(const MtlsEndpointAliases& a) { return a.token_endpoint; }
+const std::optional<std::string>& userinfo(const MtlsEndpointAliases& a) {
+    return a.userinfo_endpoint;
+}
+const std::optional<std::string>& revocation(const MtlsEndpointAliases& a) {
+    return a.revocation_endpoint;
+}
+const std::optional<std::string>& introspection(const MtlsEndpointAliases& a) {
+    return a.introspection_endpoint;
+}
+const std::optional<std::string>& device_authorization(const MtlsEndpointAliases& a) {
+    return a.device_authorization_endpoint;
+}
+const std::optional<std::string>& pushed_authorization_request(const MtlsEndpointAliases& a) {
+    return a.pushed_authorization_request_endpoint;
+}
+}  // namespace alias_of
+
 std::string with_tenant(const std::string& endpoint, const std::string& tenant) {
     std::string url = endpoint;
     url += (url.find('?') == std::string::npos) ? '?' : '&';
@@ -405,6 +471,22 @@ OidcConfiguration Client::oidc_discover() {
     cfg.device_authorization_endpoint = opt_string(j, "device_authorization_endpoint");
     cfg.pushed_authorization_request_endpoint =
         opt_string(j, "pushed_authorization_request_endpoint");
+    // §21.3 rule 2 / RFC 8705 §5 (contract 1.40): absent means "no separate mTLS
+    // host", never "mTLS unsupported", and each member is read independently so
+    // a partial object — which RFC 8705 §5 permits — aliases what it names and
+    // leaves the rest falling back, rather than failing the whole document.
+    if (j.contains("mtls_endpoint_aliases") && j["mtls_endpoint_aliases"].is_object()) {
+        const json& a = j["mtls_endpoint_aliases"];
+        MtlsEndpointAliases aliases;
+        aliases.token_endpoint = opt_string(a, "token_endpoint");
+        aliases.userinfo_endpoint = opt_string(a, "userinfo_endpoint");
+        aliases.revocation_endpoint = opt_string(a, "revocation_endpoint");
+        aliases.introspection_endpoint = opt_string(a, "introspection_endpoint");
+        aliases.device_authorization_endpoint = opt_string(a, "device_authorization_endpoint");
+        aliases.pushed_authorization_request_endpoint =
+            opt_string(a, "pushed_authorization_request_endpoint");
+        cfg.mtls_endpoint_aliases = std::move(aliases);
+    }
     cfg.scopes_supported = string_array(j, "scopes_supported");
     cfg.response_types_supported = string_array(j, "response_types_supported");
     cfg.id_token_signing_alg_values_supported =
@@ -605,7 +687,8 @@ namespace {
 std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
                         const std::string& tenant, const Form& form, bool retryable,
                         const std::string& context) {
-    const std::string url = with_tenant(config.token_endpoint, tenant);
+    const std::string url = with_tenant(
+        preferred_endpoint(impl, config, alias_of::token, config.token_endpoint), tenant);
 
     HttpRequest req;
     req.method = "POST";
@@ -913,7 +996,10 @@ IntrospectionResult Client::introspect(const Sensitive<std::string>& token,
     // §16.2 lists introspection as eligible — it is a read ABOUT a token and
     // mints nothing.
     const std::string body =
-        token_admin_call(*p_, config, config.introspection_endpoint, "/oauth2/introspect", token,
+        token_admin_call(*p_, config,
+                         preferred_endpoint(*p_, config, alias_of::introspection,
+                                            config.introspection_endpoint),
+                         "/oauth2/introspect", token,
                          token_type_hint, tenant, "introspect", /*retryable=*/true);
 
     const json j = parse_or_object(body);
@@ -949,7 +1035,10 @@ void Client::revoke(const Sensitive<std::string>& token,
     // A 5xx is still a failure: returning void does not turn a server error into
     // a success (the correction contract 1.5 made to 1.4), and token_admin_call
     // throws on one.
-    (void)token_admin_call(*p_, config, config.revocation_endpoint, "/oauth2/revoke", token,
+    (void)token_admin_call(*p_, config,
+                           preferred_endpoint(*p_, config, alias_of::revocation,
+                                              config.revocation_endpoint),
+                           "/oauth2/revoke", token,
                            token_type_hint, tenant, "revoke", /*retryable=*/false);
 }
 
@@ -1257,7 +1346,12 @@ DeviceAuthorization Client::device_authorize(std::optional<std::string> scope,
     const std::string& client_id = require_client_id(*p_, "device_authorize");
     const std::string tenant = require_tenant_uuid(*p_, tenant_id, "device_authorize");
     const OidcConfiguration config = oidc_discover();
-    if (!config.device_authorization_endpoint) {
+    // §21.3 rule 2: prefer the mTLS alias when this call presents a client
+    // certificate. Disengaged at BOTH levels still means "unsupported" — never a
+    // cue to build the URL by concatenation (§14.1).
+    const std::optional<std::string> device_endpoint = preferred_endpoint(
+        *p_, config, alias_of::device_authorization, config.device_authorization_endpoint);
+    if (!device_endpoint) {
         throw NetworkError("the discovery document advertises no device_authorization_endpoint",
                            "missing_endpoint");
     }
@@ -1273,7 +1367,7 @@ DeviceAuthorization Client::device_authorize(std::optional<std::string> scope,
 
     HttpRequest req;
     req.method = "POST";
-    req.url = with_tenant(*config.device_authorization_endpoint, tenant);
+    req.url = with_tenant(*device_endpoint, tenant);
     req.headers["X-Tenant-ID"] = p_->tenant_header;
     req.headers["Accept"] = "application/json";
     req.headers["Content-Type"] = "application/x-www-form-urlencoded";
@@ -1558,8 +1652,12 @@ PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
                                             std::optional<std::string> tenant_id) {
     p_->ensure_open();
     if (redirect_uri.empty()) throw AuthError("oidc_par needs a redirect_uri");
-    if (!config.pushed_authorization_request_endpoint ||
-        config.pushed_authorization_request_endpoint->empty()) {
+    // §21.3 rule 2: prefer the mTLS alias when this call presents a client
+    // certificate. Disengaged at BOTH levels still means "unsupported".
+    const std::optional<std::string> par_endpoint =
+        preferred_endpoint(*p_, config, alias_of::pushed_authorization_request,
+                           config.pushed_authorization_request_endpoint);
+    if (!par_endpoint || par_endpoint->empty()) {
         // §12.7.2 rule 1's discipline: never synthesise the URL from the issuer.
         // Client-side, with no wire call — a server that does not advertise the
         // endpoint does not have it, and guessing `/oauth2/par` produces a 404
@@ -1595,7 +1693,7 @@ PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
 
     HttpRequest req;
     req.method = "POST";
-    req.url = with_tenant(*config.pushed_authorization_request_endpoint, tenant);
+    req.url = with_tenant(*par_endpoint, tenant);
     req.headers["X-Tenant-ID"] = p_->tenant_header;  // §5 rule 2, unconditional
     req.headers["Accept"] = "application/json";
     req.headers["Content-Type"] = "application/x-www-form-urlencoded";
