@@ -1891,6 +1891,32 @@ void PrivacyApi::cancel_delete(const std::string& token) {
                                             values, query, payload);
 }
 
+std::vector<ConsentView> PrivacyApi::list_consents() {
+    const std::vector<PathValue> values{};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("privacy.list_consents", "GET", "/api/v1/account/consents",
+                                            values, query, payload);
+
+    return Transport::decode<std::vector<ConsentView>>(response, "privacy.list_consents");
+}
+
+void PrivacyApi::grant_scope_consent(const GrantScopeConsent& body) {
+    const std::vector<PathValue> values{};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    transport_->send("privacy.grant_scope_consent", "POST", "/api/v1/account/consents/oidc-scopes",
+                                            values, query, payload);
+}
+
+void PrivacyApi::withdraw_scope_consent(const std::string& client_id) {
+    const std::vector<PathValue> values{{"client_id", client_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    transport_->send("privacy.withdraw_scope_consent", "DELETE", "/api/v1/account/consents/oidc-scopes/{client_id}",
+                                            values, query, payload);
+}
+
 PlatformApi::PlatformApi(std::shared_ptr<Transport> transport, CallScope scope)
     : transport_(std::move(transport)), scope_(std::move(scope)) {}
 
@@ -2054,7 +2080,7 @@ PlatformApi ManagementApi::platform() const {
 namespace axiam {
 
 // The one place the §27 surface is attached to a Client. Defined here rather than in client.cpp
-// so that translation unit keeps knowing nothing about the 147 generated operations.
+// so that translation unit keeps knowing nothing about the 158 generated operations.
 management::ManagementApi Client::management() {
     p_->ensure_open();
     management::CallScope scope;

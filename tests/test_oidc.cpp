@@ -49,6 +49,10 @@ const char* kDiscovery = R"({
 })";
 
 struct Replies {
+    /// The discovery document this server publishes. Overridable per test:
+    /// contract 1.42 made what the document says about its own endpoint URLs
+    /// load-bearing, so "what the server published" has to be a variable.
+    std::string discovery = kDiscovery;
     // One scripted answer per /oauth2/token call, consumed in order; the last
     // repeats, so a "forever pending" server needs one entry.
     std::vector<std::pair<long, std::string>> token_script;
@@ -84,7 +88,7 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
         };
         if (url.find("openid-configuration") != std::string::npos) {
             ++r->discovery_calls;
-            return reply(200, kDiscovery);
+            return reply(200, r->discovery);
         }
         if (url.find("/oauth2/jwks") != std::string::npos) {
             ++r->jwks_calls;
@@ -201,6 +205,94 @@ AXIAM_TEST("§12.1 discovery reads every endpoint from the document") {
     AXIAM_REQUIRE(cfg.jwks_uri == "https://iam.example.com/oauth2/jwks");
     AXIAM_REQUIRE(cfg.end_session_endpoint.has_value());
     AXIAM_REQUIRE(cfg.device_authorization_endpoint.has_value());
+}
+
+AXIAM_TEST("contract 1.42 discovery reads the two new RFC 8414 metadata members") {
+    Fixture f;
+    f.replies->discovery = R"({
+      "issuer":"https://issuer.test",
+      "authorization_endpoint":"https://iam.example.com/oauth2/authorize",
+      "token_endpoint":"https://iam.example.com/oauth2/token",
+      "jwks_uri":"https://iam.example.com/oauth2/jwks",
+      "code_challenge_methods_supported":["S256"],
+      "token_endpoint_auth_signing_alg_values_supported":["PS256","ES256","EdDSA"]
+    })";
+    auto client = make_client(f);
+    const auto cfg = client.oidc_discover();
+
+    AXIAM_REQUIRE(cfg.code_challenge_methods_supported.size() == 1);
+    AXIAM_REQUIRE(cfg.code_challenge_methods_supported[0] == "S256");
+    AXIAM_REQUIRE(cfg.token_endpoint_auth_signing_alg_values_supported.size() == 3);
+    AXIAM_REQUIRE(cfg.token_endpoint_auth_signing_alg_values_supported[0] == "PS256");
+}
+
+AXIAM_TEST("contract 1.42 an absent code_challenge_methods_supported parses, and is not S256") {
+    // `openapi.json` marks both members required as of 1.42. This model keeps
+    // them absent-able anyway, for the reason §21.5 gives: RFC 8414 defines no
+    // DEFAULT for `code_challenge_methods_supported`, so absence does not mean
+    // `["S256"]` — and this struct must still parse a non-AXIAM OP's document,
+    // which is exactly what kDiscovery is here. A "required" reading would
+    // reject documents this SDK accepts today, which is a bigger break than the
+    // one it would be fixing.
+    Fixture f;
+    auto client = make_client(f);
+    const auto cfg = client.oidc_discover();
+
+    AXIAM_REQUIRE(cfg.code_challenge_methods_supported.empty());
+    AXIAM_REQUIRE(cfg.token_endpoint_auth_signing_alg_values_supported.empty());
+    // Absence changed nothing else about the document.
+    AXIAM_REQUIRE(cfg.issuer == kIssuer);
+    AXIAM_REQUIRE(cfg.token_endpoint == "https://iam.example.com/oauth2/token");
+}
+
+AXIAM_TEST("contract 1.42 a tenant_id already on the advertised endpoint is replaced, not doubled") {
+    // Upstream `tenant_scoped()` (crates/axiam-oauth2/src/oidc.rs) began
+    // publishing `?tenant_id=<uuid>` INSIDE the advertised token / revocation /
+    // introspection / device-authorization / PAR URLs whenever the discovery
+    // request named a tenant. This SDK used to append its own unconditionally,
+    // which against such a document puts `tenant_id` on the wire TWICE — and
+    // which of the two a server reads is not something a client may leave to a
+    // query parser.
+    Fixture f;
+    f.replies->discovery = R"({
+      "issuer":"https://issuer.test",
+      "authorization_endpoint":"https://iam.example.com/oauth2/authorize",
+      "token_endpoint":"https://iam.example.com/oauth2/token?tenant_id=99999999-9999-9999-9999-999999999999&audience=api",
+      "jwks_uri":"https://iam.example.com/oauth2/jwks"
+    })";
+    f.replies->token_script = {
+        {200, R"({"access_token":"at","token_type":"Bearer","expires_in":900})"}};
+    auto client = make_client(f);
+    client.login_client_credentials();
+
+    const std::string url = last_url(*f.st, "/oauth2/token");
+    // Exactly one, and it is the RESOLVED tenant: that is the one the caller
+    // authenticated against, and a deterministic winner beats a silent one.
+    std::size_t occurrences = 0;
+    for (std::size_t at = url.find("tenant_id="); at != std::string::npos;
+         at = url.find("tenant_id=", at + 1)) {
+        ++occurrences;
+    }
+    AXIAM_REQUIRE(occurrences == 1);
+    AXIAM_REQUIRE(url.find(std::string("tenant_id=") + kTenantUuid) != std::string::npos);
+    AXIAM_REQUIRE(url.find("99999999") == std::string::npos);
+    // RFC 6749 §3.1/§3.2: the endpoint's OWN query component survives. An SDK
+    // that rebuilt the URL from its path would drop the routing a deployment
+    // put there.
+    AXIAM_REQUIRE(url.find("audience=api") != std::string::npos);
+}
+
+AXIAM_TEST("contract 1.42 an endpoint with no query still gets exactly one tenant_id") {
+    // The other half of the same function: the pre-1.42 shape must not regress.
+    Fixture f;
+    f.replies->token_script = {
+        {200, R"({"access_token":"at","token_type":"Bearer","expires_in":900})"}};
+    auto client = make_client(f);
+    client.login_client_credentials();
+
+    const std::string url = last_url(*f.st, "/oauth2/token");
+    AXIAM_REQUIRE(url == std::string("https://iam.example.com/oauth2/token?tenant_id=") +
+                             kTenantUuid);
 }
 
 AXIAM_TEST("§12.3 rule 6 discovery is cached so a second call makes no request") {
@@ -472,6 +564,67 @@ AXIAM_TEST("§12.4 a valid ID token yields claims and preserves unknown ones") {
     // The whole set survives together — the other half of rule 7.
     AXIAM_REQUIRE(axiam::detail::reveal(set.access_token) == "the-access-token");
     AXIAM_REQUIRE(set.refresh_token.has_value());
+}
+
+AXIAM_TEST("contract 1.42 an ID token carrying no tenant_id/org_id/email still validates") {
+    // BREAKING, and verified upstream in crates/axiam-auth/src/token.rs
+    // @ cdedf33: `IdTokenClaims::tenant_id`, `org_id` and `email` are now
+    // Option and hard-wired to None. OIDC Core §5.4 puts scope-requested claims
+    // at UserInfo, and an ID token is routinely forwarded as proof of an
+    // authentication event, so anything in it travels further than the relying
+    // party that asked for it.
+    //
+    // What this SDK owes its consumers is that the absence is visible as
+    // ABSENCE. `std::nullopt`, never an engaged empty string: a caller writing
+    // `if (claims->tenant_id)` must see false and go read the access-token
+    // claims, not get "" and route a request to a tenant named nothing.
+    Fixture f;
+    axtest::TestKey key;
+    f.replies->jwks_body = key.jwks_json();
+    // Exactly what AXIAM mints now — every other claim intact, those three gone.
+    const std::string payload = good_claims(R"(,"preferred_username":"ada","roles":["admin"])");
+    f.replies->token_script = {{200, token_body_with_id(key.make_jwt("EdDSA", payload))}};
+
+    auto client = make_client(f);
+    const auto set = client.oidc_exchange(exchange_params());
+
+    AXIAM_REQUIRE(set.id_claims.has_value());
+    // The validation itself is unaffected: none of the three was ever a §12.4
+    // rule, so their absence is not a rejection.
+    AXIAM_REQUIRE_FALSE(set.id_claims->tenant_id.has_value());
+    AXIAM_REQUIRE_FALSE(set.id_claims->email.has_value());
+    // The rest of the claim set is intact.
+    AXIAM_REQUIRE(set.id_claims->subject == "user-1");
+    AXIAM_REQUIRE(set.id_claims->issuer == kIssuer);
+    AXIAM_REQUIRE(set.id_claims->audience.size() == 1);
+    AXIAM_REQUIRE(set.id_claims->nonce.value_or("") == "the-nonce");
+    AXIAM_REQUIRE(set.id_claims->preferred_username.value_or("") == "ada");
+    AXIAM_REQUIRE(set.id_claims->roles.size() == 1);
+    AXIAM_REQUIRE(axiam::detail::reveal(set.access_token) == "the-access-token");
+}
+
+AXIAM_TEST("contract 1.42 an ID token from an OP that still sends them is parsed unchanged") {
+    // The fields survive the change on purpose. AXIAM is not the only OP this
+    // SDK is pointed at, and deleting them would have been a source break laid
+    // on top of a behavioural one. `org_id` is absent from this struct, was
+    // before 1.42, and stays there — §12.1's open claim set keeps it reachable
+    // through raw_claims_json.
+    Fixture f;
+    axtest::TestKey key;
+    f.replies->jwks_body = key.jwks_json();
+    const std::string payload = good_claims(
+        R"(,"email":"ada@other-op.test","tenant_id":"11111111-1111-1111-1111-111111111111")"
+        R"(,"org_id":"33333333-3333-3333-3333-333333333333")");
+    f.replies->token_script = {{200, token_body_with_id(key.make_jwt("EdDSA", payload))}};
+
+    auto client = make_client(f);
+    const auto set = client.oidc_exchange(exchange_params());
+
+    AXIAM_REQUIRE(set.id_claims.has_value());
+    AXIAM_REQUIRE(set.id_claims->email.value_or("") == "ada@other-op.test");
+    AXIAM_REQUIRE(set.id_claims->tenant_id.value_or("") ==
+                  "11111111-1111-1111-1111-111111111111");
+    AXIAM_REQUIRE(set.id_claims->raw_claims_json.find("33333333") != std::string::npos);
 }
 
 AXIAM_TEST("§12.4 rule 1 alg:none is rejected before any key is consulted") {

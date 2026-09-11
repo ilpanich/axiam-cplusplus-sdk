@@ -17,6 +17,7 @@
 //    `scope` "for compatibility" has restored the attack.
 
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -58,6 +59,18 @@ const char* kDiscoveryWithQuery = R"({
   "token_endpoint":"https://iam.example.com/oauth2/token",
   "jwks_uri":"https://iam.example.com/oauth2/jwks",
   "pushed_authorization_request_endpoint":"https://iam.example.com/oauth2/par"
+})";
+
+/// Contract 1.42: upstream `tenant_scoped()` publishes the tenant INSIDE the
+/// advertised endpoint URLs when the discovery request named one. Both the PAR
+/// endpoint and the authorization endpoint carry it here, which is what a real
+/// tenant-scoped document looks like.
+const char* kDiscoveryTenantScoped = R"({
+  "issuer":"https://issuer.test",
+  "authorization_endpoint":"https://iam.example.com/oauth2/authorize?tenant_id=99999999-9999-9999-9999-999999999999&ui_locales=en",
+  "token_endpoint":"https://iam.example.com/oauth2/token?tenant_id=99999999-9999-9999-9999-999999999999",
+  "jwks_uri":"https://iam.example.com/oauth2/jwks",
+  "pushed_authorization_request_endpoint":"https://iam.example.com/oauth2/par?tenant_id=99999999-9999-9999-9999-999999999999"
 })";
 
 struct Replies {
@@ -334,7 +347,7 @@ AXIAM_TEST("par: a public client pushes without a secret") {
 // §26.2 rule 2 — the redirect carries exactly two parameters
 // ---------------------------------------------------------------------------
 
-AXIAM_TEST("par: the redirect URL carries exactly client_id and request_uri") {
+AXIAM_TEST("par: the redirect URL carries no inline authorization parameter") {
     // THE SECURITY ASSERTION OF §26. The server refuses a request that mixes a
     // request_uri with inline authorization parameters rather than merging them:
     // merging is where parameter confusion lives — an attacker supplies the
@@ -354,9 +367,15 @@ AXIAM_TEST("par: the redirect URL carries exactly client_id and request_uri") {
     for (std::size_t i = q; i < pushed.url.size(); ++i) {
         if (pushed.url[i] == '&') ++amps;
     }
-    AXIAM_REQUIRE(amps == 1);  // exactly two parameters
+    // Re-pointed at contract 1.42, not relaxed: the count is three because
+    // `/oauth2/authorize` now takes a `tenant_id` for a request with no
+    // authenticated principal, which a PAR redirect always is. The property
+    // this test guards — that no INLINE AUTHORIZATION parameter rides along
+    // with the request_uri — is asserted by name below and is unchanged.
+    AXIAM_REQUIRE(amps == 2);  // client_id, request_uri, tenant_id
     AXIAM_REQUIRE(contains(pushed.url, std::string("client_id=") + kClientId));
     AXIAM_REQUIRE(contains(pushed.url, "request_uri="));
+    AXIAM_REQUIRE(contains(pushed.url, std::string("tenant_id=") + kTenantUuid));
 
     // None of the pushed parameters is re-added "for compatibility".
     AXIAM_REQUIRE_FALSE(contains(pushed.url, "scope="));
@@ -398,6 +417,164 @@ AXIAM_TEST("par: the request_uri is percent-encoded in the redirect") {
 
     AXIAM_REQUIRE(contains(pushed.url, "request_uri=urn%3Aietf%3A"));
     AXIAM_REQUIRE_FALSE(contains(pushed.url, "request_uri=urn:"));
+}
+
+AXIAM_TEST("par: the push does not double a tenant_id the document already published") {
+    // Contract 1.42. The PAR endpoint now arrives from discovery already
+    // carrying `?tenant_id=<uuid>`; appending the resolved one on top puts the
+    // parameter on the wire twice, and which copy a server reads is not
+    // something a client may leave to a query parser.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    r->discovery = kDiscoveryTenantScoped;
+    auto client = make_client(st, r);
+
+    const auto doc = client.oidc_discover();
+    const auto request = client.oidc_begin(doc, kRedirectUri, "openid");
+    client.oidc_par(doc, request, kRedirectUri, "openid");
+
+    const std::string url = last_par_url(*st);
+    std::size_t occurrences = 0;
+    for (std::size_t at = url.find("tenant_id="); at != std::string::npos;
+         at = url.find("tenant_id=", at + 1)) {
+        ++occurrences;
+    }
+    AXIAM_REQUIRE(occurrences == 1);
+    AXIAM_REQUIRE(contains(url, std::string("tenant_id=") + kTenantUuid));
+    AXIAM_REQUIRE_FALSE(contains(url, "99999999"));
+}
+
+AXIAM_TEST("par: the redirect carries the RESOLVED tenant_id, and nothing else") {
+    // §26.2 rule 2 drops the authorization endpoint's query so an inline
+    // authorization parameter cannot be smuggled alongside the pushed copy.
+    // `tenant_id` is the one exception, and only since contract 1.42 made
+    // discovery publish it there: it is ROUTING, not an RFC 6749 §4.1.1
+    // authorization parameter, so the pushed request has no counterpart for it
+    // to be confused with. Dropping it sends a browser that has no session —
+    // and therefore no tenant of its own — to an unrouted endpoint, turning a
+    // correctly pushed request into a 401.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    r->discovery = kDiscoveryTenantScoped;
+    auto client = make_client(st, r);
+
+    const auto doc = client.oidc_discover();
+    const auto request = client.oidc_begin(doc, kRedirectUri, "openid");
+    const auto pushed = client.oidc_par(doc, request, kRedirectUri, "openid");
+
+    AXIAM_REQUIRE(contains(pushed.url, "/oauth2/authorize?client_id="));
+    AXIAM_REQUIRE(contains(pushed.url, "request_uri="));
+    // The RESOLVED tenant, not the one the document happened to carry. This
+    // document advertises 99999999-… while the client pushed under
+    // kTenantUuid, and only the latter minted the `request_uri` this redirect
+    // presents — a handle is valid for exactly one tenant, so the two must not
+    // be allowed to differ. Re-pointed from an earlier assertion that took the
+    // document's value verbatim: that was right for a scoped document and
+    // silently wrong for a bare one, which the next test covers.
+    AXIAM_REQUIRE(contains(pushed.url, std::string("tenant_id=") + kTenantUuid));
+    AXIAM_REQUIRE_FALSE(contains(pushed.url, "99999999-9999-9999-9999-999999999999"));
+    // Still exactly three parameters, and `ui_locales` — which IS an
+    // authorization parameter — is still dropped.
+    AXIAM_REQUIRE_FALSE(contains(pushed.url, "ui_locales"));
+    std::size_t amps = 0;
+    for (std::size_t i = pushed.url.find('?'); i < pushed.url.size(); ++i) {
+        if (pushed.url[i] == '&') ++amps;
+    }
+    AXIAM_REQUIRE(amps == 2);
+}
+
+AXIAM_TEST("par: a bare authorization_endpoint still gets the resolved tenant_id") {
+    // The case a carry-over-only fix misses, and the common one.
+    // `oidc_discover` fetches /.well-known/openid-configuration with no tenant
+    // of its own, so a multi-tenant deployment that sets no
+    // `oauth2_default_tenant_id` serves a document whose endpoints name no
+    // tenant at all. Copying only what the document published would fix the
+    // scoped deployment above and leave this one redirecting a session-less
+    // browser at an unrouted endpoint — the same 401 the whole change exists
+    // to remove.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);
+
+    const auto doc = client.oidc_discover();
+    const auto request = client.oidc_begin(doc, kRedirectUri, "openid");
+    const auto pushed = client.oidc_par(doc, request, kRedirectUri, "openid");
+
+    AXIAM_REQUIRE(contains(pushed.url, std::string("tenant_id=") + kTenantUuid));
+    AXIAM_REQUIRE(contains(pushed.url, "/oauth2/authorize?client_id="));
+    AXIAM_REQUIRE(contains(pushed.url, "request_uri="));
+    std::size_t amps = 0;
+    for (std::size_t i = pushed.url.find('?'); i < pushed.url.size(); ++i) {
+        if (pushed.url[i] == '&') ++amps;
+    }
+    AXIAM_REQUIRE(amps == 2);
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9449 §10.1 — dpop_jkt (contract 1.42)
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("par: dpop_jkt is sent when the caller supplies one") {
+    // RFC 9449 §10.1 names two carriers an AS supporting both PAR and DPoP must
+    // accept; this is the one that fits a client which does not itself sign
+    // proofs. CONTRACT §21.9 records this SDK as generating none — so the
+    // thumbprint is the CALLER's, computed over the CALLER's key, and this SDK
+    // only has to put it on the wire.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);
+
+    const auto doc = client.oidc_discover();
+    const auto request = client.oidc_begin(doc, kRedirectUri, "openid");
+    client.oidc_par(doc, request, kRedirectUri, "openid", std::nullopt,
+                    std::string("NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs"));
+
+    AXIAM_REQUIRE(form_value(last_par_body(*st), "dpop_jkt") ==
+                  "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs");
+}
+
+AXIAM_TEST("par: dpop_jkt is omitted entirely when the caller supplies none") {
+    // §12.1: an optional field the caller did not supply is OMITTED, never sent
+    // empty — `dpop_jkt=` would be a thumbprint of the empty key.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);
+
+    const auto doc = client.oidc_discover();
+    const auto request = client.oidc_begin(doc, kRedirectUri, "openid");
+    client.oidc_par(doc, request, kRedirectUri, "openid");
+
+    AXIAM_REQUIRE_FALSE(contains(last_par_body(*st), "dpop_jkt"));
+}
+
+AXIAM_TEST("par: an empty dpop_jkt is omitted, not sent blank") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);
+
+    const auto doc = client.oidc_discover();
+    const auto request = client.oidc_begin(doc, kRedirectUri, "openid");
+    client.oidc_par(doc, request, kRedirectUri, "openid", std::nullopt, std::string());
+
+    AXIAM_REQUIRE_FALSE(contains(last_par_body(*st), "dpop_jkt"));
+}
+
+AXIAM_TEST("par: request_uri is not a parameter a caller can push") {
+    // RFC 9126 §2.1 makes `request_uri` the ONE authorization parameter a
+    // client MUST NOT push; upstream models it on PushedAuthorizationRequest so
+    // the server can REFUSE it. A client able to send it is a client able to
+    // chain one pushed request into another, which is the attack the
+    // prohibition exists for — so this SDK exposes no way to, and the pushed
+    // body never contains the key.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);
+
+    const auto doc = client.oidc_discover();
+    const auto request = client.oidc_begin(doc, kRedirectUri, "openid");
+    client.oidc_par(doc, request, kRedirectUri, "openid");
+
+    AXIAM_REQUIRE_FALSE(contains(last_par_body(*st), "request_uri"));
 }
 
 // ---------------------------------------------------------------------------

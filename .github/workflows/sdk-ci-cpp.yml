@@ -125,7 +125,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
-      # The §27 surface — 145 model structs, 24 namespace handles over 146
+      # The §27 surface — the model structs, 24 namespace handles over 158
       # operations, the nlohmann ADL hooks and a generated conformance suite,
       # ~12k lines — is produced by scripts/gen_management.py from the VENDORED
       # management-registry.json and openapi.json, and the output is committed

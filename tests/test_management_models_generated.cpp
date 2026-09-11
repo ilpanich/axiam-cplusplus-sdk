@@ -202,6 +202,21 @@ AXIAM_TEST("management model ComplianceReportEntry round-trips without losing a 
     AXIAM_CHECK(again == encoded);
 }
 
+AXIAM_TEST("management model ConsentView round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"accepted_at": "2026-08-26T00:00:00Z", "consent_type": "example", "version": "example", "withdrawable": true})json");
+
+    const auto value = wire.get<ConsentView>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<ConsentView>();
+    AXIAM_CHECK(again == encoded);
+}
+
 AXIAM_TEST("management model CreateCaCertificateRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
         R"json({"intermediate_subject": "example", "intermediate_validity_days": 1, "issue_from_root": true, "key_algorithm": "Rsa4096", "subject": "example", "validity_days": 1})json");
@@ -309,7 +324,7 @@ AXIAM_TEST("management model CreateNotificationRuleRequest round-trips without l
 
 AXIAM_TEST("management model CreateOAuth2ClientRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"backchannel_logout_uri": "example", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "jwks": "example", "jwks_uri": "example", "name": "example", "post_logout_redirect_uris": ["example"], "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post"})json");
+        R"json({"authn_request_params": "ignore", "backchannel_logout_uri": "example", "browser_sso": true, "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "jwks": "example", "jwks_uri": "example", "name": "example", "post_logout_redirect_uris": ["example"], "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post"})json");
 
     const auto value = wire.get<CreateOAuth2ClientRequest>();
     const nlohmann::json encoded = value;
@@ -742,6 +757,21 @@ AXIAM_TEST("management model GrantPermissionRequest round-trips without losing a
     AXIAM_CHECK(again == encoded);
 }
 
+AXIAM_TEST("management model GrantScopeConsent round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"client_id": "example", "scopes": ["example"]})json");
+
+    const auto value = wire.get<GrantScopeConsent>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<GrantScopeConsent>();
+    AXIAM_CHECK(again == encoded);
+}
+
 AXIAM_TEST("management model GrantedScope round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
         R"json({"id": "11111111-1111-4111-8111-111111111111", "name": "example", "resource_id": "11111111-1111-4111-8111-111111111111"})json");
@@ -954,7 +984,7 @@ AXIAM_TEST("management model OAuth2ClientCreatedResponse round-trips without los
 
 AXIAM_TEST("management model OAuth2ClientResponse round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"authn_request_params": "ignore", "browser_sso": true, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"})json");
 
     const auto value = wire.get<OAuth2ClientResponse>();
     const nlohmann::json encoded = value;
@@ -1024,6 +1054,21 @@ AXIAM_TEST("management model OidcCallbackResponse round-trips without losing a f
 
     // And encoding is a fixed point -- a second pass changes nothing.
     const nlohmann::json again = encoded.get<OidcCallbackResponse>();
+    AXIAM_CHECK(again == encoded);
+}
+
+AXIAM_TEST("management model OidcPolicy round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"default_locale": "example", "sensitive_scopes_enabled": true})json");
+
+    const auto value = wire.get<OidcPolicy>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<OidcPolicy>();
     AXIAM_CHECK(again == encoded);
 }
 
@@ -1389,7 +1434,7 @@ AXIAM_TEST("management model WebauthnPolicy round-trips without losing a field")
 
 AXIAM_TEST("management model SecuritySettings round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
+        R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"default_locale": "example", "sensitive_scopes_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
 
     const auto value = wire.get<SecuritySettings>();
     const nlohmann::json encoded = value;
@@ -1449,7 +1494,7 @@ AXIAM_TEST("management model SetOrgEmailConfig round-trips without losing a fiel
 
 AXIAM_TEST("management model SetOrgSettings round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"access_token_lifetime_secs": 1, "admin_notifications_enabled": true, "default_cert_validity_days": 1, "deletion_grace_period_days": 1, "email_verification_grace_period_hours": 1, "email_verification_required": true, "hibp_check_enabled": true, "lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_cert_validity_days": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1, "mfa_challenge_lifetime_secs": 1, "mfa_enforced": true, "min_length": 1, "opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example", "password_history_count": 1, "refresh_token_lifetime_secs": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true, "webauthn_user_verification": "example"})json");
+        R"json({"access_token_lifetime_secs": 1, "admin_notifications_enabled": true, "default_cert_validity_days": 1, "default_locale": "example", "deletion_grace_period_days": 1, "email_verification_grace_period_hours": 1, "email_verification_required": true, "hibp_check_enabled": true, "lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_cert_validity_days": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1, "mfa_challenge_lifetime_secs": 1, "mfa_enforced": true, "min_length": 1, "opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example", "password_history_count": 1, "refresh_token_lifetime_secs": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true, "sensitive_scopes_enabled": true, "webauthn_user_verification": "example"})json");
 
     const auto value = wire.get<SetOrgSettings>();
     const nlohmann::json encoded = value;
@@ -1539,7 +1584,7 @@ AXIAM_TEST("management model Tenant round-trips without losing a field") {
 
 AXIAM_TEST("management model TenantSettingsOverride round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"access_token_lifetime_secs": 1, "admin_notifications_enabled": true, "default_cert_validity_days": 1, "deletion_grace_period_days": 1, "email_verification_grace_period_hours": 1, "email_verification_required": true, "hibp_check_enabled": true, "lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_cert_validity_days": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1, "mfa_challenge_lifetime_secs": 1, "mfa_enforced": true, "min_length": 1, "opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example", "password_history_count": 1, "refresh_token_lifetime_secs": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true, "webauthn_user_verification": "example"})json");
+        R"json({"access_token_lifetime_secs": 1, "admin_notifications_enabled": true, "default_cert_validity_days": 1, "default_locale": "example", "deletion_grace_period_days": 1, "email_verification_grace_period_hours": 1, "email_verification_required": true, "hibp_check_enabled": true, "lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_cert_validity_days": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1, "mfa_challenge_lifetime_secs": 1, "mfa_enforced": true, "min_length": 1, "opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example", "password_history_count": 1, "refresh_token_lifetime_secs": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true, "sensitive_scopes_enabled": true, "webauthn_user_verification": "example"})json");
 
     const auto value = wire.get<TenantSettingsOverride>();
     const nlohmann::json encoded = value;
@@ -1599,7 +1644,7 @@ AXIAM_TEST("management model UpdateNotificationRuleRequest round-trips without l
 
 AXIAM_TEST("management model UpdateOAuth2ClientRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"backchannel_logout_uri": "example", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "jwks": "example", "jwks_uri": "example", "name": "example", "post_logout_redirect_uris": ["example"], "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post"})json");
+        R"json({"authn_request_params": "ignore", "backchannel_logout_uri": "example", "browser_sso": true, "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "jwks": "example", "jwks_uri": "example", "name": "example", "post_logout_redirect_uris": ["example"], "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post"})json");
 
     const auto value = wire.get<UpdateOAuth2ClientRequest>();
     const nlohmann::json encoded = value;
@@ -1873,6 +1918,30 @@ AXIAM_TEST("management enum AuditOutcome maps every value both ways") {
     AXIAM_CHECK(j.get<AuditOutcome>() == AuditOutcome::Success);
 }
 
+AXIAM_TEST("management enum AuthnRequestParamsMode maps every value both ways") {
+    AXIAM_CHECK(to_wire(AuthnRequestParamsMode::Ignore) == "ignore");
+    AXIAM_CHECK(authn_request_params_mode_from_wire("ignore") == AuthnRequestParamsMode::Ignore);
+    AXIAM_CHECK(to_wire(AuthnRequestParamsMode::Honour) == "honour");
+    AXIAM_CHECK(authn_request_params_mode_from_wire("honour") == AuthnRequestParamsMode::Honour);
+
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(authn_request_params_mode_from_wire("__not_a_authn_request_params_mode__") == AuthnRequestParamsMode::Unknown);
+    AXIAM_CHECK(AuthnRequestParamsMode::Unknown != AuthnRequestParamsMode::Ignore);
+    AXIAM_CHECK(AuthnRequestParamsMode::Unknown != AuthnRequestParamsMode::Honour);
+    // The empty string, which no server value is: an unrecognised value carried back into an
+    // update is refused by the server rather than written as a spelling it never used.
+    AXIAM_CHECK(to_wire(AuthnRequestParamsMode::Unknown).empty());
+
+    // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
+    // differently from the enum itself.
+    const nlohmann::json j = AuthnRequestParamsMode::Ignore;
+    AXIAM_CHECK(j.get<std::string>() == "ignore");
+    AXIAM_CHECK(j.get<AuthnRequestParamsMode>() == AuthnRequestParamsMode::Ignore);
+}
+
 AXIAM_TEST("management enum CertificateStatus maps every value both ways") {
     AXIAM_CHECK(to_wire(CertificateStatus::Active) == "Active");
     AXIAM_CHECK(certificate_status_from_wire("Active") == CertificateStatus::Active);
@@ -1966,6 +2035,8 @@ AXIAM_TEST("management enum CertificationLevel maps every value both ways") {
 AXIAM_TEST("management enum ClientAuthMethod maps every value both ways") {
     AXIAM_CHECK(to_wire(ClientAuthMethod::ClientSecretPost) == "client_secret_post");
     AXIAM_CHECK(client_auth_method_from_wire("client_secret_post") == ClientAuthMethod::ClientSecretPost);
+    AXIAM_CHECK(to_wire(ClientAuthMethod::ClientSecretBasic) == "client_secret_basic");
+    AXIAM_CHECK(client_auth_method_from_wire("client_secret_basic") == ClientAuthMethod::ClientSecretBasic);
     AXIAM_CHECK(to_wire(ClientAuthMethod::TlsClientAuth) == "tls_client_auth");
     AXIAM_CHECK(client_auth_method_from_wire("tls_client_auth") == ClientAuthMethod::TlsClientAuth);
     AXIAM_CHECK(to_wire(ClientAuthMethod::SelfSignedTlsClientAuth) == "self_signed_tls_client_auth");
@@ -1979,6 +2050,7 @@ AXIAM_TEST("management enum ClientAuthMethod maps every value both ways") {
     // take down the page it was on, including the records the caller did ask for.
     AXIAM_CHECK(client_auth_method_from_wire("__not_a_client_auth_method__") == ClientAuthMethod::Unknown);
     AXIAM_CHECK(ClientAuthMethod::Unknown != ClientAuthMethod::ClientSecretPost);
+    AXIAM_CHECK(ClientAuthMethod::Unknown != ClientAuthMethod::ClientSecretBasic);
     AXIAM_CHECK(ClientAuthMethod::Unknown != ClientAuthMethod::TlsClientAuth);
     AXIAM_CHECK(ClientAuthMethod::Unknown != ClientAuthMethod::SelfSignedTlsClientAuth);
     AXIAM_CHECK(ClientAuthMethod::Unknown != ClientAuthMethod::PrivateKeyJwt);
@@ -2699,8 +2771,8 @@ AXIAM_TEST("management webhooks: re-scoping returns a new handle (§27.4 rule 3)
 }
 
 AXIAM_TEST("management oauth2_clients: re-scoping returns a new handle (§27.4 rule 3)") {
-    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
-                                              200, R"json({"items": [{"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"authn_request_params": "ignore", "browser_sso": true, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"authn_request_params": "ignore", "browser_sso": true, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
     auto mgmt = fixture.client.management();
     auto handle = mgmt.oauth2_clients();
 
@@ -2778,8 +2850,8 @@ AXIAM_TEST("management email_config: re-scoping returns a new handle (§27.4 rul
 }
 
 AXIAM_TEST("management settings: re-scoping returns a new handle (§27.4 rule 3)") {
-    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json",
-                                              200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"default_locale": "example", "sensitive_scopes_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json",
+                                              200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"default_locale": "example", "sensitive_scopes_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
     auto mgmt = fixture.client.management();
     auto handle = mgmt.settings();
 
@@ -3137,8 +3209,8 @@ AXIAM_TEST("management webhooks: client.webhooks() and management().webhooks() a
 }
 
 AXIAM_TEST("management oauth2_clients: client.oauth2_clients() and management().oauth2_clients() are equivalent (§27.2 rule 4)") {
-    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
-                                              200, R"json({"items": [{"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"authn_request_params": "ignore", "browser_sso": true, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"authn_request_params": "ignore", "browser_sso": true, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
 
     // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
     // Equivalent means the same request, not merely the same type -- so this compares the
@@ -3205,8 +3277,8 @@ AXIAM_TEST("management email_config: client.email_config() and management().emai
 }
 
 AXIAM_TEST("management settings: client.settings() and management().settings() are equivalent (§27.2 rule 4)") {
-    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json",
-                                              200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"default_locale": "example", "sensitive_scopes_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json",
+                                              200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"default_locale": "example", "sensitive_scopes_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
 
     // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
     // Equivalent means the same request, not merely the same type -- so this compares the
@@ -3323,7 +3395,7 @@ AXIAM_TEST("management platform: client.platform() and management().platform() a
     AXIAM_CHECK(direct_path == "/health");
 }
 
-// §27.9: 118 models, 23 enums and 24 namespaces are covered above. Counted from the test
+// §27.9: 121 models, 24 enums and 24 namespaces are covered above. Counted from the test
 // registry rather than restated as a literal on both sides -- a case dropped by a bad
 // regeneration would still satisfy a tautology, and fails this instead.
 AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
@@ -3342,8 +3414,8 @@ AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
             ++equivalents;
         }
     }
-    AXIAM_CHECK(round_trips == 118);
-    AXIAM_CHECK(enum_maps == 23);
+    AXIAM_CHECK(round_trips == 121);
+    AXIAM_CHECK(enum_maps == 24);
     AXIAM_CHECK(rescopes == 24);
     AXIAM_CHECK(equivalents == 24);
 }

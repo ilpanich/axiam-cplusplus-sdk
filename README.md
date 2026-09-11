@@ -848,6 +848,33 @@ const auto tokens = client.oidc_exchange(p);
 // rule.
 ```
 
+**Breaking, contract 1.42 — the ID token no longer carries `email` or
+`tenant_id`.** `IdTokenClaims::email` and `IdTokenClaims::tenant_id` now read
+`std::nullopt` on every AXIAM login; so does `org_id`, which this struct has
+never modelled. AXIAM stopped emitting all three (upstream
+`crates/axiam-auth/src/token.rs`: hard-wired to `None`). OIDC Core §5.4 puts
+scope-requested claims at the UserInfo endpoint for the authorization-code
+flow, and an ID token is routinely forwarded as proof of an authentication
+event — so anything placed in it travels further than the relying party that
+asked for it.
+
+Nothing was removed from this SDK. Both fields, and the code that parses them,
+stay: this SDK is pointed at non-AXIAM OPs too, and plenty of them still send
+`email` in the ID token. What changed is where you read them **from AXIAM**:
+
+| you used to read | read this instead |
+|---|---|
+| `tokens.id_claims->email` | `login.user->email`, off the `LoginResult` from `Client::login()` |
+| `tokens.id_claims->tenant_id` | `login.user->tenant_id` — the **access-token** claims, which §5.2 always specified |
+| (`org_id`, never modelled here) | `login.user->org_id` |
+
+Both identifiers are also always-present members of UserInfo. Neither moved;
+the ID token was a third copy that nothing was specified to read.
+`TokenAuthenticator` is **unaffected** — it reads `tenant_id` from the *access*
+token and never looked at an ID token. Code that tests `if (claims->tenant_id)`
+keeps compiling and now correctly takes the false branch; code that assumed the
+claim was always engaged sees `std::nullopt`, not an empty string.
+
 Three things this surface will not do, each because a section says so:
 
 - **It stores no correlation values** (§12.3 rule 1). See above.
@@ -857,6 +884,20 @@ Three things this surface will not do, each because a section says so:
 - **It adopts nothing.** Every operation returns tokens; none becomes this
   client's own credential. §15.2 rule 5 makes that a MUST NOT for the exchanged
   token specifically, and this SDK takes one posture everywhere rather than two.
+
+**Two new discovery members (contract 1.42, RFC 8414).**
+`OidcConfiguration` gains `code_challenge_methods_supported` and
+`token_endpoint_auth_signing_alg_values_supported`, both `std::vector<std::string>`
+appended with a default so existing aggregate use keeps compiling. Both are
+**informational only**: §12.5 pins this SDK to `S256` and §12.1 rule 3 keeps it
+on `client_secret_post`, so nothing read there changes what it sends.
+
+`openapi.json` marks both required as of 1.42, and this model still treats them
+as absent-able — **empty means the member was absent, never `["S256"]`**.
+[`CONTRACT.md` §21.5](CONTRACT.md) gives the reason: RFC 8414 defines no default
+for `code_challenge_methods_supported`. This struct has to keep parsing a
+non-AXIAM OP's document, and a required reading would reject documents this SDK
+accepts today.
 
 Two error types, two closed vocabularies, deliberately kept apart:
 `OAuthProtocolError::error_code()` carries the server's OAuth2 `error`;
@@ -1224,20 +1265,55 @@ if (!doc.pushed_authorization_request_endpoint) { /* this server has no PAR */ }
 
 const auto request = client.oidc_begin(doc, redirect_uri, "openid profile");
 const auto pushed  = client.oidc_par(doc, request, redirect_uri, "openid profile");
-// pushed.url carries exactly client_id and request_uri — nothing else.
+// pushed.url carries exactly client_id, request_uri and the routing-only
+// tenant_id this push was made under.
 ```
 
 **The server answers `201`, not `200`.** RFC 9126 §2.2 specifies Created, and a
 success predicate written `== 200` treats every successful push as a failure
 while passing every other check.
 
-**The redirect carries exactly two parameters (§26.2 rule 2).** AXIAM refuses a
-request that mixes a `request_uri` with inline authorization parameters rather
-than merging them, because merging is where parameter confusion lives: an
-attacker supplies the inline value they want and lets the pushed copy satisfy
-whichever check reads the other one. Re-adding `scope` "for compatibility"
-restores the attack — which is why any query the *discovered* authorization
-endpoint already carried is dropped here rather than merged.
+**The redirect carries no inline authorization parameter (§26.2 rule 2)** —
+`client_id`, `request_uri` and the routing-only `tenant_id`, and nothing else.
+AXIAM refuses a request
+that mixes a `request_uri` with inline authorization parameters rather than
+merging them, because merging is where parameter confusion lives: an attacker
+supplies the inline value they want and lets the pushed copy satisfy whichever
+check reads the other one. Re-adding `scope` "for compatibility" restores the
+attack — which is why every other query the *discovered* authorization endpoint
+already carried is dropped here rather than merged.
+
+`tenant_id` is the exception, and only since contract 1.42 started publishing it
+on `authorization_endpoint`. It is routing rather than an RFC 6749 §4.1.1
+authorization parameter — it selects which tenant's authorization server answers
+at all — so the pushed request holds no counterpart for it to be confused with,
+and a browser arriving with no session has no tenant of its own. Dropping it
+turns a correctly pushed request into a 401.
+
+The value sent is the tenant the push was **resolved** against, not whatever the
+document carried. `oidc_discover()` names no tenant, so a multi-tenant
+deployment with no `oauth2_default_tenant_id` serves a document with none — and
+a `request_uri` is valid for exactly the tenant that minted it, so the two must
+not be allowed to differ.
+
+**`dpop_jkt`, caller-supplied (contract 1.42, RFC 9449 §10.1).** `oidc_par()`
+takes an optional sixth argument and sends it on the push only when set:
+
+```cpp
+client.oidc_par(doc, request, redirect_uri, "openid profile", std::nullopt,
+                my_jwk_thumbprint);   // base64url SHA-256 of YOUR key
+```
+
+[`CONTRACT.md` §21.9](CONTRACT.md) records this SDK as generating no DPoP proofs
+and declining §21.7.2 verification, so the thumbprint is yours to compute —
+accepting it here is what lets an application that does DPoP itself use PAR.
+Passing it does not make this SDK a DPoP client.
+
+**`request_uri` is not something you can push.** RFC 9126 §2.1 makes it the one
+authorization parameter a client MUST NOT push; the server models it so it can
+*refuse* it. A client able to send it is a client able to chain one pushed
+request into another, so this SDK exposes no way to — as do none of the other
+nine optional parameters contract 1.42 added to the schema.
 
 **One generator, not two (§26.2 rule 1).** The push sends the `state`, `nonce`
 and PKCE pair `oidc_begin()` produced, and hands them back out on the result so
@@ -1333,7 +1409,7 @@ sign path, in both directions. Worked example, including a transport skeleton:
 
 ## §27 Management API
 
-147 operations across 24 namespaces, reached through namespace handles that sit
+158 operations across 24 namespaces, reached through namespace handles that sit
 directly on the client — the form §27.3's C++ row specifies:
 
 ```cpp
