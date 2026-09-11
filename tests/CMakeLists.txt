@@ -19,6 +19,11 @@ add_executable(axiam_cpp_tests
   management_test_util.cpp
   test_management_generated.cpp
   test_management_models_generated.cpp
+  # The branches the generated round-trip suite structurally cannot take: it sends
+  # every property the spec declares, so an optional field's ABSENT side, an
+  # explicit null, an empty-but-present collection, and free-form JSON text that
+  # does not parse are never exercised. Hand-written, not a generator output.
+  test_management_models_optional.cpp
   test_management_semantics.cpp
   # The contract 1.34 §5.2.2 / 1.35 §5.2.3 rules. Uses the management rig AND the
   # OPAQUE fake: the acting-tenant/principal-tenant distinction shows up on both
@@ -31,12 +36,20 @@ add_executable(axiam_cpp_tests
   test_rule9_binding.cpp
   test_builder.cpp
   test_client.cpp
+  # The other side of every guard in src/client.cpp: a server answer with a field
+  # absent, of the wrong JSON type, or not parseable at all, plus the base_url and
+  # builder arguments a caller gets wrong.
+  test_client_robustness.cpp
   test_single_flight.cpp
   test_refresh_guard.cpp
   test_guard.cpp
   test_reason_code.cpp
   test_d5_conformance.cpp
   test_jwks.cpp
+  # The rejection half of §12 signature verification and §21 certificate binding:
+  # malformed key sets, non-Ed25519 JWKs, wrong-shaped compact tokens, and every
+  # `cnf` shape that decides whether a sender-constrained token stays constrained.
+  test_jwks_robustness.cpp
   test_authenticator.cpp
   test_webhook.cpp
   test_uma.cpp
