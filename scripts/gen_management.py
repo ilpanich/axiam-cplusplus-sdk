@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the CONTRACT §27 management surface for the C++ SDK.
 
-Reads ``management-registry.json`` (the 147 operations across 24 namespaces,
+Reads ``management-registry.json`` (the management operations across 24 namespaces,
 maintained in ``ilpanich/axiam`` and vendored here) plus ``openapi.json``, and writes:
 
 - ``include/axiam/management_models.hpp`` — one struct or enum per request and response
@@ -36,6 +36,14 @@ ROOT = Path(__file__).resolve().parent.parent
 REGISTRY: dict[str, Any] = json.loads((ROOT / "management-registry.json").read_text())
 SPEC: dict[str, Any] = json.loads((ROOT / "openapi.json").read_text())
 SCHEMAS: dict[str, Any] = SPEC["components"]["schemas"]
+
+# Counted from the vendored registry, never written as a literal. Every prose
+# mention of the surface's size below interpolates these: a re-vendor that adds
+# an operation must not leave the generated headers documenting the old number,
+# and a literal is a number nobody remembers to change (this file said "147"
+# through two re-vendors that took the real count to 155).
+NS_COUNT: int = len(REGISTRY["namespaces"])
+OP_COUNT: int = sum(len(ns["operations"]) for ns in REGISTRY["namespaces"].values())
 
 # §27.4 rule 3: `{org_id}` always defaults from the client. `{tenant_id}`
 # defaults from the client only where it names the *context*; in `tenants` and
@@ -1204,7 +1212,8 @@ def emit_api_header() -> str:
 
     # ---- root ----
     out.extend(doc(
-        "The CONTRACT.md §27 management surface: 147 operations across 24 namespaces.\n\n"
+        f"The CONTRACT.md §27 management surface: {OP_COUNT} operations across "
+        f"{NS_COUNT} namespaces.\n\n"
         "Reached as `client.management()`. Each accessor hands back a namespace handle "
         "(§27.2) that can be re-scoped per call with `in_org()` / `for_tenant()`.\n\n"
         "Handles are constructed on demand rather than cached. §27.4 rule 10 forbids "
@@ -1403,8 +1412,8 @@ def emit_ops_source() -> str:
     out.append("")
     out.extend(comment(
         "The one place the §27 surface is attached to a Client. Defined here rather than "
-        "in client.cpp so that translation unit keeps knowing nothing about the 147 "
-        "generated operations."))
+        f"in client.cpp so that translation unit keeps knowing nothing about the "
+        f"{OP_COUNT} generated operations."))
     out.append("management::ManagementApi Client::management() {")
     out.append("    p_->ensure_open();")
     out.append("    management::CallScope scope;")
@@ -1531,7 +1540,7 @@ def emit_test() -> str:
     out.append('#include "management_test_util.hpp"')
     out.append("")
     out.extend(comment(
-        "One case per CONTRACT.md §27 operation -- all 147 of them.\n\n"
+        f"One case per CONTRACT.md §27 operation -- all {OP_COUNT} of them.\n\n"
         "Each asserts the operation issues the METHOD the registry names against the PATH "
         "the registry names, and that the response decodes into the model without "
         "throwing. The fake transport sits at the BOTTOM of the real client, so a §27.8 "
@@ -1585,9 +1594,9 @@ def emit_test() -> str:
             out.append("")
 
     out.extend(comment(
-        "§27.9: all 147 registry operations are covered by a case above.\n\n"
+        f"§27.9: all {count} registry operations are covered by a case above.\n\n"
         "Counted from the test registry rather than written as a literal on both sides. "
-        "`AXIAM_CHECK(147 == 147)` is a tautology, and a case removed by a bad "
+        f"`AXIAM_CHECK({count} == {count})` is a tautology, and a case removed by a bad "
         "regeneration would still pass it -- this fails instead."))
     out.append(f'AXIAM_TEST("management surface covers all {count} registry operations") {{')
     out.append("    int reached = 0;")

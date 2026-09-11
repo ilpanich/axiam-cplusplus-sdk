@@ -99,6 +99,34 @@ void from_json(const nlohmann::json& j, AuditOutcome& value) {
     value = audit_outcome_from_wire(j.get<std::string>());
 }
 
+std::string to_wire(AuthnRequestParamsMode value) {
+    switch (value) {
+        case AuthnRequestParamsMode::Ignore: return "ignore";
+        case AuthnRequestParamsMode::Honour: return "honour";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case AuthnRequestParamsMode::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "ignore";
+}
+
+AuthnRequestParamsMode authn_request_params_mode_from_wire(const std::string& value) {
+    if (value == "ignore") return AuthnRequestParamsMode::Ignore;
+    if (value == "honour") return AuthnRequestParamsMode::Honour;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return AuthnRequestParamsMode::Unknown;
+}
+
+void to_json(nlohmann::json& j, const AuthnRequestParamsMode& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, AuthnRequestParamsMode& value) {
+    value = authn_request_params_mode_from_wire(j.get<std::string>());
+}
+
 std::string to_wire(CertificateStatus value) {
     switch (value) {
         case CertificateStatus::Active: return "Active";
@@ -198,6 +226,7 @@ void from_json(const nlohmann::json& j, CertificationLevel& value) {
 std::string to_wire(ClientAuthMethod value) {
     switch (value) {
         case ClientAuthMethod::ClientSecretPost: return "client_secret_post";
+        case ClientAuthMethod::ClientSecretBasic: return "client_secret_basic";
         case ClientAuthMethod::TlsClientAuth: return "tls_client_auth";
         case ClientAuthMethod::SelfSignedTlsClientAuth: return "self_signed_tls_client_auth";
         case ClientAuthMethod::PrivateKeyJwt: return "private_key_jwt";
@@ -212,6 +241,7 @@ std::string to_wire(ClientAuthMethod value) {
 
 ClientAuthMethod client_auth_method_from_wire(const std::string& value) {
     if (value == "client_secret_post") return ClientAuthMethod::ClientSecretPost;
+    if (value == "client_secret_basic") return ClientAuthMethod::ClientSecretBasic;
     if (value == "tls_client_auth") return ClientAuthMethod::TlsClientAuth;
     if (value == "self_signed_tls_client_auth") return ClientAuthMethod::SelfSignedTlsClientAuth;
     if (value == "private_key_jwt") return ClientAuthMethod::PrivateKeyJwt;
@@ -1001,6 +1031,21 @@ void from_json(const nlohmann::json& j, ComplianceReportEntry& value) {
     value.user_id = j.at("user_id").get<std::string>();
 }
 
+void to_json(nlohmann::json& j, const ConsentView& value) {
+    j = nlohmann::json::object();
+    j["accepted_at"] = value.accepted_at;
+    j["consent_type"] = value.consent_type;
+    j["version"] = value.version;
+    j["withdrawable"] = value.withdrawable;
+}
+
+void from_json(const nlohmann::json& j, ConsentView& value) {
+    value.accepted_at = j.at("accepted_at").get<std::string>();
+    value.consent_type = j.at("consent_type").get<std::string>();
+    value.version = j.at("version").get<std::string>();
+    value.withdrawable = j.at("withdrawable").get<bool>();
+}
+
 void to_json(nlohmann::json& j, const CreateCaCertificateRequest& value) {
     j = nlohmann::json::object();
     if (value.intermediate_subject) {
@@ -1268,8 +1313,14 @@ void from_json(const nlohmann::json& j, CreateNotificationRuleRequest& value) {
 
 void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value) {
     j = nlohmann::json::object();
+    if (value.authn_request_params) {
+        j["authn_request_params"] = to_wire(*value.authn_request_params);
+    }
     if (value.backchannel_logout_uri) {
         j["backchannel_logout_uri"] = *value.backchannel_logout_uri;
+    }
+    if (value.browser_sso) {
+        j["browser_sso"] = *value.browser_sso;
     }
     if (value.dpop_bound_access_tokens) {
         j["dpop_bound_access_tokens"] = *value.dpop_bound_access_tokens;
@@ -1317,8 +1368,14 @@ void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value) {
 }
 
 void from_json(const nlohmann::json& j, CreateOAuth2ClientRequest& value) {
+    if (auto it = j.find("authn_request_params"); it != j.end() && !it->is_null()) {
+        value.authn_request_params = authn_request_params_mode_from_wire(it->get<std::string>());
+    }
     if (auto it = j.find("backchannel_logout_uri"); it != j.end() && !it->is_null()) {
         value.backchannel_logout_uri = it->get<std::string>();
+    }
+    if (auto it = j.find("browser_sso"); it != j.end() && !it->is_null()) {
+        value.browser_sso = it->get<bool>();
     }
     if (auto it = j.find("dpop_bound_access_tokens"); it != j.end() && !it->is_null()) {
         value.dpop_bound_access_tokens = it->get<bool>();
@@ -2072,6 +2129,17 @@ void from_json(const nlohmann::json& j, GrantPermissionRequest& value) {
     }
 }
 
+void to_json(nlohmann::json& j, const GrantScopeConsent& value) {
+    j = nlohmann::json::object();
+    j["client_id"] = value.client_id;
+    j["scopes"] = value.scopes;
+}
+
+void from_json(const nlohmann::json& j, GrantScopeConsent& value) {
+    value.client_id = j.at("client_id").get<std::string>();
+    value.scopes = j.at("scopes").get<std::vector<std::string>>();
+}
+
 void to_json(nlohmann::json& j, const GrantedScope& value) {
     j = nlohmann::json::object();
     j["id"] = value.id;
@@ -2322,6 +2390,8 @@ void from_json(const nlohmann::json& j, OAuth2ClientCreatedResponse& value) {
 
 void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
     j = nlohmann::json::object();
+    j["authn_request_params"] = to_wire(value.authn_request_params);
+    j["browser_sso"] = value.browser_sso;
     j["client_id"] = value.client_id;
     j["created_at"] = value.created_at;
     j["dpop_bound_access_tokens"] = value.dpop_bound_access_tokens;
@@ -2356,6 +2426,8 @@ void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
 }
 
 void from_json(const nlohmann::json& j, OAuth2ClientResponse& value) {
+    value.authn_request_params = authn_request_params_mode_from_wire(j.at("authn_request_params").get<std::string>());
+    value.browser_sso = j.at("browser_sso").get<bool>();
     value.client_id = j.at("client_id").get<std::string>();
     value.created_at = j.at("created_at").get<std::string>();
     value.dpop_bound_access_tokens = j.at("dpop_bound_access_tokens").get<bool>();
@@ -2441,6 +2513,21 @@ void from_json(const nlohmann::json& j, OidcCallbackResponse& value) {
     value.federation_link_id = j.at("federation_link_id").get<std::string>();
     value.newly_provisioned = j.at("newly_provisioned").get<bool>();
     value.user_id = j.at("user_id").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const OidcPolicy& value) {
+    j = nlohmann::json::object();
+    if (value.default_locale) {
+        j["default_locale"] = *value.default_locale;
+    }
+    j["sensitive_scopes_enabled"] = value.sensitive_scopes_enabled;
+}
+
+void from_json(const nlohmann::json& j, OidcPolicy& value) {
+    if (auto it = j.find("default_locale"); it != j.end() && !it->is_null()) {
+        value.default_locale = it->get<std::string>();
+    }
+    value.sensitive_scopes_enabled = j.at("sensitive_scopes_enabled").get<bool>();
 }
 
 void to_json(nlohmann::json& j, const OpaquePolicy& value) {
@@ -2970,6 +3057,7 @@ void to_json(nlohmann::json& j, const SecuritySettings& value) {
     j["lockout"] = value.lockout;
     j["mfa"] = value.mfa;
     j["notification"] = value.notification;
+    j["oidc"] = value.oidc;
     j["opaque"] = value.opaque;
     j["password"] = value.password;
     j["privacy"] = value.privacy;
@@ -2988,6 +3076,7 @@ void from_json(const nlohmann::json& j, SecuritySettings& value) {
     value.lockout = j.at("lockout").get<LockoutPolicy>();
     value.mfa = j.at("mfa").get<MfaPolicy>();
     value.notification = j.at("notification").get<NotificationPolicy>();
+    value.oidc = j.at("oidc").get<OidcPolicy>();
     value.opaque = j.at("opaque").get<OpaquePolicy>();
     value.password = j.at("password").get<PasswordPolicy>();
     value.privacy = j.at("privacy").get<PrivacyPolicy>();
@@ -3062,6 +3151,9 @@ void to_json(nlohmann::json& j, const SetOrgSettings& value) {
     j["access_token_lifetime_secs"] = value.access_token_lifetime_secs;
     j["admin_notifications_enabled"] = value.admin_notifications_enabled;
     j["default_cert_validity_days"] = value.default_cert_validity_days;
+    if (value.default_locale) {
+        j["default_locale"] = *value.default_locale;
+    }
     if (value.deletion_grace_period_days) {
         j["deletion_grace_period_days"] = *value.deletion_grace_period_days;
     }
@@ -3091,6 +3183,9 @@ void to_json(nlohmann::json& j, const SetOrgSettings& value) {
     j["require_lowercase"] = value.require_lowercase;
     j["require_symbols"] = value.require_symbols;
     j["require_uppercase"] = value.require_uppercase;
+    if (value.sensitive_scopes_enabled) {
+        j["sensitive_scopes_enabled"] = *value.sensitive_scopes_enabled;
+    }
     if (value.webauthn_user_verification) {
         j["webauthn_user_verification"] = *value.webauthn_user_verification;
     }
@@ -3100,6 +3195,9 @@ void from_json(const nlohmann::json& j, SetOrgSettings& value) {
     value.access_token_lifetime_secs = j.at("access_token_lifetime_secs").get<std::int64_t>();
     value.admin_notifications_enabled = j.at("admin_notifications_enabled").get<bool>();
     value.default_cert_validity_days = j.at("default_cert_validity_days").get<std::int64_t>();
+    if (auto it = j.find("default_locale"); it != j.end() && !it->is_null()) {
+        value.default_locale = it->get<std::string>();
+    }
     if (auto it = j.find("deletion_grace_period_days"); it != j.end() && !it->is_null()) {
         value.deletion_grace_period_days = it->get<std::int64_t>();
     }
@@ -3129,6 +3227,9 @@ void from_json(const nlohmann::json& j, SetOrgSettings& value) {
     value.require_lowercase = j.at("require_lowercase").get<bool>();
     value.require_symbols = j.at("require_symbols").get<bool>();
     value.require_uppercase = j.at("require_uppercase").get<bool>();
+    if (auto it = j.find("sensitive_scopes_enabled"); it != j.end() && !it->is_null()) {
+        value.sensitive_scopes_enabled = it->get<bool>();
+    }
     if (auto it = j.find("webauthn_user_verification"); it != j.end() && !it->is_null()) {
         value.webauthn_user_verification = it->get<std::string>();
     }
@@ -3230,6 +3331,9 @@ void to_json(nlohmann::json& j, const TenantSettingsOverride& value) {
     if (value.default_cert_validity_days) {
         j["default_cert_validity_days"] = *value.default_cert_validity_days;
     }
+    if (value.default_locale) {
+        j["default_locale"] = *value.default_locale;
+    }
     if (value.deletion_grace_period_days) {
         j["deletion_grace_period_days"] = *value.deletion_grace_period_days;
     }
@@ -3293,6 +3397,9 @@ void to_json(nlohmann::json& j, const TenantSettingsOverride& value) {
     if (value.require_uppercase) {
         j["require_uppercase"] = *value.require_uppercase;
     }
+    if (value.sensitive_scopes_enabled) {
+        j["sensitive_scopes_enabled"] = *value.sensitive_scopes_enabled;
+    }
     if (value.webauthn_user_verification) {
         j["webauthn_user_verification"] = *value.webauthn_user_verification;
     }
@@ -3307,6 +3414,9 @@ void from_json(const nlohmann::json& j, TenantSettingsOverride& value) {
     }
     if (auto it = j.find("default_cert_validity_days"); it != j.end() && !it->is_null()) {
         value.default_cert_validity_days = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("default_locale"); it != j.end() && !it->is_null()) {
+        value.default_locale = it->get<std::string>();
     }
     if (auto it = j.find("deletion_grace_period_days"); it != j.end() && !it->is_null()) {
         value.deletion_grace_period_days = it->get<std::int64_t>();
@@ -3370,6 +3480,9 @@ void from_json(const nlohmann::json& j, TenantSettingsOverride& value) {
     }
     if (auto it = j.find("require_uppercase"); it != j.end() && !it->is_null()) {
         value.require_uppercase = it->get<bool>();
+    }
+    if (auto it = j.find("sensitive_scopes_enabled"); it != j.end() && !it->is_null()) {
+        value.sensitive_scopes_enabled = it->get<bool>();
     }
     if (auto it = j.find("webauthn_user_verification"); it != j.end() && !it->is_null()) {
         value.webauthn_user_verification = it->get<std::string>();
@@ -3569,8 +3682,14 @@ void from_json(const nlohmann::json& j, UpdateNotificationRuleRequest& value) {
 
 void to_json(nlohmann::json& j, const UpdateOAuth2ClientRequest& value) {
     j = nlohmann::json::object();
+    if (value.authn_request_params) {
+        j["authn_request_params"] = to_wire(*value.authn_request_params);
+    }
     if (value.backchannel_logout_uri) {
         j["backchannel_logout_uri"] = *value.backchannel_logout_uri;
+    }
+    if (value.browser_sso) {
+        j["browser_sso"] = *value.browser_sso;
     }
     if (value.dpop_bound_access_tokens) {
         j["dpop_bound_access_tokens"] = *value.dpop_bound_access_tokens;
@@ -3626,8 +3745,14 @@ void to_json(nlohmann::json& j, const UpdateOAuth2ClientRequest& value) {
 }
 
 void from_json(const nlohmann::json& j, UpdateOAuth2ClientRequest& value) {
+    if (auto it = j.find("authn_request_params"); it != j.end() && !it->is_null()) {
+        value.authn_request_params = authn_request_params_mode_from_wire(it->get<std::string>());
+    }
     if (auto it = j.find("backchannel_logout_uri"); it != j.end() && !it->is_null()) {
         value.backchannel_logout_uri = it->get<std::string>();
+    }
+    if (auto it = j.find("browser_sso"); it != j.end() && !it->is_null()) {
+        value.browser_sso = it->get<bool>();
     }
     if (auto it = j.find("dpop_bound_access_tokens"); it != j.end() && !it->is_null()) {
         value.dpop_bound_access_tokens = it->get<bool>();

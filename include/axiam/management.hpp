@@ -2100,6 +2100,35 @@ public:
     /// @param token The required `token` query parameter.
     void cancel_delete(const std::string& token);
 
+    /// `GET /api/v1/account/consents` — the caller's own consent records.
+    ///
+    /// `GET /api/v1/account/consents`.
+    ///
+    /// Returns the server's complete list. This endpoint is NOT paginated, so the result is a
+    /// plain vector and never a Page (§27.4 rule 4).
+    std::vector<ConsentView> list_consents();
+
+    /// `POST /api/v1/account/consents/oidc-scopes` — record a scope-release consent.
+    ///
+    /// `POST /api/v1/account/consents/oidc-scopes`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// @param body The request body.
+    void grant_scope_consent(const GrantScopeConsent& body);
+
+    /// `DELETE /api/v1/account/consents/oidc-scopes/{client_id}` — withdraw.
+    ///
+    /// `DELETE /api/v1/account/consents/oidc-scopes/{client_id}`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
+    /// rather than succeeding quietly.
+    ///
+    /// @param client_id The `{client_id}` path parameter.
+    void withdraw_scope_consent(const std::string& client_id);
+
 private:
     std::shared_ptr<Transport> transport_;
     CallScope scope_;
@@ -2151,7 +2180,7 @@ private:
     CallScope scope_;
 };
 
-/// The CONTRACT.md §27 management surface: 147 operations across 24 namespaces.
+/// The CONTRACT.md §27 management surface: 158 operations across 24 namespaces.
 ///
 /// Reached as `client.management()`. Each accessor hands back a namespace handle (§27.2) that
 /// can be re-scoped per call with `in_org()` / `for_tenant()`.

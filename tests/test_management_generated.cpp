@@ -10,7 +10,7 @@
 #include "axiam/management.hpp"
 #include "management_test_util.hpp"
 
-// One case per CONTRACT.md §27 operation -- all 147 of them. Each asserts the operation issues
+// One case per CONTRACT.md §27 operation -- all 158 of them. Each asserts the operation issues
 // the METHOD the registry names against the PATH the registry names, and that the response
 // decodes into the model without throwing. The fake transport sits at the BOTTOM of the real
 // client, so a §27.8 violation (an operation opening its own request path) fails these rather
@@ -992,7 +992,7 @@ AXIAM_TEST("management webhooks.delete reaches its route") {
 
 AXIAM_TEST("management oauth2_clients.list reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"items": [{"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+        R"json({"items": [{"authn_request_params": "ignore", "browser_sso": true, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
     const auto result = fixture.client.management().oauth2_clients().list();
     (void) result;
 
@@ -1013,7 +1013,7 @@ AXIAM_TEST("management oauth2_clients.create reaches its route") {
 
 AXIAM_TEST("management oauth2_clients.get reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"authn_request_params": "ignore", "browser_sso": true, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"})json");
     const auto result = fixture.client.management().oauth2_clients().get("11111111-1111-4111-8111-111111111111");
     (void) result;
 
@@ -1023,7 +1023,7 @@ AXIAM_TEST("management oauth2_clients.get reaches its route") {
 
 AXIAM_TEST("management oauth2_clients.update reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"authn_request_params": "ignore", "browser_sso": true, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "jwks": "example", "jwks_uri": "example", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_auth_san_dns": "example", "tls_client_auth_san_uri": "example", "tls_client_auth_subject_dn": "example", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"})json");
     UpdateOAuth2ClientRequest body{};
     const auto result = fixture.client.management().oauth2_clients().update("11111111-1111-4111-8111-111111111111", body);
     (void) result;
@@ -1260,7 +1260,7 @@ AXIAM_TEST("management email_config.test_tenant reaches its route") {
 
 AXIAM_TEST("management settings.get_org reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
+        R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"default_locale": "example", "sensitive_scopes_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
     const auto result = fixture.client.management().settings().get_org();
     (void) result;
 
@@ -1270,7 +1270,7 @@ AXIAM_TEST("management settings.get_org reaches its route") {
 
 AXIAM_TEST("management settings.set_org reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
+        R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"default_locale": "example", "sensitive_scopes_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
     SetOrgSettings body{};
     const auto result = fixture.client.management().settings().set_org(body);
     (void) result;
@@ -1281,7 +1281,7 @@ AXIAM_TEST("management settings.set_org reaches its route") {
 
 AXIAM_TEST("management settings.get_effective reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
+        R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"default_locale": "example", "sensitive_scopes_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
     const auto result = fixture.client.management().settings().get_effective();
     (void) result;
 
@@ -1291,7 +1291,7 @@ AXIAM_TEST("management settings.get_effective reaches its route") {
 
 AXIAM_TEST("management settings.set_effective reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
+        R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"default_locale": "example", "sensitive_scopes_enabled": true}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
     TenantSettingsOverride body{};
     const auto result = fixture.client.management().settings().set_effective(body);
     (void) result;
@@ -1302,7 +1302,7 @@ AXIAM_TEST("management settings.set_effective reaches its route") {
 
 AXIAM_TEST("management settings.get_tenant_override reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"access_token_lifetime_secs": 1, "admin_notifications_enabled": true, "default_cert_validity_days": 1, "deletion_grace_period_days": 1, "email_verification_grace_period_hours": 1, "email_verification_required": true, "hibp_check_enabled": true, "lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_cert_validity_days": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1, "mfa_challenge_lifetime_secs": 1, "mfa_enforced": true, "min_length": 1, "opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example", "password_history_count": 1, "refresh_token_lifetime_secs": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true, "webauthn_user_verification": "example"})json");
+        R"json({"access_token_lifetime_secs": 1, "admin_notifications_enabled": true, "default_cert_validity_days": 1, "default_locale": "example", "deletion_grace_period_days": 1, "email_verification_grace_period_hours": 1, "email_verification_required": true, "hibp_check_enabled": true, "lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_cert_validity_days": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1, "mfa_challenge_lifetime_secs": 1, "mfa_enforced": true, "min_length": 1, "opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example", "password_history_count": 1, "refresh_token_lifetime_secs": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true, "sensitive_scopes_enabled": true, "webauthn_user_verification": "example"})json");
     const auto result = fixture.client.management().settings().get_tenant_override();
     (void) result;
 
@@ -1312,7 +1312,7 @@ AXIAM_TEST("management settings.get_tenant_override reaches its route") {
 
 AXIAM_TEST("management settings.set_tenant_override reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"access_token_lifetime_secs": 1, "admin_notifications_enabled": true, "default_cert_validity_days": 1, "deletion_grace_period_days": 1, "email_verification_grace_period_hours": 1, "email_verification_required": true, "hibp_check_enabled": true, "lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_cert_validity_days": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1, "mfa_challenge_lifetime_secs": 1, "mfa_enforced": true, "min_length": 1, "opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example", "password_history_count": 1, "refresh_token_lifetime_secs": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true, "webauthn_user_verification": "example"})json");
+        R"json({"access_token_lifetime_secs": 1, "admin_notifications_enabled": true, "default_cert_validity_days": 1, "default_locale": "example", "deletion_grace_period_days": 1, "email_verification_grace_period_hours": 1, "email_verification_required": true, "hibp_check_enabled": true, "lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_cert_validity_days": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1, "mfa_challenge_lifetime_secs": 1, "mfa_enforced": true, "min_length": 1, "opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example", "password_history_count": 1, "refresh_token_lifetime_secs": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true, "sensitive_scopes_enabled": true, "webauthn_user_verification": "example"})json");
     TenantSettingsOverride body{};
     const auto result = fixture.client.management().settings().set_tenant_override(body);
     (void) result;
@@ -1501,6 +1501,33 @@ AXIAM_TEST("management privacy.cancel_delete reaches its route") {
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/auth/account/delete/cancel");
 }
 
+AXIAM_TEST("management privacy.list_consents reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json([{"accepted_at": "2026-08-26T00:00:00Z", "consent_type": "example", "version": "example", "withdrawable": true}])json");
+    const auto result = fixture.client.management().privacy().list_consents();
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/account/consents");
+}
+
+AXIAM_TEST("management privacy.grant_scope_consent reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(204, "");
+    GrantScopeConsent body{};
+    fixture.client.management().privacy().grant_scope_consent(body);
+
+    AXIAM_CHECK(fixture.state->last().method == "POST");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/account/consents/oidc-scopes");
+}
+
+AXIAM_TEST("management privacy.withdraw_scope_consent reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(204, "");
+    fixture.client.management().privacy().withdraw_scope_consent("11111111-1111-4111-8111-111111111111");
+
+    AXIAM_CHECK(fixture.state->last().method == "DELETE");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/account/consents/oidc-scopes/11111111-1111-4111-8111-111111111111");
+}
+
 AXIAM_TEST("management platform.health reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
         R"json({"status": "example"})json");
@@ -1541,11 +1568,11 @@ AXIAM_TEST("management platform.mds_refresh reaches its route") {
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/mds/refresh");
 }
 
-// §27.9: all 147 registry operations are covered by a case above. Counted from the test
-// registry rather than written as a literal on both sides. `AXIAM_CHECK(147 == 147)` is a
+// §27.9: all 158 registry operations are covered by a case above. Counted from the test
+// registry rather than written as a literal on both sides. `AXIAM_CHECK(158 == 158)` is a
 // tautology, and a case removed by a bad regeneration would still pass it -- this fails
 // instead.
-AXIAM_TEST("management surface covers all 155 registry operations") {
+AXIAM_TEST("management surface covers all 158 registry operations") {
     int reached = 0;
     for (const auto& test : axtest::registry()) {
         if (test.name.rfind("management ", 0) == 0 &&
@@ -1553,7 +1580,7 @@ AXIAM_TEST("management surface covers all 155 registry operations") {
             ++reached;
         }
     }
-    AXIAM_CHECK(reached == 155);
+    AXIAM_CHECK(reached == 158);
 }
 
 }  // namespace

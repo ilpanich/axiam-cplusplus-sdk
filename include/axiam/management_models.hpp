@@ -111,6 +111,45 @@ std::string to_wire(AuditOutcome value);
 /// `switch` over this enum needs an `Unknown` arm.
 AuditOutcome audit_outcome_from_wire(const std::string& value);
 
+/// Whether this client's authorization requests may carry OpenID Connect's
+/// authentication-request parameters, or whether they are ignored (X7.1).
+///
+/// The bundle this governs is `prompt`, `max_age`, `acr_values`, `claims`, `id_token_hint`,
+/// `login_hint`, `display`, `ui_locales` and `claims_locales`. It is **one** field rather than
+/// nine booleans for the same reason [`ClientProfile`] is one field rather than a dozen: a
+/// client that honours `max_age` but ignores `prompt=none` is not "mostly conformant", it is a
+/// client a relying party cannot reason about.
+///
+/// [`Ignore`](Self::Ignore) is the serde default and is exactly what AXIAM has always done —
+/// unknown authorization-request parameters are dropped by the query deserialiser and never
+/// reach a decision. Every row written before schema v54 therefore decodes to the behaviour it
+/// already had.
+enum class AuthnRequestParamsMode {
+    Ignore,  ///< Wire value `ignore`.
+    Honour,  ///< Wire value `honour`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a AuthnRequestParamsMode.
+///
+/// `AuthnRequestParamsMode::Unknown` spells as the empty string, which no server value is:
+/// carrying an unrecognised value back into an update is refused by the server rather than
+/// written as a spelling it never used.
+std::string to_wire(AuthnRequestParamsMode value);
+
+/// Parse a wire value into a AuthnRequestParamsMode.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `AuthnRequestParamsMode::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+AuthnRequestParamsMode authn_request_params_mode_from_wire(const std::string& value);
+
 /// Status of a certificate in its lifecycle.
 enum class CertificateStatus {
     Active,  ///< Wire value `Active`.
@@ -211,6 +250,7 @@ CertificationLevel certification_level_from_wire(const std::string& value);
 /// let an operator register a client whose authentication is silently skipped.
 enum class ClientAuthMethod {
     ClientSecretPost,  ///< Wire value `client_secret_post`.
+    ClientSecretBasic,  ///< Wire value `client_secret_basic`.
     TlsClientAuth,  ///< Wire value `tls_client_auth`.
     SelfSignedTlsClientAuth,  ///< Wire value `self_signed_tls_client_auth`.
     PrivateKeyJwt,  ///< Wire value `private_key_jwt`.
@@ -741,6 +781,7 @@ struct CaCertificate;
 struct Certificate;
 struct CertificatePolicy;
 struct ComplianceReportEntry;
+struct ConsentView;
 struct CreateCaCertificateRequest;
 struct CreateCertificateRequest;
 struct CreateFederationConfigRequest;
@@ -772,6 +813,7 @@ struct GeneratedCaCertificate;
 struct GeneratedCertificate;
 struct GeneratedPgpKey;
 struct GrantPermissionRequest;
+struct GrantScopeConsent;
 struct GrantedScope;
 struct Group;
 struct HealthResponse;
@@ -791,6 +833,7 @@ struct OidcAuthorizeRequest;
 struct OidcAuthorizeResponse;
 struct OidcCallbackRequest;
 struct OidcCallbackResponse;
+struct OidcPolicy;
 struct OpaqueEnrollment;
 struct OpaquePolicy;
 struct Organization;
@@ -1082,6 +1125,21 @@ struct ComplianceReportEntry {
     std::string user_id;
 };
 
+/// One consent record, as the subject sees it.
+struct ConsentView {
+    /// The server's `accepted_at` field.
+    std::string accepted_at;
+    /// What was consented to, e.g. `terms_of_service` or `oidc_scope_release:<client_id>`.
+    std::string consent_type;
+    /// The document version or, for a scope release, the consented scopes.
+    std::string version;
+    /// Whether this record can be withdrawn here. `false` for `terms_of_service`: withdrawing
+    /// it is not a consent operation but an erasure, and it has its own endpoint with its own
+    /// grace period. Reported rather than silently absent so the self-service page can show the
+    /// record and explain it.
+    bool withdrawable;
+};
+
 /// The `CreateCaCertificateRequest` schema from the server's OpenAPI document.
 struct CreateCaCertificateRequest {
     /// Common name for the signing intermediate — `vault_pki` custody only. Under that
@@ -1245,9 +1303,23 @@ struct CreateNotificationRuleRequest {
 
 /// The `CreateOAuth2ClientRequest` schema from the server's OpenAPI document.
 struct CreateOAuth2ClientRequest {
+    /// X7.1 — whether this client's authorization requests may carry the OpenID Connect
+    /// authentication-request parameters (`prompt`, `max_age`, `acr_values`, `claims`,
+    /// `id_token_hint`, `login_hint`, `display`, `ui_locales`, `claims_locales`). `"ignore"`
+    /// (the default) is what every AXIAM client has always done: they are dropped and reach no
+    /// decision. `"honour"` opts in, and is **refused on a `fapi2` client** at both this gate
+    /// and the authorization endpoint — the two are different answers to the same question
+    /// about what a request from this client means. Optional.
+    std::optional<AuthnRequestParamsMode> authn_request_params = std::nullopt;
     /// B5 — where OIDC back-channel logout tokens are delivered. Omit for a client that does
     /// not participate. Optional.
     std::optional<std::string> backchannel_logout_uri = std::nullopt;
+    /// X7.3 — whether an unauthenticated authorization request from this client may be answered
+    /// with a redirect to the login page rather than the `401` AXIAM answers today. Accepted
+    /// and stored, but **nothing reads it yet**: the login hop it gates is a later wave. Unlike
+    /// `authn_request_params` it is permitted on a `fapi2` client, because it relaxes nothing —
+    /// it decides only how an anonymous browser is answered. Optional.
+    std::optional<bool> browser_sso = std::nullopt;
     /// RFC 9449 §5.2 — issue DPoP-bound (sender-constrained) access tokens to this client.
     /// Independent of both the authentication method and
     /// `tls_client_certificate_bound_access_tokens`; a client may ask for both constraints, and
@@ -1828,6 +1900,15 @@ struct GrantPermissionRequest {
     std::optional<std::vector<std::string>> scope_ids = std::nullopt;
 };
 
+/// Body for recording an OIDC scope-release consent.
+struct GrantScopeConsent {
+    /// The relying party the claims would be released to.
+    std::string client_id;
+    /// The sensitive scopes being consented to. Order does not matter; the record is written in
+    /// the canonical order so that the same consent has one name.
+    std::vector<std::string> scopes;
+};
+
 /// A scope named by a grant, resolved to something a human can read.
 struct GrantedScope {
     /// The scope's id, as it appears in the grant's `scope_ids`.
@@ -2021,6 +2102,11 @@ struct OAuth2ClientCreatedResponse {
 
 /// OAuth2 client response -- omits client_secret_hash.
 struct OAuth2ClientResponse {
+    /// X7.1 — echoed so an operator can audit which clients act on the OIDC
+    /// authentication-request parameters, from this endpoint rather than from the database.
+    AuthnRequestParamsMode authn_request_params;
+    /// X7.3 — echoed for the same reason.
+    bool browser_sso;
     /// The server's `client_id` field.
     std::string client_id;
     /// The server's `created_at` field.
@@ -2113,6 +2199,41 @@ struct OidcCallbackResponse {
     bool newly_provisioned;
     /// The server's `user_id` field.
     std::string user_id;
+};
+
+/// OpenID Connect surface controls (X7 G8, plan §4.6/§4.8). Two settings that are not password
+/// rules, and are here because this is the org-baseline-plus-tenant-override surface every
+/// other per-tenant control lives on. They are also the two settings in this model that are
+/// *not* of the same kind as each other, so it is worth saying which is which: *
+/// [`Self::sensitive_scopes_enabled`] **is** ordered. Releasing personal data is the
+/// less-restrictive direction, so it is validated disable-only — the mirror image of
+/// `mfa_enforced` — and a tenant can turn its organization's decision off but never on. *
+/// [`Self::default_locale`] is **not** ordered, and no ordering is invented for it. A language
+/// is a presentation preference; there is no sense in which Italian is stricter than French.
+/// [`validate_tenant_override`] therefore does not check it and [`clamp_overrides_to_org`]
+/// never clears it. The model's rule is "a tenant may only be more restrictive", which binds
+/// every field that *has* a restrictiveness; a field that has none cannot violate it.
+struct OidcPolicy {
+    /// The BCP 47 tag the sign-in page falls back to when the relying party's `ui_locales`
+    /// selects nothing (W5's chain, plan §4.6). `None` means "no tenant preference", which
+    /// lands on the deployment default (`en`) — the behaviour every deployment had before this
+    /// field existed. A tag this build does not ship also lands there: the parse is exact
+    /// rather than a language lookup, so a stored `fr-CA` reads as "somebody wrote something
+    /// this binary does not ship" rather than as a guess at French. Stored as a string rather
+    /// than as the `Locale` enum because that enum lives in `axiam-oauth2`, four layers above
+    /// this crate, and the crate layering points inward. Optional.
+    std::optional<std::string> default_locale = std::nullopt;
+    /// Whether `address` and `phone` may be registered on a client, requested at the
+    /// authorization endpoint, and released at UserInfo (X7 G8). **Off unless an organization
+    /// turns it on.** The two scopes release a postal address and a telephone number —
+    /// categories of personal data AXIAM has no other use for — so the deployment that has
+    /// never thought about them releases nothing, and the operator who has thought about them
+    /// says so once, at the organization level, where the lawful basis for holding the data was
+    /// decided. The switch is a *capability*, not a grant: with it on, a client still has to
+    /// register the scope, the request still has to ask for it, and the user still has to have
+    /// consented. It is the first of four gates, and it is the only one an operator can close
+    /// for everybody at once.
+    bool sensitive_scopes_enabled;
 };
 
 /// Secure Remote Password policy. `suite` and `ksf` are the parameters a *new* registration
@@ -2563,6 +2684,8 @@ struct SecuritySettings {
     MfaPolicy mfa;
     /// The server's `notification` field.
     NotificationPolicy notification;
+    /// The server's `oidc` field.
+    OidcPolicy oidc;
     /// The server's `opaque` field.
     OpaquePolicy opaque;
     /// The server's `password` field.
@@ -2631,6 +2754,8 @@ struct SetOrgSettings {
     bool admin_notifications_enabled;
     /// The server's `default_cert_validity_days` field.
     std::int64_t default_cert_validity_days;
+    /// The server's `default_locale` field. Optional.
+    std::optional<std::string> default_locale = std::nullopt;
     /// The server's `deletion_grace_period_days` field. Optional.
     std::optional<std::int64_t> deletion_grace_period_days = std::nullopt;
     /// The server's `email_verification_grace_period_hours` field.
@@ -2673,6 +2798,8 @@ struct SetOrgSettings {
     bool require_symbols;
     /// The server's `require_uppercase` field.
     bool require_uppercase;
+    /// The server's `sensitive_scopes_enabled` field. Optional.
+    std::optional<bool> sensitive_scopes_enabled = std::nullopt;
     /// The server's `webauthn_user_verification` field. Optional.
     std::optional<std::string> webauthn_user_verification = std::nullopt;
 };
@@ -2766,6 +2893,9 @@ struct TenantSettingsOverride {
     std::optional<bool> admin_notifications_enabled = std::nullopt;
     /// The server's `default_cert_validity_days` field. Optional.
     std::optional<std::int64_t> default_cert_validity_days = std::nullopt;
+    /// The tenant's fallback UI language. Not ordered, therefore not validated against the
+    /// baseline and never clamped — see [`OidcPolicy`]. Optional.
+    std::optional<std::string> default_locale = std::nullopt;
     /// The server's `deletion_grace_period_days` field. Optional.
     std::optional<std::int64_t> deletion_grace_period_days = std::nullopt;
     /// The server's `email_verification_grace_period_hours` field. Optional.
@@ -2808,6 +2938,8 @@ struct TenantSettingsOverride {
     std::optional<bool> require_symbols = std::nullopt;
     /// The server's `require_uppercase` field. Optional.
     std::optional<bool> require_uppercase = std::nullopt;
+    /// The server's `sensitive_scopes_enabled` field. Optional.
+    std::optional<bool> sensitive_scopes_enabled = std::nullopt;
     /// The server's `webauthn_user_verification` field. Optional.
     std::optional<std::string> webauthn_user_verification = std::nullopt;
 };
@@ -2899,9 +3031,13 @@ struct UpdateNotificationRuleRequest {
 /// disengaged one is OMITTED from the request entirely, rather than sent as null (§27.4 rule
 /// 5). On a sparse update those say opposite things, and only omission means "leave it alone".
 struct UpdateOAuth2ClientRequest {
+    /// The server's `authn_request_params` field. Optional.
+    std::optional<AuthnRequestParamsMode> authn_request_params = std::nullopt;
     /// Pass an empty string to clear a previously registered URI — the one edit an operator
     /// makes when an RP is decommissioned. Optional.
     std::optional<std::string> backchannel_logout_uri = std::nullopt;
+    /// X7.3 — see [`CreateOAuth2ClientRequest::browser_sso`]. Optional.
+    std::optional<bool> browser_sso = std::nullopt;
     /// The server's `dpop_bound_access_tokens` field. Optional.
     std::optional<bool> dpop_bound_access_tokens = std::nullopt;
     /// The server's `dpop_require_nonce` field. Optional.
