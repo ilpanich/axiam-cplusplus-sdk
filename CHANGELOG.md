@@ -67,16 +67,25 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   tenant-scoped by the server and are unaffected, and `logout_url()` never
   added a `tenant_id` of its own, so it could not double one.
 
-- **The PAR redirect keeps the `tenant_id` the server published on
-  `authorization_endpoint`.** §26.2 rule 2 drops that endpoint's query so an
-  inline authorization parameter cannot be smuggled alongside the pushed copy.
-  Contract 1.42 made discovery publish `tenant_id` there, and dropping it sends
-  a browser that has no session — and therefore no tenant of its own — to an
-  unrouted endpoint: a 401 on a request that was pushed correctly. It is now
-  carried through byte for byte, and it alone: `tenant_id` is routing rather
-  than an RFC 6749 §4.1.1 authorization parameter, so the pushed request holds
-  no counterpart for it to be confused with. Every other query parameter is
-  still dropped.
+- **The PAR redirect carries the `tenant_id` the push was made under.**
+  §26.2 rule 2 drops the authorization endpoint's query so an inline
+  authorization parameter cannot be smuggled alongside the pushed copy.
+  Dropping `tenant_id` with it sends a browser that has no session — and
+  therefore no tenant of its own — to an unrouted endpoint: a 401 on a request
+  that was pushed correctly.
+
+  The **resolved** tenant is sent, not the one the document happened to carry.
+  `oidc_discover()` fetches `/.well-known/openid-configuration` with no tenant
+  of its own, so a multi-tenant deployment that sets no
+  `oauth2_default_tenant_id` serves a document naming no tenant at all;
+  carrying over only what the document published would fix a scoped deployment
+  and leave that one at the same 401. It is also the only correct value where
+  the two differ — a `request_uri` is valid for exactly the tenant that minted
+  it.
+
+  `tenant_id` is routing rather than an RFC 6749 §4.1.1 authorization
+  parameter, so the pushed request holds no counterpart for it to be confused
+  with. Every other query parameter is still dropped.
 
 ### Added
 

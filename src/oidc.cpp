@@ -1720,20 +1720,24 @@ std::string normalize_scope(const std::optional<std::string>& scope) {
 /// pushed copy has a counterpart for and cannot take part in the confusion
 /// §26.2 rule 2 exists to prevent. Dropping it sends the browser, which has no
 /// session yet and therefore no tenant of its own, to an unrouted endpoint: a
-/// 401 on a request that was correctly pushed. It is carried through BYTE FOR
-/// BYTE, straight from the document — this SDK never invents one here, and the
-/// call's own resolved tenant already went out on the push.
+/// 401 on a request that was correctly pushed.
+///
+/// It is the tenant this push was RESOLVED against, not the one the document
+/// happened to carry. `oidc_discover` fetches
+/// `/.well-known/openid-configuration` with no tenant of its own, so a
+/// multi-tenant deployment that sets no `oauth2_default_tenant_id` serves a
+/// document whose `authorization_endpoint` names no tenant at all — and
+/// copying only what the document published would fix the scoped deployment
+/// while leaving that one at the same 401. The resolved value is also the only
+/// correct one where the two differ: the `request_uri` is valid solely for the
+/// tenant that minted it, which is the tenant of the push.
 std::string par_redirect_url(const std::string& authorization_endpoint,
-                             const std::string& client_id, const std::string& request_uri) {
+                             const std::string& client_id, const std::string& request_uri,
+                             const std::string& tenant) {
     const SplitUrl split = split_url(authorization_endpoint);
     std::string url = split.before_query;
     url += "?client_id=" + pct(client_id) + "&request_uri=" + pct(request_uri);
-    for (const std::string& pair : split.pairs) {
-        if (!is_tenant_pair(pair)) continue;
-        url += '&';
-        url += pair;
-        break;  // one is routing; a second is a document defect, not a second tenant
-    }
+    url += "&tenant_id=" + pct(tenant);
     return url;
 }
 
@@ -1830,7 +1834,7 @@ PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
     }
 
     PushedAuthorizationRequest out;
-    out.url = par_redirect_url(config.authorization_endpoint, client_id, *request_uri);
+    out.url = par_redirect_url(config.authorization_endpoint, client_id, *request_uri, tenant);
     out.request_uri = Sensitive<std::string>(*request_uri);
     out.expires_in = opt_int(j, "expires_in").value_or(0);
     out.state = request.state;

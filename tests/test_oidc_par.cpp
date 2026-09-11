@@ -347,7 +347,7 @@ AXIAM_TEST("par: a public client pushes without a secret") {
 // §26.2 rule 2 — the redirect carries exactly two parameters
 // ---------------------------------------------------------------------------
 
-AXIAM_TEST("par: the redirect URL carries exactly client_id and request_uri") {
+AXIAM_TEST("par: the redirect URL carries no inline authorization parameter") {
     // THE SECURITY ASSERTION OF §26. The server refuses a request that mixes a
     // request_uri with inline authorization parameters rather than merging them:
     // merging is where parameter confusion lives — an attacker supplies the
@@ -367,9 +367,15 @@ AXIAM_TEST("par: the redirect URL carries exactly client_id and request_uri") {
     for (std::size_t i = q; i < pushed.url.size(); ++i) {
         if (pushed.url[i] == '&') ++amps;
     }
-    AXIAM_REQUIRE(amps == 1);  // exactly two parameters
+    // Re-pointed at contract 1.42, not relaxed: the count is three because
+    // `/oauth2/authorize` now takes a `tenant_id` for a request with no
+    // authenticated principal, which a PAR redirect always is. The property
+    // this test guards — that no INLINE AUTHORIZATION parameter rides along
+    // with the request_uri — is asserted by name below and is unchanged.
+    AXIAM_REQUIRE(amps == 2);  // client_id, request_uri, tenant_id
     AXIAM_REQUIRE(contains(pushed.url, std::string("client_id=") + kClientId));
     AXIAM_REQUIRE(contains(pushed.url, "request_uri="));
+    AXIAM_REQUIRE(contains(pushed.url, std::string("tenant_id=") + kTenantUuid));
 
     // None of the pushed parameters is re-added "for compatibility".
     AXIAM_REQUIRE_FALSE(contains(pushed.url, "scope="));
@@ -438,7 +444,7 @@ AXIAM_TEST("par: the push does not double a tenant_id the document already publi
     AXIAM_REQUIRE_FALSE(contains(url, "99999999"));
 }
 
-AXIAM_TEST("par: the redirect keeps the tenant_id the document published, and nothing else") {
+AXIAM_TEST("par: the redirect carries the RESOLVED tenant_id, and nothing else") {
     // §26.2 rule 2 drops the authorization endpoint's query so an inline
     // authorization parameter cannot be smuggled alongside the pushed copy.
     // `tenant_id` is the one exception, and only since contract 1.42 made
@@ -458,12 +464,45 @@ AXIAM_TEST("par: the redirect keeps the tenant_id the document published, and no
 
     AXIAM_REQUIRE(contains(pushed.url, "/oauth2/authorize?client_id="));
     AXIAM_REQUIRE(contains(pushed.url, "request_uri="));
-    // Carried through BYTE FOR BYTE from the document: this SDK never invents
-    // one here, and the call's own resolved tenant already went out on the push.
-    AXIAM_REQUIRE(contains(pushed.url, "tenant_id=99999999-9999-9999-9999-999999999999"));
+    // The RESOLVED tenant, not the one the document happened to carry. This
+    // document advertises 99999999-… while the client pushed under
+    // kTenantUuid, and only the latter minted the `request_uri` this redirect
+    // presents — a handle is valid for exactly one tenant, so the two must not
+    // be allowed to differ. Re-pointed from an earlier assertion that took the
+    // document's value verbatim: that was right for a scoped document and
+    // silently wrong for a bare one, which the next test covers.
+    AXIAM_REQUIRE(contains(pushed.url, std::string("tenant_id=") + kTenantUuid));
+    AXIAM_REQUIRE_FALSE(contains(pushed.url, "99999999-9999-9999-9999-999999999999"));
     // Still exactly three parameters, and `ui_locales` — which IS an
     // authorization parameter — is still dropped.
     AXIAM_REQUIRE_FALSE(contains(pushed.url, "ui_locales"));
+    std::size_t amps = 0;
+    for (std::size_t i = pushed.url.find('?'); i < pushed.url.size(); ++i) {
+        if (pushed.url[i] == '&') ++amps;
+    }
+    AXIAM_REQUIRE(amps == 2);
+}
+
+AXIAM_TEST("par: a bare authorization_endpoint still gets the resolved tenant_id") {
+    // The case a carry-over-only fix misses, and the common one.
+    // `oidc_discover` fetches /.well-known/openid-configuration with no tenant
+    // of its own, so a multi-tenant deployment that sets no
+    // `oauth2_default_tenant_id` serves a document whose endpoints name no
+    // tenant at all. Copying only what the document published would fix the
+    // scoped deployment above and leave this one redirecting a session-less
+    // browser at an unrouted endpoint — the same 401 the whole change exists
+    // to remove.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);
+
+    const auto doc = client.oidc_discover();
+    const auto request = client.oidc_begin(doc, kRedirectUri, "openid");
+    const auto pushed = client.oidc_par(doc, request, kRedirectUri, "openid");
+
+    AXIAM_REQUIRE(contains(pushed.url, std::string("tenant_id=") + kTenantUuid));
+    AXIAM_REQUIRE(contains(pushed.url, "/oauth2/authorize?client_id="));
+    AXIAM_REQUIRE(contains(pushed.url, "request_uri="));
     std::size_t amps = 0;
     for (std::size_t i = pushed.url.find('?'); i < pushed.url.size(); ++i) {
         if (pushed.url[i] == '&') ++amps;

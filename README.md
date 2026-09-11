@@ -1265,16 +1265,17 @@ if (!doc.pushed_authorization_request_endpoint) { /* this server has no PAR */ }
 
 const auto request = client.oidc_begin(doc, redirect_uri, "openid profile");
 const auto pushed  = client.oidc_par(doc, request, redirect_uri, "openid profile");
-// pushed.url carries exactly client_id and request_uri — plus the routing-only
-// tenant_id, where the discovery document published one on the endpoint.
+// pushed.url carries exactly client_id, request_uri and the routing-only
+// tenant_id this push was made under.
 ```
 
 **The server answers `201`, not `200`.** RFC 9126 §2.2 specifies Created, and a
 success predicate written `== 200` treats every successful push as a failure
 while passing every other check.
 
-**The redirect carries exactly two parameters (§26.2 rule 2)**, plus the
-routing-only `tenant_id` where the server published one. AXIAM refuses a request
+**The redirect carries no inline authorization parameter (§26.2 rule 2)** —
+`client_id`, `request_uri` and the routing-only `tenant_id`, and nothing else.
+AXIAM refuses a request
 that mixes a `request_uri` with inline authorization parameters rather than
 merging them, because merging is where parameter confusion lives: an attacker
 supplies the inline value they want and lets the pushed copy satisfy whichever
@@ -1287,8 +1288,13 @@ on `authorization_endpoint`. It is routing rather than an RFC 6749 §4.1.1
 authorization parameter — it selects which tenant's authorization server answers
 at all — so the pushed request holds no counterpart for it to be confused with,
 and a browser arriving with no session has no tenant of its own. Dropping it
-turns a correctly pushed request into a 401. It is carried through byte for byte
-from the document; this SDK never invents one there.
+turns a correctly pushed request into a 401.
+
+The value sent is the tenant the push was **resolved** against, not whatever the
+document carried. `oidc_discover()` names no tenant, so a multi-tenant
+deployment with no `oauth2_default_tenant_id` serves a document with none — and
+a `request_uri` is valid for exactly the tenant that minted it, so the two must
+not be allowed to differ.
 
 **`dpop_jkt`, caller-supplied (contract 1.42, RFC 9449 §10.1).** `oidc_par()`
 takes an optional sixth argument and sends it on the push only when set:
