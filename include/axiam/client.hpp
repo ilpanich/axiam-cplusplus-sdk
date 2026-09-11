@@ -938,11 +938,28 @@ public:
     /// @throws AuthError, client-side with NO wire call, when the discovery
     ///         document advertises no PAR endpoint. §12.7.2 rule 1's discipline:
     ///         never synthesise the URL from the issuer.
+    /// @param dpop_jkt RFC 9449 §10.1 — the base64url SHA-256 JWK thumbprint of
+    ///         the key the caller will prove possession of at the token
+    ///         endpoint. Sent on the push only when engaged and non-empty
+    ///         (contract 1.42).
+    ///
+    ///         **The CALLER computes it.** CONTRACT §21.9 records this SDK as
+    ///         generating no DPoP proofs and declining §21.7.2 verification, so
+    ///         there is no thumbprint for it to derive and no proof for it to
+    ///         sign; an application doing DPoP itself needs somewhere to put
+    ///         the binding, and this is it. Passing it here does NOT make this
+    ///         SDK a DPoP client — it makes it capable of pushing one's
+    ///         authorization request. `dpop_jkt` is also the only one of the
+    ///         eleven parameters contract 1.42 added to
+    ///         `PushedAuthorizationRequest` that this SDK sends; in particular
+    ///         `request_uri` is deliberately unreachable, because RFC 9126 §2.1
+    ///         makes it the one authorization parameter a client MUST NOT push.
     PushedAuthorizationRequest oidc_par(const OidcConfiguration& config,
                                         const AuthorizationRequest& request,
                                         const std::string& redirect_uri,
                                         std::optional<std::string> scope = std::nullopt,
-                                        std::optional<std::string> tenant_id = std::nullopt);
+                                        std::optional<std::string> tenant_id = std::nullopt,
+                                        std::optional<std::string> dpop_jkt = std::nullopt);
 
     // ---- Accepted per-language async twins (§1, C++ row: std::future) ----
     std::future<LoginResult> login_async(std::string username_or_email, std::string password);
@@ -1004,7 +1021,7 @@ public:
     /// construct or inspect one — the alternative was a second copy of the
     /// request plumbing living beside the first, which is exactly the "second,
     /// parallel stack" the §12.6 deferral warned about.
-    /// The CONTRACT.md §27 management surface: 147 operations across 24 namespaces.
+    /// The CONTRACT.md §27 management surface: 158 operations across 24 namespaces.
     ///
     /// `client.management().users().list()`. §27.3's C++ row is
     /// `client.service_accounts().rotate_secret(id)` — a method returning a handle,

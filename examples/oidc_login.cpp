@@ -120,6 +120,12 @@ int main() {
         if (tokens.id_claims) {
             std::cout << "  sub          " << tokens.id_claims->subject << "\n"
                       << "  iss          " << tokens.id_claims->issuer << "\n";
+            // Engaged only against an OP that still sends `email` in the ID
+            // token. AXIAM stopped as of contract 1.42 — OIDC Core §5.4 puts
+            // scope-requested claims at UserInfo, and an ID token is forwarded
+            // as proof of an authentication event, so an address placed in it
+            // travels further than the relying party that asked. Same for
+            // `tenant_id`. Read the address off `LoginResult::user` instead.
             if (tokens.id_claims->email) {
                 std::cout << "  email        " << *tokens.id_claims->email << "\n";
             }

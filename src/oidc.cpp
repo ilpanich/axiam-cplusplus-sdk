@@ -74,11 +74,6 @@ private:
     std::string body_;
 };
 
-/// Append `?tenant_id=` (or `&`) to an endpoint from the discovery document.
-///
-/// §12.1 note 2: tenant_id is a QUERY parameter and never a body field —
-/// TokenRequest, IntrospectRequest and RevokeRequest have no such property. Any
-/// query the discovered endpoint already carries is preserved.
 /// The endpoint a call should use, preferring its RFC 8705 §5 alias when this
 /// client presents a §6.1 certificate (CONTRACT.md §21.3 rule 2).
 ///
@@ -145,10 +140,82 @@ const std::optional<std::string>& pushed_authorization_request(const MtlsEndpoin
 }
 }  // namespace alias_of
 
+/// A URL split into the part before the query, the raw `key=value` pairs of the
+/// query, and the fragment (including its leading `#`).
+///
+/// The pairs keep their ORIGINAL percent-encoding: they are put back on the wire
+/// verbatim, so re-encoding them would corrupt any value that legitimately
+/// contains a `%`.
+struct SplitUrl {
+    std::string before_query;
+    std::vector<std::string> pairs;
+    std::string fragment;
+};
+
+SplitUrl split_url(const std::string& url) {
+    SplitUrl out;
+    // The fragment comes off FIRST: RFC 3986 §3.4 ends the query at the first
+    // `#`, so a `?` that appears after one is an ordinary fragment character and
+    // not a query delimiter.
+    const std::size_t hash = url.find('#');
+    const std::string addressable = (hash == std::string::npos) ? url : url.substr(0, hash);
+    if (hash != std::string::npos) out.fragment = url.substr(hash);
+
+    const std::size_t q = addressable.find('?');
+    if (q == std::string::npos) {
+        out.before_query = addressable;
+        return out;
+    }
+    out.before_query = addressable.substr(0, q);
+    const std::string query = addressable.substr(q + 1);
+    std::size_t at = 0;
+    while (at <= query.size()) {
+        const std::size_t amp = query.find('&', at);
+        const std::size_t end = (amp == std::string::npos) ? query.size() : amp;
+        if (end > at) out.pairs.push_back(query.substr(at, end - at));
+        if (amp == std::string::npos) break;
+        at = amp + 1;
+    }
+    return out;
+}
+
+/// True when a raw query pair names `tenant_id`, with or without a value.
+bool is_tenant_pair(const std::string& pair) {
+    static const char kKey[] = "tenant_id";
+    static const std::size_t kLen = sizeof(kKey) - 1;
+    return pair.compare(0, kLen, kKey) == 0 && (pair.size() == kLen || pair[kLen] == '=');
+}
+
+/// Set `tenant_id` on an endpoint URL: REPLACE any the endpoint already carried,
+/// keep every other query parameter.
+///
+/// §12.1 note 2: `tenant_id` is a QUERY parameter and never a body field —
+/// TokenRequest, IntrospectRequest and RevokeRequest have no such property.
+///
+/// **Contract 1.42.** Discovery now publishes the tenant INSIDE the advertised
+/// token / revocation / introspection / device-authorization / PAR URLs whenever
+/// the discovery request named a tenant or the deployment sets
+/// `oauth2_default_tenant_id` (upstream `tenant_scoped()`); it did not before.
+/// This function appended unconditionally, which against such a document
+/// produced `?tenant_id=A&tenant_id=B` — and which of the two a server reads is
+/// not a thing a client may leave to a query parser.
+///
+/// The RESOLVED value wins on disagreement: it is the tenant the caller or the
+/// session actually authenticated against, and a deterministic answer beats a
+/// silent one. Every OTHER parameter survives, because RFC 6749 §3.1/§3.2
+/// require a client to retain the endpoint's own query component rather than
+/// rebuild the URL from its path.
 std::string with_tenant(const std::string& endpoint, const std::string& tenant) {
-    std::string url = endpoint;
-    url += (url.find('?') == std::string::npos) ? '?' : '&';
+    const SplitUrl split = split_url(endpoint);
+    std::string url = split.before_query;
+    url += '?';
+    for (const std::string& pair : split.pairs) {
+        if (is_tenant_pair(pair)) continue;
+        url += pair;
+        url += '&';
+    }
     url += "tenant_id=" + pct(tenant);
+    url += split.fragment;
     return url;
 }
 
@@ -491,6 +558,14 @@ OidcConfiguration Client::oidc_discover() {
     cfg.response_types_supported = string_array(j, "response_types_supported");
     cfg.id_token_signing_alg_values_supported =
         string_array(j, "id_token_signing_alg_values_supported");
+    // Contract 1.42. `openapi.json` marks both required; both are read as
+    // absent-able lists anyway, per §21.5: RFC 8414 defines no default for
+    // `code_challenge_methods_supported`, so its absence does not mean `S256`,
+    // and this model must still parse a non-AXIAM OP's document. Empty here
+    // means "the server said nothing", never "the server said S256".
+    cfg.code_challenge_methods_supported = string_array(j, "code_challenge_methods_supported");
+    cfg.token_endpoint_auth_signing_alg_values_supported =
+        string_array(j, "token_endpoint_auth_signing_alg_values_supported");
 
     p_->oidc_config = cfg;
     p_->oidc_config_expires_at = std::chrono::steady_clock::now() + p_->oidc_discovery_ttl;
@@ -1626,21 +1701,40 @@ std::string normalize_scope(const std::optional<std::string>& scope) {
     return requested.empty() ? std::string("openid") : ("openid " + requested);
 }
 
-/// §26.2 rule 2: the redirect URL carries EXACTLY `client_id` and `request_uri`.
+/// §26.2 rule 2: the redirect URL carries EXACTLY `client_id` and `request_uri`
+/// — plus the routing-only `tenant_id`, when the server published one.
 ///
 /// The server REFUSES a request carrying both a request_uri and any inline
-/// authorization parameter rather than merging them: an attacker supplies the
+/// AUTHORIZATION parameter rather than merging them: an attacker supplies the
 /// inline value they want and lets the pushed copy satisfy whichever check reads
 /// the other one. Re-adding them "for compatibility" restores the attack — which
-/// is why any query the discovered endpoint already carried is DROPPED here
+/// is why every other query the discovered endpoint carried is DROPPED here
 /// rather than merged, the one place in this file where with_tenant()'s
 /// preserve-the-query behaviour would be wrong.
+///
+/// **`tenant_id` is the one exception, and it is new in contract 1.42.**
+/// Discovery began publishing the tenant inside the advertised endpoint URLs,
+/// `authorization_endpoint` among them. It is not an RFC 6749 §4.1.1
+/// authorization parameter — it does not describe the request, it selects which
+/// tenant's authorization server answers at all — so it is not a parameter the
+/// pushed copy has a counterpart for and cannot take part in the confusion
+/// §26.2 rule 2 exists to prevent. Dropping it sends the browser, which has no
+/// session yet and therefore no tenant of its own, to an unrouted endpoint: a
+/// 401 on a request that was correctly pushed. It is carried through BYTE FOR
+/// BYTE, straight from the document — this SDK never invents one here, and the
+/// call's own resolved tenant already went out on the push.
 std::string par_redirect_url(const std::string& authorization_endpoint,
                              const std::string& client_id, const std::string& request_uri) {
-    const std::size_t q = authorization_endpoint.find('?');
-    std::string base = (q == std::string::npos) ? authorization_endpoint
-                                                : authorization_endpoint.substr(0, q);
-    return base + "?client_id=" + pct(client_id) + "&request_uri=" + pct(request_uri);
+    const SplitUrl split = split_url(authorization_endpoint);
+    std::string url = split.before_query;
+    url += "?client_id=" + pct(client_id) + "&request_uri=" + pct(request_uri);
+    for (const std::string& pair : split.pairs) {
+        if (!is_tenant_pair(pair)) continue;
+        url += '&';
+        url += pair;
+        break;  // one is routing; a second is a document defect, not a second tenant
+    }
+    return url;
 }
 
 }  // namespace
@@ -1649,7 +1743,8 @@ PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
                                             const AuthorizationRequest& request,
                                             const std::string& redirect_uri,
                                             std::optional<std::string> scope,
-                                            std::optional<std::string> tenant_id) {
+                                            std::optional<std::string> tenant_id,
+                                            std::optional<std::string> dpop_jkt) {
     p_->ensure_open();
     if (redirect_uri.empty()) throw AuthError("oidc_par needs a redirect_uri");
     // §21.3 rule 2: prefer the mTLS alias when this call presents a client
@@ -1689,6 +1784,19 @@ PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
     form.add("nonce", request.nonce);
     form.add("code_challenge", s256_challenge(verifier));
     form.add("code_challenge_method", "S256");
+    // RFC 9449 §10.1 / §10 (contract 1.42). Omitted entirely when the caller did
+    // not supply one — Form::add() drops an empty or disengaged value, which is
+    // §12.1's "MUST omit rather than send empty/null".
+    //
+    // Caller-supplied, and only ever caller-supplied: CONTRACT §21.9 records
+    // this SDK as generating no proofs, so there is no thumbprint here to
+    // derive. The other ten members contract 1.42 added to
+    // `PushedAuthorizationRequest` are NOT sent, and `request_uri` in
+    // particular is not reachable at all: RFC 9126 §2.1 makes it the one
+    // authorization parameter a client MUST NOT push, and the server models it
+    // so it can refuse it. A client able to send it is a client able to chain
+    // one pushed request into another.
+    form.add("dpop_jkt", dpop_jkt);
     add_client_auth(*p_, form, client_id);
 
     HttpRequest req;

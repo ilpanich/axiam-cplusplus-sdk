@@ -6,7 +6,114 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Breaking
+
+- **The ID token no longer carries `email`, `tenant_id` or `org_id`
+  (SDK contract 1.42, OIDC Core §5.4).** This is a change in what the AXIAM
+  server emits, not in this SDK's API: `IdTokenClaims::email` and
+  `IdTokenClaims::tenant_id` now read `std::nullopt` after every AXIAM login.
+  Verified upstream in `crates/axiam-auth/src/token.rs` — all three fields are
+  `Option` and hard-wired to `None`. The OpenID Foundation suite names both
+  cases directly (`EnsureIdTokenDoesNotContainNonRequestedClaims: id_token
+  contains non-requested claim 'tenant_id'`,
+  `EnsureIdTokenDoesNotContainEmailForScopeEmail`): OIDC Core §5.4 puts
+  scope-requested claims at UserInfo for the authorization-code flow, and an ID
+  token is routinely forwarded as proof of an authentication event, so anything
+  in it travels further than the relying party that asked for it.
+
+  **Nothing was removed from this SDK.** Both fields and the code that parses
+  them stay, deliberately: deleting them would lay a source break on top of a
+  behavioural one, and this SDK is pointed at non-AXIAM OPs that do still send
+  `email` in an ID token. Each field now documents that AXIAM no longer emits
+  it and names where the value lives instead. `org_id` was never modelled on
+  this struct and still is not; §12.1's open claim set keeps it reachable
+  through `IdTokenClaims::raw_claims_json`.
+
+  Migration — neither destination moved, and the ID token was only ever a third
+  copy of them:
+
+  | was | read instead |
+  |---|---|
+  | `tokens.id_claims->email` | `login.user->email` on the `LoginResult` from `Client::login()` |
+  | `tokens.id_claims->tenant_id` | `login.user->tenant_id` — the **access-token** claims, which CONTRACT §5.2 always specified |
+  | (`org_id`) | `login.user->org_id` |
+
+  Both identifiers are also always-present members of UserInfo.
+  `TokenAuthenticator` is **unaffected**: it reads `tenant_id` from the *access*
+  token and never looked at an ID token. Code written as
+  `if (claims->tenant_id)` keeps compiling and now takes the false branch; code
+  that assumed the claim was always engaged sees `std::nullopt` rather than an
+  empty string, which is the distinction the regression test in
+  `tests/test_oidc.cpp` pins.
+
+### Fixed
+
+- **`tenant_id` is no longer sent twice to a tenant-scoped endpoint
+  (SDK contract 1.42).** Discovery now publishes the tenant *inside* the
+  advertised token / revocation / introspection / device-authorization / PAR
+  URLs whenever the discovery request named a tenant or the deployment sets
+  `oauth2_default_tenant_id` (upstream `tenant_scoped()` in
+  `crates/axiam-oauth2/src/oidc.rs`); it did not before. This SDK appended its
+  own resolved `tenant_id` unconditionally, so against such a document the
+  parameter went on the wire as `?tenant_id=A&tenant_id=B` — and which of the
+  two a server reads is not something a client may leave to a query parser.
+
+  The internal `with_tenant()` now *replaces* any `tenant_id` the endpoint
+  already carried and keeps every other query parameter, per RFC 6749
+  §3.1/§3.2, which require a client to retain the endpoint's own query
+  component. The resolved value wins on disagreement: it is the tenant the
+  caller or session actually authenticated against, and a deterministic winner
+  beats a silent one. `userinfo_endpoint` and `jwks_uri` are never
+  tenant-scoped by the server and are unaffected, and `logout_url()` never
+  added a `tenant_id` of its own, so it could not double one.
+
+- **The PAR redirect keeps the `tenant_id` the server published on
+  `authorization_endpoint`.** §26.2 rule 2 drops that endpoint's query so an
+  inline authorization parameter cannot be smuggled alongside the pushed copy.
+  Contract 1.42 made discovery publish `tenant_id` there, and dropping it sends
+  a browser that has no session — and therefore no tenant of its own — to an
+  unrouted endpoint: a 401 on a request that was pushed correctly. It is now
+  carried through byte for byte, and it alone: `tenant_id` is routing rather
+  than an RFC 6749 §4.1.1 authorization parameter, so the pushed request holds
+  no counterpart for it to be confused with. Every other query parameter is
+  still dropped.
+
 ### Added
+
+- **`dpop_jkt` on `oidc_par()` (SDK contract 1.42, RFC 9449 §10.1).** A new
+  optional sixth argument, sent on the push only when set (§12.1: an optional
+  field the caller did not supply is omitted, never sent empty).
+  `CONTRACT.md` §21.9 records this SDK as generating no DPoP proofs and
+  declining §21.7.2 verification, so the thumbprint is the **caller's**,
+  computed over the caller's key — accepting it is what lets an application
+  that does DPoP itself use PAR. No proof generator and no proof verifier were
+  added.
+
+  Of the eleven members contract 1.42 added to the `PushedAuthorizationRequest`
+  schema, this is the only one this SDK sends. `request_uri` is deliberately
+  unreachable: RFC 9126 §2.1 makes it the one authorization parameter a client
+  MUST NOT push, and upstream models it so the server can *refuse* it — a
+  client able to send it is a client able to chain one pushed request into
+  another. The other nine (`acr_values`, `claims`, `claims_locales`, `display`,
+  `id_token_hint`, `login_hint`, `max_age`, `prompt`, `ui_locales`) are
+  additive optional surface, not part of this re-sync.
+
+- **Two RFC 8414 discovery members (SDK contract 1.42).** `OidcConfiguration`
+  gains `code_challenge_methods_supported` and
+  `token_endpoint_auth_signing_alg_values_supported`, both appended with a
+  default so existing aggregate use keeps compiling. Both are informational
+  only: §12.5 pins this SDK to `S256` and §12.1 rule 3 keeps it on
+  `client_secret_post`.
+
+  `openapi.json` marks both **required** as of 1.42; this model reads them as
+  absent-able anyway, so **empty means the member was absent, never
+  `["S256"]`**. CONTRACT §21.5 gives the reason — RFC 8414 defines no default
+  for `code_challenge_methods_supported` — and the struct must keep parsing a
+  non-AXIAM OP's document, which a required reading would reject.
+  `acr_values_supported`, `claims_parameter_supported` and
+  `request_parameter_supported` were deliberately *not* added: these structs
+  model a curated subset (they model no `dpop_signing_alg_values_supported`
+  either), and widening further is new surface rather than a re-sync.
 
 - **RFC 8705 §5 `mtls_endpoint_aliases` (SDK contract 1.40, CONTRACT.md §21.3
   rule 2).** `OidcConfiguration` gains an optional `mtls_endpoint_aliases`
@@ -33,15 +140,29 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 ### Changed
 
 - Re-vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` from
-  `ilpanich/axiam` at SDK contract 1.40. The registry's 155 operations are
-  unchanged, so the generated §27 surface is unchanged; `openapi.json` gained
-  the `MtlsEndpointAliases` schema and one optional property on
-  `OidcDiscoveryDocument`.
+  `ilpanich/axiam` at **SDK contract 1.42** — two revisions, 1.40 → 1.42. The
+  registry goes from 155 to **158 operations across 24 namespaces**: three new
+  `privacy` routes (`list_consents`, `grant_scope_consent`,
+  `withdraw_scope_consent`) for `/api/v1/account/consents` and the OIDC-scope
+  consent pair. The §27 surface was regenerated with
+  `python3 scripts/gen_management.py`; six schemas are new (`Address`,
+  `AuthnRequestParamsMode`, `ConsentView`, `GrantScopeConsent`, `OidcPolicy`,
+  `UserInfoPostForm`) and twelve changed, of which everything in the management
+  surface is generated rather than hand-written.
 
-  Additive and server-side: no deployment publishes `mtls_endpoint_aliases`
-  until an operator sets `AXIAM__AUTH__OAUTH2_MTLS_BASE_URL`, so every existing
-  consumer keeps working unchanged against every existing deployment. No public
-  API was removed or renamed.
+  `proto/` is byte-identical upstream and was not touched. The REST
+  `UserInfoResponse` gained seventeen members over the two revisions and **no
+  SDK change follows**: CONTRACT §12.3 rule 5 has SDKs deliberately not call
+  `/oauth2/userinfo`, this SDK models no such type, and the gRPC
+  `GetUserInfoResponse` it does care about is unchanged.
+
+- The generated §27 prose no longer hardcodes an operation count.
+  `scripts/gen_management.py` interpolates it from the vendored registry, so a
+  re-vendor cannot leave the shipped headers documenting the old number — they
+  had said "147" through two re-vendors that took the real count to 155. The
+  hand-written mentions in `README.md`, `include/axiam/axiam.hpp`,
+  `include/axiam/client.hpp` and the CI comment were corrected to 158 the same
+  way the surface itself was.
 
 ## [1.0.0-beta12] - 2026-09-06
 

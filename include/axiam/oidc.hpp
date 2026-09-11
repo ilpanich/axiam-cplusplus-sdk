@@ -217,6 +217,23 @@ struct OidcConfiguration {
     /// verification to `EdDSA` regardless of what this list says, so a server
     /// that additionally advertised `RS256` could not talk this SDK into it.
     std::vector<std::string> id_token_signing_alg_values_supported;
+    /// RFC 7636 §4.2 / RFC 8414: the PKCE challenge methods the AS advertises
+    /// (contract 1.42). INFORMATIONAL ONLY, exactly like the list above: §12.5
+    /// pins this SDK to `S256` and nothing read here can talk it down to
+    /// `plain`.
+    ///
+    /// **EMPTY MEANS THE MEMBER WAS ABSENT, NOT `["S256"]`.** `openapi.json`
+    /// marks it required, and this SDK still models it as an absent-able list,
+    /// because §21.5 says why: *RFC 8414 defines no default for this member, so
+    /// its absence does not mean `S256`*. This struct has to keep parsing the
+    /// discovery document of a non-AXIAM OP, and rejecting one that omits the
+    /// member would reject documents this SDK accepts today.
+    std::vector<std::string> code_challenge_methods_supported;
+    /// RFC 8414: the signing algorithms the token endpoint accepts for
+    /// `private_key_jwt` / `client_secret_jwt` assertions (contract 1.42).
+    /// INFORMATIONAL ONLY — §12.1 rule 3 keeps this SDK on
+    /// `client_secret_post`, which signs nothing. Empty means absent, as above.
+    std::vector<std::string> token_endpoint_auth_signing_alg_values_supported;
     /// §21.3 rule 2 / RFC 8705 §5: the endpoint aliases for a deployment that
     /// terminates mutual TLS on a host other than the issuer's own
     /// (contract 1.40).
@@ -264,9 +281,16 @@ struct PushedAuthorizationRequest {
     /// Where to send the user agent. Carries EXACTLY `client_id` and
     /// `request_uri` — the server refuses a request that mixes a `request_uri`
     /// with inline authorization parameters rather than merging them, because
-    /// merging is where parameter confusion lives (§26.2 rule 2). Any query the
-    /// discovered authorization endpoint already carried is DROPPED for the same
-    /// reason.
+    /// merging is where parameter confusion lives (§26.2 rule 2). Any other
+    /// query the discovered authorization endpoint already carried is DROPPED
+    /// for the same reason.
+    ///
+    /// The one exception is `tenant_id`, carried through verbatim when the
+    /// discovery document published one on `authorization_endpoint`
+    /// (contract 1.42). It is routing, not an RFC 6749 §4.1.1 authorization
+    /// parameter, so the pushed request has no counterpart for it to be
+    /// confused with — and a browser arriving with no session has no tenant of
+    /// its own, so dropping it turns a correctly pushed request into a 401.
     std::string url;
     /// The opaque, single-use handle. Wrapped per §26.5: between the push and
     /// the redirect it is a bearer handle to a fully-formed authorization
@@ -295,8 +319,40 @@ struct IdTokenClaims {
     std::optional<std::string> nonce;
     /// `azp`; required by §12.4 rule 4 when `aud` holds more than one audience.
     std::optional<std::string> authorized_party;
+    /// **AXIAM NO LONGER EMITS THIS CLAIM** (contract 1.42). Expect
+    /// `std::nullopt` from every AXIAM login.
+    ///
+    /// OIDC Core §5.4 places scope-requested claims at the UserInfo endpoint
+    /// for the authorization-code flow, and an ID token is routinely forwarded
+    /// as proof of an authentication event — so an address put in it travels
+    /// further than the relying party that asked for it. The server stopped
+    /// emitting it rather than keep failing
+    /// `EnsureIdTokenDoesNotContainEmailForScopeEmail`.
+    ///
+    /// The field and its parsing survive on purpose: this SDK is pointed at
+    /// non-AXIAM OPs too, and plenty of them still send `email` here.
+    ///
+    /// **Where the address actually lives now:** `UserInfo::email` on the
+    /// `LoginResult` Client::login() returns, or the OP's UserInfo endpoint.
     std::optional<std::string> email;
     std::optional<std::string> preferred_username;
+    /// **AXIAM NO LONGER EMITS THIS CLAIM** (contract 1.42), nor `org_id`,
+    /// which this struct never modelled. Expect `std::nullopt` from every AXIAM
+    /// login. Same OIDC Core §5.4 reasoning as `email`, and the OIDF suite
+    /// names it directly: `id_token contains non-requested claim 'tenant_id'`.
+    /// Parsed still, because another OP may send it.
+    ///
+    /// **Where the tenant actually lives now** — neither place moved, and the
+    /// ID token was only ever a third copy of them:
+    ///
+    /// * the **access-token claims** returned by login — `UserInfo::tenant_id`
+    ///   and `UserInfo::org_id` on the `LoginResult` Client::login() returns,
+    ///   which is what §5.2 has always specified an SDK read;
+    /// * **UserInfo**, which carries `tenant_id` and `org_id` as always-present
+    ///   members.
+    ///
+    /// On the resource-server side TokenAuthenticator reads `tenant_id` from
+    /// the ACCESS token and is unaffected — it never looked at an ID token.
     std::optional<std::string> tenant_id;
     std::vector<std::string> roles;
     /// Every claim the server sent, as raw JSON text.
