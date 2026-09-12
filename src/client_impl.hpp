@@ -221,9 +221,22 @@ struct Client::Impl {
 
     [[noreturn]] static void raise_for_status(const HttpResponse& resp) {
         // Try to extract structured detail for authz errors.
+        //
+        // `is_object()`, not merely `!is_discarded()`. A body that parses but is
+        // not an object — an array, a bare string, a number, or the literal
+        // `null` a gateway writes for an empty error body — used to be returned
+        // as-is, and `j.value("message", ...)` below then threw
+        // `nlohmann::detail::type_error`. That bypassed the SDK's error taxonomy
+        // twice over: the escaping type is not an `AxiamError`, so the
+        // documented `catch (const AxiamError&)` missed it, and it is the
+        // VENDORED nlohmann exception, which `include/axiam/management_models.hpp`
+        // says must never reach a consumer's API — a consumer linking their own
+        // nlohmann cannot even name the type to catch it. This is the shared
+        // status mapping, so it applied to `check_access`, management and OIDC
+        // calls alike.
         auto parse = [&]() -> json {
             auto j = json::parse(resp.body, nullptr, false);
-            return j.is_discarded() ? json::object() : j;
+            return j.is_object() ? j : json::object();
         };
         const long s = resp.status;
         if (s == 401) {

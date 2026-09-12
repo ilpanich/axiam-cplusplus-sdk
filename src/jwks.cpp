@@ -105,6 +105,16 @@ void JwksVerifier::load_from_json(const std::string& body) {
         return;
     }
     for (const auto& k : doc["keys"]) {
+        // A JWKS whose `keys` array holds a non-object member — `{"keys":["x"]}` —
+        // used to reach `k.value("kty", ...)` and throw
+        // `nlohmann::detail::type_error`. That input arrives from the ISSUER's key
+        // endpoint, not from the caller, so a broken or hostile JWKS turned every
+        // `refresh_keys()` and `verify_signature_only_unchecked()` in the process
+        // into an uncatchable throw of a VENDORED exception type — against a
+        // documented contract that says this path returns `nullopt` on malformed
+        // input, and one the caller cannot name to catch. Skipping the member is
+        // the same treatment the loop already gives a key with the wrong `kty`.
+        if (!k.is_object()) continue;
         const std::string kty = k.value("kty", "");
         const std::string crv = k.value("crv", "");
         if (kty != "OKP" || crv != "Ed25519") continue;  // Ed25519 only
