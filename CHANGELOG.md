@@ -6,88 +6,13 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
-### Breaking
-
-- **The ID token no longer carries `email`, `tenant_id` or `org_id`
-  (SDK contract 1.42, OIDC Core §5.4).** This is a change in what the AXIAM
-  server emits, not in this SDK's API: `IdTokenClaims::email` and
-  `IdTokenClaims::tenant_id` now read `std::nullopt` after every AXIAM login.
-  Verified upstream in `crates/axiam-auth/src/token.rs` — all three fields are
-  `Option` and hard-wired to `None`. The OpenID Foundation suite names both
-  cases directly (`EnsureIdTokenDoesNotContainNonRequestedClaims: id_token
-  contains non-requested claim 'tenant_id'`,
-  `EnsureIdTokenDoesNotContainEmailForScopeEmail`): OIDC Core §5.4 puts
-  scope-requested claims at UserInfo for the authorization-code flow, and an ID
-  token is routinely forwarded as proof of an authentication event, so anything
-  in it travels further than the relying party that asked for it.
-
-  **Nothing was removed from this SDK.** Both fields and the code that parses
-  them stay, deliberately: deleting them would lay a source break on top of a
-  behavioural one, and this SDK is pointed at non-AXIAM OPs that do still send
-  `email` in an ID token. Each field now documents that AXIAM no longer emits
-  it and names where the value lives instead. `org_id` was never modelled on
-  this struct and still is not; §12.1's open claim set keeps it reachable
-  through `IdTokenClaims::raw_claims_json`.
-
-  Migration — neither destination moved, and the ID token was only ever a third
-  copy of them:
-
-  | was | read instead |
-  |---|---|
-  | `tokens.id_claims->email` | `login.user->email` on the `LoginResult` from `Client::login()` |
-  | `tokens.id_claims->tenant_id` | `login.user->tenant_id` — the **access-token** claims, which CONTRACT §5.2 always specified |
-  | (`org_id`) | `login.user->org_id` |
-
-  Both identifiers are also always-present members of UserInfo.
-  `TokenAuthenticator` is **unaffected**: it reads `tenant_id` from the *access*
-  token and never looked at an ID token. Code written as
-  `if (claims->tenant_id)` keeps compiling and now takes the false branch; code
-  that assumed the claim was always engaged sees `std::nullopt` rather than an
-  empty string, which is the distinction the regression test in
-  `tests/test_oidc.cpp` pins.
-
-### Fixed
-
-- **`tenant_id` is no longer sent twice to a tenant-scoped endpoint
-  (SDK contract 1.42).** Discovery now publishes the tenant *inside* the
-  advertised token / revocation / introspection / device-authorization / PAR
-  URLs whenever the discovery request named a tenant or the deployment sets
-  `oauth2_default_tenant_id` (upstream `tenant_scoped()` in
-  `crates/axiam-oauth2/src/oidc.rs`); it did not before. This SDK appended its
-  own resolved `tenant_id` unconditionally, so against such a document the
-  parameter went on the wire as `?tenant_id=A&tenant_id=B` — and which of the
-  two a server reads is not something a client may leave to a query parser.
-
-  The internal `with_tenant()` now *replaces* any `tenant_id` the endpoint
-  already carried and keeps every other query parameter, per RFC 6749
-  §3.1/§3.2, which require a client to retain the endpoint's own query
-  component. The resolved value wins on disagreement: it is the tenant the
-  caller or session actually authenticated against, and a deterministic winner
-  beats a silent one. `userinfo_endpoint` and `jwks_uri` are never
-  tenant-scoped by the server and are unaffected, and `logout_url()` never
-  added a `tenant_id` of its own, so it could not double one.
-
-- **The PAR redirect carries the `tenant_id` the push was made under.**
-  §26.2 rule 2 drops the authorization endpoint's query so an inline
-  authorization parameter cannot be smuggled alongside the pushed copy.
-  Dropping `tenant_id` with it sends a browser that has no session — and
-  therefore no tenant of its own — to an unrouted endpoint: a 401 on a request
-  that was pushed correctly.
-
-  The **resolved** tenant is sent, not the one the document happened to carry.
-  `oidc_discover()` fetches `/.well-known/openid-configuration` with no tenant
-  of its own, so a multi-tenant deployment that sets no
-  `oauth2_default_tenant_id` serves a document naming no tenant at all;
-  carrying over only what the document published would fix a scoped deployment
-  and leave that one at the same 401. It is also the only correct value where
-  the two differ — a `request_uri` is valid for exactly the tenant that minted
-  it.
-
-  `tenant_id` is routing rather than an RFC 6749 §4.1.1 authorization
-  parameter, so the pushed request holds no counterpart for it to be confused
-  with. Every other query parameter is still dropped.
+## [1.0.0-beta13] - 2026-09-12
 
 ### Added
+
+- Absorb the contract 1.42 behavioural changes (§21.5, §26, RFC 9449)
+
+- Prefer RFC 8705 §5 mtls_endpoint_aliases on mTLS calls
 
 - **`dpop_jkt` on `oidc_par()` (SDK contract 1.42, RFC 9449 §10.1).** A new
   optional sixth argument, sent on the push only when set (§12.1: an optional
@@ -148,6 +73,10 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ### Changed
 
+- Close the branch-coverage gap, and fix the two defects it exposed
+
+- Re-vendor CONTRACT/openapi/registry at 1.42 and regenerate §27
+
 - Re-vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` from
   `ilpanich/axiam` at **SDK contract 1.42** — two revisions, 1.40 → 1.42. The
   registry goes from 155 to **158 operations across 24 namespaces**: three new
@@ -172,6 +101,89 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   hand-written mentions in `README.md`, `include/axiam/axiam.hpp`,
   `include/axiam/client.hpp` and the CI comment were corrected to 158 the same
   way the surface itself was.
+
+### Fixed
+
+- Send the resolved tenant on the PAR redirect, not the advertised one
+
+- **`tenant_id` is no longer sent twice to a tenant-scoped endpoint
+  (SDK contract 1.42).** Discovery now publishes the tenant *inside* the
+  advertised token / revocation / introspection / device-authorization / PAR
+  URLs whenever the discovery request named a tenant or the deployment sets
+  `oauth2_default_tenant_id` (upstream `tenant_scoped()` in
+  `crates/axiam-oauth2/src/oidc.rs`); it did not before. This SDK appended its
+  own resolved `tenant_id` unconditionally, so against such a document the
+  parameter went on the wire as `?tenant_id=A&tenant_id=B` — and which of the
+  two a server reads is not something a client may leave to a query parser.
+
+  The internal `with_tenant()` now *replaces* any `tenant_id` the endpoint
+  already carried and keeps every other query parameter, per RFC 6749
+  §3.1/§3.2, which require a client to retain the endpoint's own query
+  component. The resolved value wins on disagreement: it is the tenant the
+  caller or session actually authenticated against, and a deterministic winner
+  beats a silent one. `userinfo_endpoint` and `jwks_uri` are never
+  tenant-scoped by the server and are unaffected, and `logout_url()` never
+  added a `tenant_id` of its own, so it could not double one.
+
+- **The PAR redirect carries the `tenant_id` the push was made under.**
+  §26.2 rule 2 drops the authorization endpoint's query so an inline
+  authorization parameter cannot be smuggled alongside the pushed copy.
+  Dropping `tenant_id` with it sends a browser that has no session — and
+  therefore no tenant of its own — to an unrouted endpoint: a 401 on a request
+  that was pushed correctly.
+
+  The **resolved** tenant is sent, not the one the document happened to carry.
+  `oidc_discover()` fetches `/.well-known/openid-configuration` with no tenant
+  of its own, so a multi-tenant deployment that sets no
+  `oauth2_default_tenant_id` serves a document naming no tenant at all;
+  carrying over only what the document published would fix a scoped deployment
+  and leave that one at the same 401. It is also the only correct value where
+  the two differ — a `request_uri` is valid for exactly the tenant that minted
+  it.
+
+  `tenant_id` is routing rather than an RFC 6749 §4.1.1 authorization
+  parameter, so the pushed request holds no counterpart for it to be confused
+  with. Every other query parameter is still dropped.
+
+### Breaking
+
+- **The ID token no longer carries `email`, `tenant_id` or `org_id`
+  (SDK contract 1.42, OIDC Core §5.4).** This is a change in what the AXIAM
+  server emits, not in this SDK's API: `IdTokenClaims::email` and
+  `IdTokenClaims::tenant_id` now read `std::nullopt` after every AXIAM login.
+  Verified upstream in `crates/axiam-auth/src/token.rs` — all three fields are
+  `Option` and hard-wired to `None`. The OpenID Foundation suite names both
+  cases directly (`EnsureIdTokenDoesNotContainNonRequestedClaims: id_token
+  contains non-requested claim 'tenant_id'`,
+  `EnsureIdTokenDoesNotContainEmailForScopeEmail`): OIDC Core §5.4 puts
+  scope-requested claims at UserInfo for the authorization-code flow, and an ID
+  token is routinely forwarded as proof of an authentication event, so anything
+  in it travels further than the relying party that asked for it.
+
+  **Nothing was removed from this SDK.** Both fields and the code that parses
+  them stay, deliberately: deleting them would lay a source break on top of a
+  behavioural one, and this SDK is pointed at non-AXIAM OPs that do still send
+  `email` in an ID token. Each field now documents that AXIAM no longer emits
+  it and names where the value lives instead. `org_id` was never modelled on
+  this struct and still is not; §12.1's open claim set keeps it reachable
+  through `IdTokenClaims::raw_claims_json`.
+
+  Migration — neither destination moved, and the ID token was only ever a third
+  copy of them:
+
+  | was | read instead |
+  |---|---|
+  | `tokens.id_claims->email` | `login.user->email` on the `LoginResult` from `Client::login()` |
+  | `tokens.id_claims->tenant_id` | `login.user->tenant_id` — the **access-token** claims, which CONTRACT §5.2 always specified |
+  | (`org_id`) | `login.user->org_id` |
+
+  Both identifiers are also always-present members of UserInfo.
+  `TokenAuthenticator` is **unaffected**: it reads `tenant_id` from the *access*
+  token and never looked at an ID token. Code written as
+  `if (claims->tenant_id)` keeps compiling and now takes the false branch; code
+  that assumed the claim was always engaged sees `std::nullopt` rather than an
+  empty string, which is the distinction the regression test in
+  `tests/test_oidc.cpp` pins.
 
 ## [1.0.0-beta12] - 2026-09-06
 
