@@ -2,7 +2,7 @@
 //
 // WHAT IS HERE, AND WHAT DELIBERATELY IS NOT.
 //
-// The six relying-party wire operations, plus §24.6a's JSON bridge. What is not
+// The eight relying-party wire operations, plus §24.6a's JSON bridge. What is not
 // here is §24.6b's linked-API ceremony helper: a C++ program has no
 // authenticator on the targets this SDK serves — there is no platform API to
 // link — and §24.6b rule 2 forbids emulating one in software, because a

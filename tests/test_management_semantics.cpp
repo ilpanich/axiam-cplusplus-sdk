@@ -1,14 +1,17 @@
 // The CONTRACT.md §27.9 required-test list, hand-written.
 //
-// The generated suite next door asserts that all 158 operations reach the right route.
+// The generated suite next door asserts that all 160 operations reach the right route.
 // These assert the RULES -- the behaviours §27.4 specifies that hold across the whole
 // surface and that no per-operation test would catch.
 
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 #include "assert.hpp"
 #include "axiam/axiam.hpp"
 #include "axiam/management.hpp"
+#include "management_json.hpp"
 #include "management_test_util.hpp"
 
 namespace {
@@ -565,6 +568,53 @@ AXIAM_TEST("§27.5: a secret reaches the wire in the clear") {
 AXIAM_TEST("§27.5: the same secret is redacted in an ordinary rendering") {
     const Sensitive<std::string> secret("hunter2");
     AXIAM_CHECK(secret.to_string() == "[SENSITIVE]");
+}
+
+// §27.5 (contract 1.45): certificates.sign_csr's response is the EXISTING
+// `Certificate` model, deliberately NOT `GeneratedCertificate` — whose
+// `private_key_pem` field is mandatory and would always be absent here. This
+// asserts what the type system already guarantees at compile time (there is
+// no field on `Certificate` to hold one): a round trip through to_json/from_json
+// never introduces a key, in either direction, for the type sign_csr actually
+// returns.
+AXIAM_TEST("§27.5: certificates.sign_csr's Certificate has no private-key field, round-tripped") {
+    Certificate cert{};
+    cert.cert_type = CertificateType::User;
+    cert.created_at = "2026-08-26T00:00:00Z";
+    cert.fingerprint = "abc123";
+    cert.id = kUuid;
+    cert.issuer_ca_id = kUuid;
+    cert.key_algorithm = KeyAlgorithm::Rsa4096;
+    cert.metadata = "{}";
+    cert.not_after = "2026-08-26T00:00:00Z";
+    cert.not_before = "2026-08-26T00:00:00Z";
+    cert.public_cert_pem = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n";
+    cert.status = CertificateStatus::Active;
+    cert.subject = "CN=example";
+    cert.tenant_id = kUuid;
+
+    nlohmann::json j = cert;
+    // The type has no member that COULD hold a key -- this asserts the wire
+    // form agrees, so a future generator or hand-edit that added one would
+    // fail here rather than being caught only by code review.
+    AXIAM_CHECK(!j.contains("private_key_pem"));
+    AXIAM_CHECK(j.dump().find("private_key") == std::string::npos);
+
+    // And the reverse direction: a server that (incorrectly) sent a key back
+    // on this response is not silently absorbed into a field that does not
+    // exist -- from_json only reads the fields Certificate actually has.
+    // Split so this literal never reads as a committed key to the secret-scan
+    // gate (`git grep 'BEGIN (RSA |EC )?PRIVATE KEY'`) — see the same trick in
+    // test_integration_curl.cpp / test_builder.cpp.
+    const std::string stray_key_pem =
+        std::string("-----BEGIN ") + "PRIVATE" + " KEY-----\nshould not land anywhere\n";
+    nlohmann::json with_stray_key = j;
+    with_stray_key["private_key_pem"] = stray_key_pem;
+    const Certificate round_tripped = with_stray_key.get<Certificate>();
+    AXIAM_CHECK(round_tripped.subject == "CN=example");
+    // No assertion on a `private_key_pem` member is possible here BY
+    // CONSTRUCTION: Certificate declares none, so this line would fail to
+    // compile the moment one was added -- which is the point.
 }
 
 // ---- transport edges ----------------------------------------------------

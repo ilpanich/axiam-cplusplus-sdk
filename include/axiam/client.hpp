@@ -800,6 +800,35 @@ public:
     WebauthnLoginResult webauthn_discoverable_finish(const Sensitive<std::string>& state_token,
                                                      const std::string& response);
 
+    /// `POST /api/v1/auth/webauthn/setup/register/start` (§24.1, contract
+    /// 1.45) — the WebAuthn twin of mfa_setup_enroll(): enrol a passkey or
+    /// security key as the FIRST factor a forced-enrolment login demanded.
+    ///
+    /// Reached exactly where mfa_setup_enroll() is: when
+    /// LoginResult::mfa_setup_required is set. There is no session yet and
+    /// this call needs none — the setup token is the only credential, and it
+    /// travels in the request body. An account that already has a factor is
+    /// refused with the same `400` mfa_setup_enroll() gives (a setup token
+    /// adds a first factor, never a second).
+    ///
+    /// This call MUST NOT carry the client's session credential even when one
+    /// is configured (§24.1) — see CONTRACT.md §24.8's transport-level test.
+    WebauthnChallenge webauthn_setup_register_start(const Sensitive<std::string>& setup_token);
+
+    /// `POST /api/v1/auth/webauthn/setup/register/finish` (§24.1, §25.2 rule
+    /// 2, contract 1.45) — finish forced enrolment with a passkey or security
+    /// key and, with it, the login that was interrupted.
+    ///
+    /// Adopts credentials EXACTLY as mfa_setup_confirm() does, because it IS
+    /// the completion of a login (§25.2 rule 2) — including clearing the §17
+    /// memo — and, like webauthn_setup_register_start(), carries no session
+    /// credential outbound: the setup token is the only credential this call
+    /// accepts, and attaching a second one is what §24.1 forbids.
+    LoginResult webauthn_setup_register_finish(const Sensitive<std::string>& setup_token,
+                                               const Sensitive<std::string>& state_token,
+                                               const std::string& credential_name,
+                                               const std::string& response);
+
     // ---- §25 account lifecycle and MFA enrolment ----
     //
     // See <axiam/account.hpp>. Six of the nine are unauthenticated by design.
@@ -1021,7 +1050,7 @@ public:
     /// construct or inspect one — the alternative was a second copy of the
     /// request plumbing living beside the first, which is exactly the "second,
     /// parallel stack" the §12.6 deferral warned about.
-    /// The CONTRACT.md §27 management surface: 158 operations across 24 namespaces.
+    /// The CONTRACT.md §27 management surface: 160 operations across 24 namespaces.
     ///
     /// `client.management().users().list()`. §27.3's C++ row is
     /// `client.service_accounts().rotate_secret(id)` — a method returning a handle,

@@ -1,6 +1,6 @@
 // axiam WebAuthn / passkeys, the relying-party layer — CONTRACT.md §24.
 //
-// The six wire operations plus §24.6a's JSON bridge. §24.6b's linked-API
+// The eight wire operations plus §24.6a's JSON bridge. §24.6b's linked-API
 // ceremony helper is deliberately absent: a C++ program has no authenticator on
 // the targets this SDK serves, and rule 2 forbids emulating one in software.
 //
@@ -38,6 +38,8 @@ constexpr const char* kDiscoverableStart =
     "/api/v1/auth/webauthn/authenticate/discoverable/start";
 constexpr const char* kDiscoverableFinish =
     "/api/v1/auth/webauthn/authenticate/discoverable/finish";
+constexpr const char* kSetupRegisterStart = "/api/v1/auth/webauthn/setup/register/start";
+constexpr const char* kSetupRegisterFinish = "/api/v1/auth/webauthn/setup/register/finish";
 
 std::string lower_trim(const std::string& in) {
     std::size_t b = 0;
@@ -145,7 +147,8 @@ void require_session(Client::Impl& impl, const char* operation) {
 /// validated client-side so no unverifiable body is ever POSTed.
 std::string finish_body(const std::string& state_token,
                         const std::optional<std::string>& credential_name,
-                        const std::string& response, const char* operation) {
+                        const std::string& response, const char* operation,
+                        const std::optional<std::string>& setup_token = std::nullopt) {
     // Trim leading whitespace so the object check sees the first real byte; the
     // spliced text keeps whatever the platform produced from there on.
     std::size_t b = 0;
@@ -164,7 +167,17 @@ std::string finish_body(const std::string& state_token,
                         "(CONTRACT.md §24.6a)");
     }
 
-    std::string body = "{\"state_token\":";
+    std::string body = "{";
+    // §24.1 (contract 1.45): setup/register/finish's wire shape is
+    // `{ setup_token, state_token, credential_name, response }` — the setup
+    // token leads because it, not state_token, is the credential this call
+    // accepts.
+    if (setup_token) {
+        body += "\"setup_token\":";
+        body += json(*setup_token).dump();
+        body += ",";
+    }
+    body += "\"state_token\":";
     body += json(state_token).dump();
     if (credential_name) {
         body += ",\"credential_name\":";
@@ -177,8 +190,16 @@ std::string finish_body(const std::string& state_token,
 }
 
 /// Run either *_start call and return the options untouched.
-WebauthnChallenge start(Client::Impl& impl, const char* path, const std::string& body) {
-    const HttpResponse resp = impl.send_raw(impl.build_request("POST", path, body));
+///
+/// `no_stored_cookies` is §24.1's setup/register/start exception: it takes no
+/// session, and MUST NOT carry the client's session credential even when one
+/// is configured (contract 1.45). Default false leaves the six ordinary wire
+/// operations untouched.
+WebauthnChallenge start(Client::Impl& impl, const char* path, const std::string& body,
+                        bool no_stored_cookies = false) {
+    HttpRequest req = impl.build_request("POST", path, body);
+    req.no_stored_cookies = no_stored_cookies;
+    const HttpResponse resp = impl.send_raw(req);
     if (resp.status < 200 || resp.status >= 300) Client::Impl::raise_for_status(resp);
 
     const json j = json::parse(resp.body, nullptr, false);
@@ -339,7 +360,7 @@ std::string webauthn_failure_message(WebauthnFailure failure) {
 }
 
 // ---------------------------------------------------------------------------
-// §24.1 — the six wire operations
+// §24.1 — the eight wire operations
 // ---------------------------------------------------------------------------
 
 WebauthnChallenge Client::webauthn_register_start() {
@@ -436,6 +457,82 @@ WebauthnLoginResult Client::webauthn_discoverable_finish(
     const Sensitive<std::string>& state_token, const std::string& response) {
     return finish_login(*p_, kDiscoverableFinish, state_token, response,
                         "webauthn_discoverable_finish");
+}
+
+// ---------------------------------------------------------------------------
+// §24.1 (contract 1.45) — setup/register/*, the WebAuthn twin of
+// mfa_setup_enroll() / mfa_setup_confirm() (CONTRACT.md §25.1, §25.2 rule 2).
+//
+// Both take NO session: the setup token in the request body is the only
+// credential, exactly as it is for the TOTP pair, and an SDK MUST NOT attach
+// its own session credential regardless of whether one is configured (§24.1).
+// `start()` and the body built below both carry `no_stored_cookies = true`
+// for that reason; see transport.hpp and http_curl.cpp for what that does at
+// the transport layer.
+// ---------------------------------------------------------------------------
+
+WebauthnChallenge Client::webauthn_setup_register_start(
+    const Sensitive<std::string>& setup_token) {
+    p_->ensure_open();
+    // No require_session() call, deliberately: unlike register/start, this is
+    // the exception §24.1 names — there is no session yet, and the setup
+    // token is the credential.
+    json body = json::object();
+    body["setup_token"] = detail::reveal(setup_token);
+    return start(*p_, kSetupRegisterStart, body.dump(), /*no_stored_cookies=*/true);
+}
+
+LoginResult Client::webauthn_setup_register_finish(const Sensitive<std::string>& setup_token,
+                                                    const Sensitive<std::string>& state_token,
+                                                    const std::string& credential_name,
+                                                    const std::string& response) {
+    p_->ensure_open();
+    if (credential_name.empty()) {
+        // Same reasoning as webauthn_register_finish(): the label is how the
+        // user later recognises this credential in a list.
+        throw AuthError("webauthn_setup_register_finish needs a credential name");
+    }
+
+    // §25.2 rule 2 / §24.3 rule 4: this IS the completion of a login, so the
+    // memo is cleared on the caller's INTENT, before the wire — mirroring
+    // mfa_setup_confirm() exactly (account.cpp), not webauthn_authenticate_finish()'s
+    // WebauthnLoginResult shape, because the wire response here is a plain
+    // LoginSuccessResponse.
+    if (p_->memo) p_->memo->clear();
+
+    const std::string body =
+        finish_body(detail::reveal(state_token), credential_name, response,
+                   "webauthn_setup_register_finish", detail::reveal(setup_token));
+
+    HttpRequest req = p_->build_request("POST", kSetupRegisterFinish, body);
+    // §24.1: no session credential outbound, even if one is configured — the
+    // setup token is the only credential this call accepts.
+    req.no_stored_cookies = true;
+    const HttpResponse resp = p_->send_raw(req);
+    if (resp.status < 200 || resp.status >= 300) Client::Impl::raise_for_status(resp);
+
+    const json j = json::parse(resp.body, nullptr, false);
+    LoginResult result;
+    if (!j.is_discarded() && j.is_object()) {
+        result.session_id = j.value("session_id", std::string{});
+        result.expires_in = j.value("expires_in", static_cast<std::int64_t>(0));
+        // Through the SAME reader mfa_setup_confirm() and login() use — see
+        // account.cpp's comment on why a second hand-rolled reader here would
+        // be one more place for §5.2.2's "absent means EQUAL" fallback to be
+        // forgotten.
+        if (j.contains("user") && j["user"].is_object())
+            result.user = detail::parse_user(j["user"]);
+    }
+    {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        p_->session = true;
+        if (result.user) {
+            p_->resolved_tenant_id = result.user->tenant_id;
+            if (!result.user->principal_tenant_id.empty())
+                p_->principal_tenant_id = result.user->principal_tenant_id;
+        }
+    }
+    return result;
 }
 
 }  // namespace axiam

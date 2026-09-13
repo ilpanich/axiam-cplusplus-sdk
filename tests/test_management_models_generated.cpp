@@ -1537,6 +1537,21 @@ AXIAM_TEST("management model SignAuditBatchRequest round-trips without losing a 
     AXIAM_CHECK(again == encoded);
 }
 
+AXIAM_TEST("management model SignCertificateCsrRequest round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"cert_type": "User", "csr_pem": "example", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "validity_days": 1})json");
+
+    const auto value = wire.get<SignCertificateCsrRequest>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<SignCertificateCsrRequest>();
+    AXIAM_CHECK(again == encoded);
+}
+
 AXIAM_TEST("management model SignIntermediateCsrRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
         R"json({"csr_pem": "example", "parent_ca_id": "11111111-1111-4111-8111-111111111111", "validity_days": 1})json");
@@ -3410,7 +3425,7 @@ AXIAM_TEST("management platform: client.platform() and management().platform() a
     AXIAM_CHECK(direct_path == "/health");
 }
 
-// §27.9: 122 models, 24 enums and 24 namespaces are covered above. Counted from the test
+// §27.9: 123 models, 24 enums and 24 namespaces are covered above. Counted from the test
 // registry rather than restated as a literal on both sides -- a case dropped by a bad
 // regeneration would still satisfy a tautology, and fails this instead.
 AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
@@ -3429,7 +3444,7 @@ AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
             ++equivalents;
         }
     }
-    AXIAM_CHECK(round_trips == 122);
+    AXIAM_CHECK(round_trips == 123);
     AXIAM_CHECK(enum_maps == 24);
     AXIAM_CHECK(rescopes == 24);
     AXIAM_CHECK(equivalents == 24);

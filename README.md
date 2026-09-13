@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26 and §27 (including §6.1 mTLS, §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — and §24's six wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26 and §27 (including §6.1 mTLS, §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — and §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets).**
 
 Sections are named individually rather than folded into ranges: widening a
 range silently turns a statement that was true when written into a different
@@ -1180,6 +1180,37 @@ cancelled" is wrong half the time it is shown, and
 
 Worked example: [`examples/webauthn_passkeys.cpp`](examples/webauthn_passkeys.cpp).
 
+### A passkey or security key as the first factor (§24.1, §25.2 rule 2, contract 1.45)
+
+`webauthn_setup_register_start()` / `webauthn_setup_register_finish()` are the
+WebAuthn twin of `mfa_setup_enroll()` / `mfa_setup_confirm()` below: reached
+when `LoginResult::mfa_setup_required` is set, taking the **same** setup token,
+and adopting credentials exactly as `mfa_setup_confirm()` does — because
+`finish` **is** the completion of the interrupted login.
+
+```cpp
+LoginResult login = client.login(username, password);
+if (login.mfa_setup_required) {
+    const auto challenge = client.webauthn_setup_register_start(login.setup_token);
+    const std::string response = your_platform_runs_the_ceremony(challenge.request_json());
+    const LoginResult done = client.webauthn_setup_register_finish(
+        login.setup_token, challenge.state_token, "Ada's laptop", response);
+    // `done.user` is set and the client is signed in, exactly as if login() had
+    // succeeded directly.
+}
+```
+
+**They take NO session, unlike `register/start` and `register/finish` above.**
+The setup token is the only credential and travels in the body; this SDK does
+not attach its own session credential to either call even when one is
+configured — the setup token adds the account's **first** factor, and a second,
+unasked-for credential on the same request is not a convenience. This is the
+one place in §24 where "requires a session" and "requires none" are both true
+of a `register/*`-shaped pair, and the split follows §24.1's own words for it,
+not this SDK's opinion.
+
+Worked example: [`examples/webauthn_passkeys.cpp`](examples/webauthn_passkeys.cpp) (`enrol_first_factor_after_forced_setup`).
+
 ## §25 Account lifecycle and MFA enrolment
 
 Ten operations covering voluntary and forced TOTP enrolment, email
@@ -1484,7 +1515,7 @@ sign path, in both directions. Worked example, including a transport skeleton:
 
 ## §27 Management API
 
-158 operations across 24 namespaces, reached through namespace handles that sit
+160 operations across 24 namespaces, reached through namespace handles that sit
 directly on the client — the form §27.3's C++ row specifies:
 
 ```cpp

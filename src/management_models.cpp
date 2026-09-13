@@ -3285,6 +3285,28 @@ void from_json(const nlohmann::json& j, SignAuditBatchRequest& value) {
     value.entry_ids = j.at("entry_ids").get<std::vector<std::string>>();
 }
 
+void to_json(nlohmann::json& j, const SignCertificateCsrRequest& value) {
+    j = nlohmann::json::object();
+    j["cert_type"] = to_wire(value.cert_type);
+    j["csr_pem"] = value.csr_pem;
+    j["issuer_ca_id"] = value.issuer_ca_id;
+    if (value.metadata) {
+        auto parsed = nlohmann::json::parse(*value.metadata, nullptr, false);
+        if (!parsed.is_discarded()) j["metadata"] = parsed;
+    }
+    j["validity_days"] = value.validity_days;
+}
+
+void from_json(const nlohmann::json& j, SignCertificateCsrRequest& value) {
+    value.cert_type = certificate_type_from_wire(j.at("cert_type").get<std::string>());
+    value.csr_pem = j.at("csr_pem").get<std::string>();
+    value.issuer_ca_id = j.at("issuer_ca_id").get<std::string>();
+    if (auto it = j.find("metadata"); it != j.end() && !it->is_null()) {
+        value.metadata = it->dump();
+    }
+    value.validity_days = j.at("validity_days").get<std::int64_t>();
+}
+
 void to_json(nlohmann::json& j, const SignIntermediateCsrRequest& value) {
     j = nlohmann::json::object();
     j["csr_pem"] = value.csr_pem;

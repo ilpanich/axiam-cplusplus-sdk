@@ -69,6 +69,10 @@ struct Replies {
     std::string auth_finish_body;
     long disc_start_status = 200;
     long disc_finish_status = 200;
+    long setup_start_status = 200;
+    std::string setup_start_body;
+    long setup_finish_status = 200;
+    std::string setup_finish_body;
     /// A refused connection is not an HTTP status, and every operation has to
     /// tell the difference: "the server said no" and "there was no server" lead
     /// a caller to different places.
@@ -99,6 +103,13 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
         const std::string login_body = std::string(R"({"access_token":")") + kAccess +
                                        R"(","refresh_token":")" + kRefresh +
                                        R"(","session_id":"sess-wa","expires_in":900})";
+        // §24.1 (contract 1.45): setup/register/finish answers a plain
+        // LoginSuccessResponse — session_id/expires_in/user, the SAME shape
+        // mfa_setup_confirm's response takes — not a WebauthnLoginResponse.
+        const std::string setup_login_body =
+            std::string(R"({"session_id":"sess-su","expires_in":900,)") +
+            R"("user":{"id":"user-2","username":"ada2","email":"ada2@acme.test",)" +
+            R"("tenant_id":")" + kTenantUuid + R"("}})";
 
         if (url.find("/auth/login") != std::string::npos) return reply(200, kLoginOk, true);
         if (url.find("/webauthn/register/start") != std::string::npos) {
@@ -107,6 +118,15 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
         }
         if (url.find("/webauthn/register/finish") != std::string::npos) {
             return reply(r->register_finish_status, r->register_finish_body);
+        }
+        if (url.find("/webauthn/setup/register/start") != std::string::npos) {
+            return reply(r->setup_start_status,
+                         r->setup_start_body.empty() ? challenge_create : r->setup_start_body);
+        }
+        if (url.find("/webauthn/setup/register/finish") != std::string::npos) {
+            return reply(r->setup_finish_status,
+                         r->setup_finish_body.empty() ? setup_login_body : r->setup_finish_body,
+                         /*csrf=*/true);
         }
         if (url.find("/webauthn/authenticate/discoverable/start") != std::string::npos) {
             return reply(r->disc_start_status, challenge_get);
@@ -458,6 +478,123 @@ AXIAM_TEST("webauthn: authenticate/finish clears the decision memo") {
 
     client.check_access("read", "doc-1");
     AXIAM_REQUIRE(st->count() == after_ceremony + 1);
+}
+
+// ---------------------------------------------------------------------------
+// §24.1 (contract 1.45) — setup/register/*, the WebAuthn twin of
+// mfa_setup_enroll() / mfa_setup_confirm(). See tests/test_account.cpp for
+// the TOTP pair these mirror; test_integration_curl.cpp carries the real
+// transport half of the "no session credential" assertion this fake transport
+// cannot make (it has no cookie jar to isolate from).
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("webauthn: setup/register/start needs no session and sends only the setup token") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);  // NOT signed in.
+
+    const auto challenge =
+        client.webauthn_setup_register_start(axiam::Sensitive<std::string>("setup-tok-1"));
+    AXIAM_REQUIRE(axiam::detail::reveal(challenge.state_token) == kState);
+
+    const std::string body = last_body_to(*st, "/webauthn/setup/register/start");
+    AXIAM_REQUIRE(contains(body, R"("setup_token":"setup-tok-1")"));
+}
+
+AXIAM_TEST("webauthn: setup/register/finish adopts credentials exactly as mfa_setup_confirm does") {
+    // §24.8 (contract 1.45): the same adoption assertions §24.3 requires of
+    // webauthn_authenticate_finish, against a successful setup/register/finish
+    // instead — the client is authenticated afterwards, the CSRF token was
+    // captured, and a state-changing call made immediately afterwards carries
+    // it.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);  // NOT signed in — the setup token is the credential.
+
+    const auto result = client.webauthn_setup_register_finish(
+        axiam::Sensitive<std::string>("setup-tok-1"), axiam::Sensitive<std::string>(kState),
+        "Ada's laptop", kResponse);
+
+    AXIAM_REQUIRE(result.session_id == "sess-su");
+    AXIAM_REQUIRE(result.user.has_value());
+    AXIAM_REQUIRE(client.has_session());
+    AXIAM_REQUIRE(client.csrf_token().has_value());
+    AXIAM_REQUIRE(*client.csrf_token() == "csrf-1");
+
+    const std::string body = last_body_to(*st, "/webauthn/setup/register/finish");
+    AXIAM_REQUIRE(contains(body, R"("setup_token":"setup-tok-1")"));
+    AXIAM_REQUIRE(contains(body, R"("state_token":")" + std::string(kState) + "\""));
+    AXIAM_REQUIRE(contains(body, R"("credential_name":"Ada's laptop")"));
+
+    // A state-changing call made immediately afterwards carries the captured
+    // CSRF token — the property that actually matters, not merely that a
+    // header was stored somewhere.
+    client.check_access("read", "doc-1");
+    {
+        const auto last = st->last();
+        AXIAM_REQUIRE(last.headers.count("X-CSRF-Token") == 1);
+        AXIAM_REQUIRE(last.headers.at("X-CSRF-Token") == "csrf-1");
+    }
+}
+
+AXIAM_TEST("webauthn: setup/register/finish clears the decision memo (§24.3 rule 4)") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = signed_in_client(st, r);
+
+    client.check_access("read", "doc-1");
+    const std::size_t after_first = st->count();
+    client.check_access("read", "doc-1");  // warm: served from the memo
+    AXIAM_REQUIRE(st->count() == after_first);
+
+    client.webauthn_setup_register_finish(axiam::Sensitive<std::string>("setup-tok-1"),
+                                          axiam::Sensitive<std::string>(kState), "Ada's laptop",
+                                          kResponse);
+    const std::size_t after_ceremony = st->count();
+
+    client.check_access("read", "doc-1");
+    AXIAM_REQUIRE(st->count() == after_ceremony + 1);
+}
+
+AXIAM_TEST("webauthn: setup/register/finish without a credential name is refused") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = make_client(st, r);
+
+    AXIAM_REQUIRE_THROWS_AS(
+        client.webauthn_setup_register_finish(axiam::Sensitive<std::string>("setup-tok-1"),
+                                              axiam::Sensitive<std::string>(kState), "", kResponse),
+        axiam::AuthError);
+    AXIAM_REQUIRE(st->count() == 0);
+}
+
+AXIAM_TEST("webauthn: setup/register/* carry no session credential even when one is configured") {
+    // §24.8 (contract 1.45): "With a session configured AND a setup token
+    // supplied, assert on the transport that neither call sent the session's
+    // Authorization header or cookie." This SDK never attaches an
+    // Authorization header for session mode at all (§4 is cookie-jar based),
+    // so the header half of that assertion holds for every call; the fake
+    // transport records no cookie because it has none to isolate from — the
+    // cookie half is proven against the REAL libcurl transport in
+    // test_integration_curl.cpp, where a shared jar genuinely exists to leak
+    // from.
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = signed_in_client(st, r);  // a session IS configured.
+
+    client.webauthn_setup_register_start(axiam::Sensitive<std::string>("setup-tok-1"));
+    {
+        const auto req = st->last();
+        AXIAM_REQUIRE(req.headers.count("Authorization") == 0);
+    }
+
+    client.webauthn_setup_register_finish(axiam::Sensitive<std::string>("setup-tok-1"),
+                                          axiam::Sensitive<std::string>(kState), "Ada's laptop",
+                                          kResponse);
+    {
+        const auto req = st->last();
+        AXIAM_REQUIRE(req.headers.count("Authorization") == 0);
+    }
 }
 
 // ---------------------------------------------------------------------------

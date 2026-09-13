@@ -4,6 +4,8 @@
 #pragma once
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "axiam/transport.hpp"
 
@@ -44,7 +46,23 @@ public:
 
 private:
     struct Impl;
+    struct HandleLease;
     std::unique_ptr<Impl> impl_;
+
+    // Internal helpers, defined in http_curl.cpp. `curl_handle` is an opaque
+    // `CURL*` — spelled `void*` here so this header need not include
+    // <curl/curl.h> for a private implementation detail.
+    //
+    // transfer() is everything about one exchange that does not depend on
+    // which handle carries it (URL, method/body, headers, TLS, timeouts); it
+    // backs both perform()'s pooled path and perform_isolated()'s §24.1 path
+    // (CONTRACT.md §24.1, contract 1.45 — `webauthn_setup_register_start` /
+    // `_finish` MUST NOT replay the shared cookie jar even when a session is
+    // configured), so §6's TLS policy applies identically to both.
+    HttpResponse transfer(void* curl_handle, const HttpRequest& req);
+    HttpResponse perform_isolated(const HttpRequest& req);
+    void merge_into_shared_jar(const std::string& request_url,
+                               const std::vector<std::string>& set_cookies);
 };
 
 /// Process-wide libcurl init/cleanup guard (idempotent).

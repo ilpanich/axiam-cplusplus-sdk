@@ -26,6 +26,7 @@ namespace {
 struct SeenRequest {
     std::string path;
     bool had_cookie = false;
+    std::string cookie_header;  // raw value, so a specific cookie can be told apart from "some cookie"
     std::string tenant;
     std::string csrf;
 };
@@ -127,7 +128,8 @@ struct MiniServer {
 
         SeenRequest sr;
         sr.path = path;
-        sr.had_cookie = !header_value(data, "Cookie").empty();
+        sr.cookie_header = header_value(data, "Cookie");
+        sr.had_cookie = !sr.cookie_header.empty();
         sr.tenant = header_value(data, "X-Tenant-ID");
         sr.csrf = header_value(data, "X-CSRF-Token");
         {
@@ -146,6 +148,21 @@ struct MiniServer {
             extra_headers =
                 "Set-Cookie: axiam_session=xyz; Path=/\r\n"
                 "X-CSRF-Token: csrf-int\r\n";
+        } else if (path.find("/webauthn/setup/register/start") != std::string::npos) {
+            // §24.1 (contract 1.45): a StartRegistrationResponse, same shape as
+            // every other webauthn */start.
+            body = R"({"challenge":{"publicKey":{"challenge":"abc"}},"state_token":"st-int"})";
+        } else if (path.find("/webauthn/setup/register/finish") != std::string::npos) {
+            // A LoginSuccessResponse that ADOPTS a session — a DIFFERENT cookie
+            // from login's, so a later request carrying it proves the merge into
+            // the shared jar actually happened rather than the original login
+            // cookie merely surviving.
+            body =
+                R"({"session_id":"s2","expires_in":900,)"
+                R"("user":{"id":"u2","username":"a2","email":"a2@x","tenant_id":"t"}})";
+            extra_headers =
+                "Set-Cookie: axiam_access=post_setup_token; Path=/\r\n"
+                "X-CSRF-Token: csrf-post-setup\r\n";
         } else {
             body = R"({"allowed":true})";
         }
@@ -190,6 +207,80 @@ AXIAM_TEST("libcurl transport: cookie engine + CSRF + tenant header end-to-end")
     AXIAM_CHECK(check_req.tenant == "acme");            // §5 on every request
     AXIAM_CHECK(check_req.had_cookie);                  // §4 cookie replayed
     AXIAM_CHECK(check_req.csrf == "csrf-int");          // §3 CSRF echoed
+}
+
+// CONTRACT.md §24.8 (contract 1.45): "With a session configured AND a setup
+// token supplied, assert on the transport that neither call sent the
+// session's Authorization header or cookie." This is the one property
+// test_webauthn.cpp's fake transport cannot prove — it has no cookie jar of
+// its own to leak a session out of — so it is asserted here, against the REAL
+// libcurl transport and a shared jar that genuinely holds a session cookie by
+// the time these two calls run.
+//
+// The second half of the same test is the other side of §24.8's "adopts
+// credentials exactly as mfa_setup_confirm does": setup/register/finish's own
+// Set-Cookie must still reach every request AFTER it, through the ordinary
+// pooled/shared path — proving perform_isolated()'s merge back into the
+// shared jar (http_curl.cpp) actually works, not just that it compiles.
+AXIAM_TEST("libcurl transport: setup/register/* never replays the jar, and finish's cookie still lands in it") {
+    MiniServer server;
+    AXIAM_REQUIRE(server.start());
+
+    Client c = Client::builder()
+                   .base_url("http://127.0.0.1:" + std::to_string(server.port))
+                   .tenant_slug("acme")
+                   .org_id("org-1")
+                   .build();  // real libcurl transport, one shared cookie jar
+
+    // A session IS configured — §24.8's precondition — via an ordinary login,
+    // exactly as the test above does.
+    LoginResult login = c.login("a", "b");
+    AXIAM_REQUIRE(login.user.has_value());
+
+    const auto challenge =
+        c.webauthn_setup_register_start(axiam::Sensitive<std::string>("setup-tok-int"));
+    const LoginResult setup_done = c.webauthn_setup_register_finish(
+        axiam::Sensitive<std::string>("setup-tok-int"), challenge.state_token, "Ada's laptop",
+        "{}");
+    AXIAM_REQUIRE(setup_done.user.has_value());
+
+    // One more ordinary, session-authenticated call — through the SAME pooled
+    // handles login() and check_access() already used above.
+    AccessDecision d = c.check_access("read", "res-2");
+    AXIAM_CHECK(d.allowed);
+
+    server.shutdown();
+
+    AXIAM_REQUIRE(server.seen.size() >= 4);
+    const auto& login_req = server.seen[0];
+    const auto& setup_start_req = server.seen[1];
+    const auto& setup_finish_req = server.seen[2];
+    const auto& check_req = server.seen[3];
+
+    AXIAM_CHECK(login_req.path.find("/auth/login") != std::string::npos);
+    AXIAM_CHECK(setup_start_req.path.find("/webauthn/setup/register/start") != std::string::npos);
+    AXIAM_CHECK(setup_finish_req.path.find("/webauthn/setup/register/finish") !=
+               std::string::npos);
+
+    // §24.8: NEITHER setup/register call carried the session cookie login()
+    // had already caused curl to store — even though it exists, in the same
+    // shared jar, for the whole rest of this test.
+    AXIAM_CHECK_FALSE(setup_start_req.had_cookie);
+    AXIAM_CHECK_FALSE(setup_finish_req.had_cookie);
+    // §5 rule 2 admits no exceptions — the tenant header still goes out.
+    AXIAM_CHECK(setup_start_req.tenant == "acme");
+    AXIAM_CHECK(setup_finish_req.tenant == "acme");
+
+    // setup/register/finish's OWN Set-Cookie reached the shared jar despite the
+    // isolated handle that carried the request itself never touching it — the
+    // ordinary check_access() call afterward carries it.
+    AXIAM_CHECK(check_req.had_cookie);
+    AXIAM_CHECK(check_req.cookie_header.find("axiam_access=post_setup_token") !=
+               std::string::npos);
+    // The CSRF token captured from setup/register/finish's response, not
+    // login's — proving the adoption happened on FINISH's response and not
+    // merely left over from the earlier login.
+    AXIAM_CHECK(check_req.csrf == "csrf-post-setup");
 }
 
 // Non-secret PEM stubs (see note in test_builder.cpp). The key marker is
