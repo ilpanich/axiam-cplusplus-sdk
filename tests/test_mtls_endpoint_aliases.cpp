@@ -105,6 +105,56 @@ const char* kDiscoveryNoDeviceEndpoint = R"({
   }
 })";
 
+// A relative alias — vector C's first defect.
+const char* kDiscoveryRelativeAlias = R"({
+  "issuer":"https://issuer.test",
+  "authorization_endpoint":"https://iam.example.com/oauth2/authorize",
+  "token_endpoint":"https://iam.example.com/oauth2/token",
+  "jwks_uri":"https://iam.example.com/oauth2/jwks",
+  "mtls_endpoint_aliases":{
+    "token_endpoint":"/oauth2/token"
+  }
+})";
+
+// An http alias standing in for an https endpoint — vector C's second defect.
+// Every other fixture in this file pairs https with https, so this pair plus
+// the http/http one below are what separate "must be https" from "must not be
+// weaker than what it replaces".
+const char* kDiscoveryDowngradeAlias = R"({
+  "issuer":"https://issuer.test",
+  "authorization_endpoint":"https://iam.example.com/oauth2/authorize",
+  "token_endpoint":"https://iam.example.com/oauth2/token",
+  "jwks_uri":"https://iam.example.com/oauth2/jwks",
+  "mtls_endpoint_aliases":{
+    "token_endpoint":"http://mtls.iam.example.com/oauth2/token"
+  }
+})";
+
+// A development deployment: http alias for an http endpoint, which AXIAM's own
+// build_mtls_aliases supports and which must keep working.
+const char* kDiscoveryHttpForHttp = R"({
+  "issuer":"http://issuer.test",
+  "authorization_endpoint":"http://iam.example.com/oauth2/authorize",
+  "token_endpoint":"http://iam.example.com/oauth2/token",
+  "jwks_uri":"http://iam.example.com/oauth2/jwks",
+  "mtls_endpoint_aliases":{
+    "token_endpoint":"http://mtls.iam.example.com/oauth2/token"
+  }
+})";
+
+// One malformed alias among well-formed ones: the refusal must be per endpoint.
+const char* kDiscoveryOneBadAlias = R"({
+  "issuer":"https://issuer.test",
+  "authorization_endpoint":"https://iam.example.com/oauth2/authorize",
+  "token_endpoint":"https://iam.example.com/oauth2/token",
+  "jwks_uri":"https://iam.example.com/oauth2/jwks",
+  "introspection_endpoint":"https://iam.example.com/oauth2/introspect",
+  "mtls_endpoint_aliases":{
+    "token_endpoint":"https://mtls.iam.example.com/oauth2/token",
+    "introspection_endpoint":"not-a-url-at-all"
+  }
+})";
+
 struct Fixture {
     std::shared_ptr<axtest::FakeState> st = std::make_shared<axtest::FakeState>();
     const char* discovery = kDiscoveryWithAliases;
@@ -298,4 +348,96 @@ AXIAM_TEST("§21.3 rule 2 the issuer does not move with the endpoints") {
     // obtains over mTLS.
     AXIAM_REQUIRE(config.issuer == kIssuer);
     AXIAM_REQUIRE(config.issuer != std::string(kMtlsBase));
+}
+
+
+// ── Vector C: a malformed alias is refused, never fallen back from ─────────
+//
+// CONTRACT.md §21.3.1 vector C, contract 1.43. Rule 2 had been normative since
+// 1.40 and, until the 2026-09-12 pass, said nothing about an alias that is
+// PRESENT and unusable — every SDK that read the member fell back to the
+// top-level endpoint. Falling back looks like the safe answer and is the
+// dangerous one: the caller asked to authenticate with a certificate, the
+// operator published something unusable, and sending the certificate to the
+// front-channel host authenticates nothing while appearing to work.
+
+AXIAM_TEST("§21.3.1 vector C a relative alias is refused rather than resolved") {
+    // A relative alias resolves against nothing the client holds, and the base
+    // that might seem obvious — the issuer's host — is precisely the host the
+    // alias exists to name a different one from.
+    Fixture f;
+    f.discovery = kDiscoveryRelativeAlias;
+    auto client = make_client(f, /*mtls=*/true);
+
+    // AuthError, not NetworkError: §16.3 retries NetworkError and only
+    // NetworkError, so the other choice would have attempted a permanent,
+    // deterministic misconfiguration three times.
+    AXIAM_REQUIRE_THROWS_AS(client.login_client_credentials(), axiam::AuthError);
+
+    // And the certificate never reached the conventional host, which is the
+    // whole point of refusing rather than falling back.
+    AXIAM_REQUIRE(host_of_last_call(*f.st, "/oauth2/token").empty());
+}
+
+AXIAM_TEST("§21.3.1 vector C a scheme downgrade is refused") {
+    // The comparison is like with like: the alias substitutes for exactly one
+    // top-level endpoint, and that endpoint's scheme is what a downgrade is
+    // measured against.
+    Fixture f;
+    f.discovery = kDiscoveryDowngradeAlias;
+    auto client = make_client(f, /*mtls=*/true);
+
+    AXIAM_REQUIRE_THROWS_AS(client.login_client_credentials(), axiam::AuthError);
+}
+
+AXIAM_TEST("§21.3.1 vector C an http alias for an http endpoint is accepted") {
+    // The I4 twin of the downgrade refusal, and the reason the rule compares
+    // like with like rather than demanding https outright: this is a
+    // development deployment, which AXIAM's own build_mtls_aliases supports. A
+    // rule written as "the scheme must be https" would have refused it.
+    Fixture f;
+    f.discovery = kDiscoveryHttpForHttp;
+    auto client = make_client(f, /*mtls=*/true);
+
+    client.login_client_credentials();
+
+    // Asserted on the URL rather than through host_of_last_call, which knows
+    // only the two https origins the rest of this file uses: the whole point
+    // here is that the origin is the http one.
+    std::lock_guard<std::mutex> lock(f.st->mtx);
+    bool reached_the_alias = false;
+    for (const auto& request : f.st->requests) {
+        if (request.url.rfind("http://mtls.iam.example.com/oauth2/token", 0) == 0) {
+            reached_the_alias = true;
+        }
+    }
+    AXIAM_REQUIRE(reached_the_alias);
+}
+
+AXIAM_TEST("§21.3.1 vector C a malformed alias cannot break a client not doing mTLS") {
+    // The second I4 twin, and the more important one: a client with no
+    // certificate never reads the member at all, not even to validate it. A
+    // deployment whose aliases are malformed cannot break the clients that
+    // never use them.
+    Fixture f;
+    f.discovery = kDiscoveryRelativeAlias;
+    auto client = make_client(f, /*mtls=*/false);
+
+    client.login_client_credentials();
+
+    AXIAM_REQUIRE(host_of_last_call(*f.st, "/oauth2/token") == kBase);
+}
+
+AXIAM_TEST("§21.3.1 vector C one malformed alias does not poison the others") {
+    // Per endpoint, like the fallback itself: one malformed alias stops the
+    // calls that would have used it and leaves every other endpoint working.
+    Fixture f;
+    f.discovery = kDiscoveryOneBadAlias;
+    auto client = make_client(f, /*mtls=*/true);
+
+    client.login_client_credentials();
+    AXIAM_REQUIRE(host_of_last_call(*f.st, "/oauth2/token") == kMtlsBase);
+
+    AXIAM_REQUIRE_THROWS_AS(client.introspect(axiam::Sensitive<std::string>("t")),
+                            axiam::AuthError);
 }

@@ -251,6 +251,16 @@ std::vector<RoleAssignment> UsersApi::list_roles(const std::string& user_id) {
     return Transport::decode<std::vector<RoleAssignment>>(response, "users.list_roles");
 }
 
+std::vector<SessionResponse> UsersApi::list_sessions(const std::string& user_id) {
+    const std::vector<PathValue> values{{"user_id", user_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("users.list_sessions", "GET", "/api/v1/users/{user_id}/sessions",
+                                            values, query, payload);
+
+    return Transport::decode<std::vector<SessionResponse>>(response, "users.list_sessions");
+}
+
 GroupsApi::GroupsApi(std::shared_ptr<Transport> transport, CallScope scope)
     : transport_(std::move(transport)), scope_(std::move(scope)) {}
 
@@ -2080,7 +2090,7 @@ PlatformApi ManagementApi::platform() const {
 namespace axiam {
 
 // The one place the §27 surface is attached to a Client. Defined here rather than in client.cpp
-// so that translation unit keeps knowing nothing about the 158 generated operations.
+// so that translation unit keeps knowing nothing about the 159 generated operations.
 management::ManagementApi Client::management() {
     p_->ensure_open();
     management::CallScope scope;

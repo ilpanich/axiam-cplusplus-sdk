@@ -188,6 +188,58 @@ AXIAM_TEST("§16.2: a non-idempotent operation is never retried") {
     AXIAM_REQUIRE(st->count() == 1);
 }
 
+// ── §16 — AXIAM T-262: the contended-write answer ──────────────────────────
+//
+// Since 2026-09-12 a write that loses an optimistic-concurrency race in the
+// datastore answers `503 write_contention` with `Retry-After: 1` instead of
+// `500 internal_error`. Nothing in this SDK changes: §16.3 already retries 5xx
+// on an eligible operation, and the delay arithmetic already treats the header
+// as a floor. That is exactly why the behaviour is pinned here — §16.7 exists
+// because two SDKs once shipped a retry helper that was exported, unit-tested
+// and green while no production path called it. Only a request count taken on
+// the wire distinguishes the two.
+
+AXIAM_TEST("§16/T-262: the contended-write answer is retried and the success returned") {
+    auto st = std::make_shared<axtest::FakeState>();
+    Script script{{503, 200}};
+    script.retry_after = "1";
+    auto c = make_client(st, script);
+    Sleeps sleeps;
+    // Jitter pinned to its MAXIMUM, so the un-floored wait would have been the
+    // full 200 ms backoff — the server's 1 s is what raises it, which is what
+    // "a floor, never a ceiling" means and what pinning jitter to zero could
+    // not show.
+    c._set_retry_test_seams([] { return 1.0; },
+                            [&sleeps](std::chrono::milliseconds d) { sleeps.record(d); });
+
+    const auto result = c.check_access("read", "r-1");
+
+    AXIAM_REQUIRE(result.allowed);
+    AXIAM_REQUIRE(st->count() == 2);
+    AXIAM_REQUIRE(sleeps.ms.size() == 1);
+    AXIAM_REQUIRE(sleeps.ms[0] == 1000);
+}
+
+AXIAM_TEST("§16.7/T-262: a non-idempotent call makes exactly one attempt against the same 503") {
+    // The half that catches a retry wired at the transport layer instead of at
+    // the operation layer. login changes state and consumes a credential, so a
+    // silent retry would replay a spent one and turn a recoverable blip into a
+    // hard failure the caller cannot interpret.
+    auto st = std::make_shared<axtest::FakeState>();
+    Script script{{503}};
+    script.retry_after = "1";
+    script.body = R"({"error":"write_contention","message":"the datastore is busy; retry this request"})";
+    auto c = make_client(st, script);
+    Sleeps sleeps;
+    c._set_retry_test_seams([] { return 1.0; },
+                            [&sleeps](std::chrono::milliseconds d) { sleeps.record(d); });
+
+    AXIAM_REQUIRE_THROWS_AS(c.login("u@example.com", "pw"), axiam::NetworkError);
+
+    AXIAM_REQUIRE(st->count() == 1);
+    AXIAM_REQUIRE(sleeps.ms.empty());
+}
+
 AXIAM_TEST("§16.1: the delay sequence with jitter pinned to max is 200ms, 400ms") {
     // Observed through the injected sleep, never taken. §16.7: a test that really
     // waits 200 ms is a test nobody runs.

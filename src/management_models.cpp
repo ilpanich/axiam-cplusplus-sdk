@@ -3116,6 +3116,47 @@ void from_json(const nlohmann::json& j, ServiceAccountCreatedResponse& value) {
     value.updated_at = j.at("updated_at").get<std::string>();
 }
 
+void to_json(nlohmann::json& j, const SessionResponse& value) {
+    j = nlohmann::json::object();
+    j["amr"] = value.amr;
+    j["authenticated_at"] = value.authenticated_at;
+    j["created_at"] = value.created_at;
+    j["expires_at"] = value.expires_at;
+    j["id"] = value.id;
+    if (value.ip_address) {
+        j["ip_address"] = *value.ip_address;
+    }
+    if (value.refresh_replay_at) {
+        j["refresh_replay_at"] = *value.refresh_replay_at;
+    }
+    j["refresh_replay_grace_accepted"] = value.refresh_replay_grace_accepted;
+    j["refresh_replay_refused"] = value.refresh_replay_refused;
+    j["refresh_replay_verdict"] = value.refresh_replay_verdict;
+    if (value.user_agent) {
+        j["user_agent"] = *value.user_agent;
+    }
+}
+
+void from_json(const nlohmann::json& j, SessionResponse& value) {
+    value.amr = j.at("amr").get<std::vector<std::string>>();
+    value.authenticated_at = j.at("authenticated_at").get<std::string>();
+    value.created_at = j.at("created_at").get<std::string>();
+    value.expires_at = j.at("expires_at").get<std::string>();
+    value.id = j.at("id").get<std::string>();
+    if (auto it = j.find("ip_address"); it != j.end() && !it->is_null()) {
+        value.ip_address = it->get<std::string>();
+    }
+    if (auto it = j.find("refresh_replay_at"); it != j.end() && !it->is_null()) {
+        value.refresh_replay_at = it->get<std::string>();
+    }
+    value.refresh_replay_grace_accepted = j.at("refresh_replay_grace_accepted").get<std::int64_t>();
+    value.refresh_replay_refused = j.at("refresh_replay_refused").get<std::int64_t>();
+    value.refresh_replay_verdict = j.at("refresh_replay_verdict").get<std::string>();
+    if (auto it = j.find("user_agent"); it != j.end() && !it->is_null()) {
+        value.user_agent = it->get<std::string>();
+    }
+}
+
 void to_json(nlohmann::json& j, const SetMtlsTrustAnchor& value) {
     j = nlohmann::json::object();
     j["enabled"] = value.enabled;

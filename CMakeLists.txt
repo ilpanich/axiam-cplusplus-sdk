@@ -49,6 +49,7 @@ add_library(axiam_cpp
   src/client.cpp
   src/http_curl.cpp
   src/jwks.cpp
+  src/revocation.cpp
   src/oidc.cpp
   src/opaque.cpp
   src/reactor.cpp

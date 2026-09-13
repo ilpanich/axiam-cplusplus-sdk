@@ -165,6 +165,21 @@ AxiamUser TokenAuthenticator::authenticate(const std::string& token) const {
         throw AuthError("authentication_failed: token aud claim does not include the expected audience");
     }
 
+    // §10.4 (contract 1.44) — last, and only ever a rejection. Every rule above
+    // has already decided the token is valid; a feed that is absent or cannot be
+    // read, and a token with no session behind it, all change nothing here.
+    //
+    // The message names the session rather than the credential: "the session is
+    // gone" is not "this token was never valid", and a guard that conflated them
+    // would report an expired credential for a logout.
+    if (options_.revocation_feed != nullptr && payload.contains("sid") &&
+        payload.at("sid").is_string()) {
+        const std::string sid = payload.at("sid").get<std::string>();
+        if (options_.revocation_feed->is_revoked(sid)) {
+            throw AuthError("authentication_failed: the session behind this token has been revoked");
+        }
+    }
+
     AxiamUser user;
     user.tenant_id = token_tenant;
     if (payload.contains("sub") && payload.at("sub").is_string()) {

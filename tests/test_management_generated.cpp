@@ -10,7 +10,7 @@
 #include "axiam/management.hpp"
 #include "management_test_util.hpp"
 
-// One case per CONTRACT.md §27 operation -- all 158 of them. Each asserts the operation issues
+// One case per CONTRACT.md §27 operation -- all 159 of them. Each asserts the operation issues
 // the METHOD the registry names against the PATH the registry names, and that the response
 // decodes into the model without throwing. The fake transport sits at the BOTTOM of the real
 // client, so a §27.8 violation (an operation opening its own request path) fails these rather
@@ -204,6 +204,16 @@ AXIAM_TEST("management users.list_roles reaches its route") {
 
     AXIAM_CHECK(fixture.state->last().method == "GET");
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/users/11111111-1111-4111-8111-111111111111/roles");
+}
+
+AXIAM_TEST("management users.list_sessions reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json([{"amr": ["example"], "authenticated_at": "example", "created_at": "example", "expires_at": "example", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "refresh_replay_at": "example", "refresh_replay_grace_accepted": 1, "refresh_replay_refused": 1, "refresh_replay_verdict": "example", "user_agent": "example"}])json");
+    const auto result = fixture.client.management().users().list_sessions("11111111-1111-4111-8111-111111111111");
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/users/11111111-1111-4111-8111-111111111111/sessions");
 }
 
 AXIAM_TEST("management groups.list reaches its route") {
@@ -1568,11 +1578,11 @@ AXIAM_TEST("management platform.mds_refresh reaches its route") {
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/mds/refresh");
 }
 
-// §27.9: all 158 registry operations are covered by a case above. Counted from the test
-// registry rather than written as a literal on both sides. `AXIAM_CHECK(158 == 158)` is a
+// §27.9: all 159 registry operations are covered by a case above. Counted from the test
+// registry rather than written as a literal on both sides. `AXIAM_CHECK(159 == 159)` is a
 // tautology, and a case removed by a bad regeneration would still pass it -- this fails
 // instead.
-AXIAM_TEST("management surface covers all 158 registry operations") {
+AXIAM_TEST("management surface covers all 159 registry operations") {
     int reached = 0;
     for (const auto& test : axtest::registry()) {
         if (test.name.rfind("management ", 0) == 0 &&
@@ -1580,7 +1590,7 @@ AXIAM_TEST("management surface covers all 158 registry operations") {
             ++reached;
         }
     }
-    AXIAM_CHECK(reached == 158);
+    AXIAM_CHECK(reached == 159);
 }
 
 }  // namespace

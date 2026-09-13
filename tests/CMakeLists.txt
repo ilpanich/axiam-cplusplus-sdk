@@ -56,6 +56,7 @@ add_executable(axiam_cpp_tests
   test_uma_challenge.cpp
   test_oidc.cpp
   test_mtls_endpoint_aliases.cpp
+  test_revocation.cpp
   test_oidc_grants.cpp
   test_oidc_errors.cpp
   test_oidc_login_providers.cpp

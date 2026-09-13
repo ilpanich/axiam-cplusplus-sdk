@@ -256,6 +256,8 @@ void to_json(nlohmann::json& j, const SecuritySettings& value);
 void from_json(const nlohmann::json& j, SecuritySettings& value);
 void to_json(nlohmann::json& j, const ServiceAccountCreatedResponse& value);
 void from_json(const nlohmann::json& j, ServiceAccountCreatedResponse& value);
+void to_json(nlohmann::json& j, const SessionResponse& value);
+void from_json(const nlohmann::json& j, SessionResponse& value);
 void to_json(nlohmann::json& j, const SetMtlsTrustAnchor& value);
 void from_json(const nlohmann::json& j, SetMtlsTrustAnchor& value);
 void to_json(nlohmann::json& j, const SetOrgEmailConfig& value);
