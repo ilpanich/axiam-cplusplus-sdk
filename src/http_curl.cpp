@@ -222,25 +222,117 @@ struct CurlTransport::Impl {
 CurlTransport::CurlTransport(TlsConfig cfg) : impl_(std::make_unique<Impl>(std::move(cfg))) {}
 CurlTransport::~CurlTransport() = default;
 
-HttpResponse CurlTransport::perform(const HttpRequest& req) {
-    // RAII borrow of a pooled handle, so every return path — including one
-    // taken by an exception out of a callback — puts the handle back. Defined
-    // here rather than at namespace scope because `Impl` is private to this
-    // class; a local class inside a member function shares that access.
-    struct HandleLease {
-        Impl* impl;
-        CURL* h;
-        ~HandleLease() { impl->release(h); }
-    };
+namespace {
 
-    HttpResponse resp;
-    HandleLease lease{impl_.get(), impl_->acquire()};
-    CURL* h = lease.h;
-    if (h == nullptr) {
-        resp.transport_error = "could not allocate a libcurl handle";
-        return resp;
+/// Lowercase copy, for case-insensitive attribute-name comparison only (never
+/// applied to a cookie's actual name/value).
+std::string ascii_lower(std::string s) {
+    for (char& c : s) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
     }
+    return s;
+}
 
+/// The host (no scheme, no port, no path) a URL was addressed to. Used only to
+/// scope a manually-injected cookie (see merge_into_shared_jar below) to the
+/// host that actually set it — the same host `req.url` already names.
+std::string host_from_url(const std::string& url) {
+    std::size_t start = url.find("://");
+    start = (start == std::string::npos) ? 0 : start + 3;
+    std::size_t end = url.find_first_of("/:?", start);
+    if (end == std::string::npos) end = url.size();
+    return url.substr(start, end - start);
+}
+
+/// One `Set-Cookie` response header value, as a Netscape-format line
+/// `domain\tincludeSubdomains\tpath\tsecure\texpires\tname\tvalue` — the form
+/// `CURLOPT_COOKIELIST` reliably parses with no ambient URL to infer a domain
+/// from (an out-of-band "Set-Cookie: ..." string with no explicit `Domain=`
+/// attribute is silently dropped; verified against libcurl 8.5). `request_host`
+/// stands in for the (absent) `Domain` attribute exactly as a browser would
+/// infer it: the host the response came from, no subdomains implied — unless
+/// the cookie itself names a `Domain`, which per RFC 6265 DOES imply
+/// subdomains.
+///
+/// Returns empty for a value with no `name=value` at all; every other
+/// attribute (`HttpOnly`, `SameSite`, `Max-Age`/`Expires`) is intentionally not
+/// modeled — this line only needs to reach the next request in this process,
+/// not survive a restart or honour an expiry.
+std::string set_cookie_to_netscape_line(const std::string& request_host,
+                                        const std::string& raw_set_cookie) {
+    const auto first_semi = raw_set_cookie.find(';');
+    const std::string name_value = raw_set_cookie.substr(0, first_semi);
+    const auto eq = name_value.find('=');
+    if (eq == std::string::npos) return {};
+    std::string name = name_value.substr(0, eq);
+    std::string value = name_value.substr(eq + 1);
+    // Trim incidental whitespace around the pair.
+    auto trim = [](std::string& s) {
+        std::size_t b = s.find_first_not_of(" \t");
+        std::size_t e = s.find_last_not_of(" \t");
+        s = (b == std::string::npos) ? std::string{} : s.substr(b, e - b + 1);
+    };
+    trim(name);
+    trim(value);
+    if (name.empty()) return {};
+
+    std::string domain = request_host;
+    bool include_subdomains = false;
+    std::string path = "/";
+    bool secure = false;
+
+    if (first_semi != std::string::npos) {
+        std::string rest = raw_set_cookie.substr(first_semi + 1);
+        std::size_t pos = 0;
+        while (pos < rest.size()) {
+            std::size_t next_semi = rest.find(';', pos);
+            std::string attr = rest.substr(pos, next_semi == std::string::npos
+                                                     ? std::string::npos
+                                                     : next_semi - pos);
+            trim(attr);
+            std::string attr_lower = ascii_lower(attr);
+            if (attr_lower.rfind("domain=", 0) == 0) {
+                domain = attr.substr(7);
+                trim(domain);
+                include_subdomains = true;  // RFC 6265: an explicit Domain matches subdomains too.
+            } else if (attr_lower.rfind("path=", 0) == 0) {
+                path = attr.substr(5);
+                trim(path);
+                if (path.empty()) path = "/";
+            } else if (attr_lower == "secure") {
+                secure = true;
+            }
+            if (next_semi == std::string::npos) break;
+            pos = next_semi + 1;
+        }
+    }
+    if (domain.empty()) return {};
+
+    std::string line = domain;
+    line += '\t';
+    line += include_subdomains ? "TRUE" : "FALSE";
+    line += '\t';
+    line += path;
+    line += '\t';
+    line += secure ? "TRUE" : "FALSE";
+    line += "\t0\t";  // expires=0: curl treats this as a session-lifetime cookie, not "expired".
+    line += name;
+    line += '\t';
+    line += value;
+    return line;
+}
+
+}  // namespace
+
+/// Everything about ONE exchange that does not depend on which handle carries
+/// it: URL, method/body, headers, TLS material, timeouts, the transfer itself.
+/// Shared by the pooled path (perform()) and the isolated one
+/// (perform_isolated()) so §6's TLS policy applies identically to both —
+/// isolation from the cookie jar must never mean isolation from strict
+/// verification too.
+HttpResponse CurlTransport::transfer(void* curl_handle, const HttpRequest& req) {
+    CURL* h = static_cast<CURL*>(curl_handle);
+    HttpResponse resp;
     curl_easy_setopt(h, CURLOPT_URL, req.url.c_str());
 
     // Method + body. The handle is reused across requests, so every method-shaped
@@ -326,6 +418,80 @@ HttpResponse CurlTransport::perform(const HttpRequest& req) {
     }
 
     if (header_list != nullptr) curl_slist_free_all(header_list);
+    return resp;
+}
+
+/// RAII borrow of a pooled handle, so every return path — including one taken
+/// by an exception out of a callback — puts the handle back.
+struct CurlTransport::HandleLease {
+    Impl* impl;
+    CURL* h;
+    ~HandleLease() { impl->release(h); }
+};
+
+/// Inject the cookies a §24.1 isolated exchange received into the SHARED jar
+/// every pooled handle reads from, so a later request through the ordinary
+/// `perform()` path adopts them — the merge `perform_isolated()` needs after a
+/// successful `webauthn_setup_register_finish` (§24.8: "adopts credentials
+/// exactly as mfa_setup_confirm does").
+///
+/// Borrows a pooled handle purely to reach the shared `CURLSH`; no transfer
+/// happens on it; `CURLOPT_COOKIELIST` writes straight into the store the
+/// share object backs; §24.4's `CURL_LOCK_DATA_COOKIE` registration is what
+/// makes that write visible to every other handle.
+void CurlTransport::merge_into_shared_jar(const std::string& request_url,
+                                          const std::vector<std::string>& set_cookies) {
+    const std::string host = host_from_url(request_url);
+    if (host.empty()) return;
+    HandleLease lease{impl_.get(), impl_->acquire()};
+    if (lease.h == nullptr) return;
+    for (const auto& raw : set_cookies) {
+        const std::string line = set_cookie_to_netscape_line(host, raw);
+        if (!line.empty()) curl_easy_setopt(lease.h, CURLOPT_COOKIELIST, line.c_str());
+    }
+}
+
+HttpResponse CurlTransport::perform(const HttpRequest& req) {
+    // §24.1 (contract 1.45): a request that must not replay the shared jar's
+    // cookies is routed off the pool entirely — see perform_isolated().
+    if (req.no_stored_cookies) return perform_isolated(req);
+
+    HandleLease lease{impl_.get(), impl_->acquire()};
+    CURL* h = lease.h;
+    if (h == nullptr) {
+        HttpResponse resp;
+        resp.transport_error = "could not allocate a libcurl handle";
+        return resp;
+    }
+    return transfer(h, req);
+}
+
+/// The §24.1 path for `webauthn_setup_register_start` / `_finish`: a fresh,
+/// unshared, unpooled handle with NO cookie engine at all, so it can neither
+/// read the shared jar (the property §24.8's test asserts) nor quietly gain
+/// one of its own that would need disabling again before the handle could
+/// safely return to the pool. TLS policy (§6/§6.1) is unaffected — transfer()
+/// applies it the same way regardless of which handle carries the exchange.
+///
+/// A `Set-Cookie` the response sets IS still wanted (setup/register/finish
+/// adopts a session on success) — merge_into_shared_jar() carries it into the
+/// pool's jar explicitly, rather than letting this handle's own (absent)
+/// engine capture it implicitly.
+HttpResponse CurlTransport::perform_isolated(const HttpRequest& req) {
+    CURL* h = curl_easy_init();
+    if (h == nullptr) {
+        HttpResponse resp;
+        resp.transport_error = "could not allocate a libcurl handle";
+        return resp;
+    }
+    Impl::apply_connection_reuse_options(h);  // connection-scoped only; no cookie/share option here.
+
+    HttpResponse resp = transfer(h, req);
+    curl_easy_cleanup(h);
+
+    if (resp.transport_error.empty() && !resp.set_cookies.empty()) {
+        merge_into_shared_jar(req.url, resp.set_cookies);
+    }
     return resp;
 }
 

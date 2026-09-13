@@ -865,6 +865,7 @@ struct SetMtlsTrustAnchor;
 struct SetOrgEmailConfig;
 struct SetOrgSettings;
 struct SignAuditBatchRequest;
+struct SignCertificateCsrRequest;
 struct SignIntermediateCsrRequest;
 struct SignedAuditBatch;
 struct SmtpConfig;
@@ -2841,6 +2842,24 @@ struct SetOrgSettings {
 struct SignAuditBatchRequest {
     /// The server's `entry_ids` field.
     std::vector<std::string> entry_ids;
+};
+
+/// Body of `POST /api/v1/certificates/sign-csr`. No `subject` and no `key_algorithm`: both are
+/// read out of the CSR, which is the only place they can be stated without the row and the
+/// certificate being able to disagree. No key is returned, so there is no key field anywhere on
+/// this exchange.
+struct SignCertificateCsrRequest {
+    /// The server's `cert_type` field.
+    CertificateType cert_type;
+    /// PEM-encoded PKCS#10 request — a `BEGIN CERTIFICATE REQUEST` block. The legacy OpenSSL
+    /// `BEGIN NEW CERTIFICATE REQUEST` header is not accepted.
+    std::string csr_pem;
+    /// The server's `issuer_ca_id` field.
+    std::string issuer_ca_id;
+    /// The server's `metadata` field. Optional.
+    std::optional<std::string> metadata = std::nullopt;
+    /// Validity duration in days.
+    std::int64_t validity_days;
 };
 
 /// Body of `POST .../tenants/{tenant_id}/signing-cas/sign-csr`. Deliberately carries no key

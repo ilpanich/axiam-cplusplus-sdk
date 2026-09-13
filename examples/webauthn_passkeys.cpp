@@ -3,7 +3,7 @@
 // THE THING THIS EXAMPLE IS REALLY ABOUT. A C++ program has no authenticator.
 // There is no platform API to link on the targets this SDK serves, and §24.6b
 // rule 2 forbids emulating one in software — a "credential" held in process
-// memory is not a second factor. So this SDK ships the six wire operations and
+// memory is not a second factor. So this SDK ships the eight wire operations and
 // §24.6a's JSON bridge, and nothing else.
 //
 // That is a statement about convenience, not capability. The bridge is the whole
@@ -108,6 +108,33 @@ void sign_in_with_a_discoverable_credential(axiam::Client& client) {
               << " s)\n";
 }
 
+/// §24.1 (contract 1.45), the WebAuthn twin of `mfa_setup_enroll()` /
+/// `mfa_setup_confirm()`: enrol a passkey or security key as the FIRST factor a
+/// forced-enrolment login demanded, reached exactly where the TOTP pair is —
+/// `LoginResult::mfa_setup_required` — and taking the SAME setup token.
+///
+/// Unlike enrol_a_passkey() above, neither call here needs (or is allowed) a
+/// session: the setup token is the only credential, and this SDK does not
+/// attach its own session credential to either request even when one is
+/// configured (§24.1). `finish` adopts credentials exactly as
+/// `mfa_setup_confirm()` does, because it IS the completion of the login the
+/// tenant's policy interrupted.
+void enrol_first_factor_after_forced_setup(axiam::Client& client,
+                                           const axiam::LoginResult& login) {
+    const auto challenge = client.webauthn_setup_register_start(login.setup_token);
+
+    const auto response = run_ceremony_on_the_platform(challenge.request_json());
+    if (!response) {
+        std::cout << "  (no authenticator in this process — stopping here)\n";
+        return;
+    }
+
+    const auto done = client.webauthn_setup_register_finish(login.setup_token, challenge.state_token,
+                                                             "Ada's laptop", *response);
+    std::cout << "  forced enrolment complete, signed in as "
+              << (done.user ? done.user->username : std::string{}) << "\n";
+}
+
 /// §24.6b rule 5, and required of every SDK claiming §24 even where no ceremony
 /// helper exists. Whatever DID run the ceremony reports its failure as one
 /// opaque type whose only machine-readable part is a name; translating that once
@@ -149,7 +176,13 @@ int main() {
         sign_in_with_a_discoverable_credential(client);
 
         const auto login = client.login(email, password);
-        if (login.user) {
+        if (login.mfa_setup_required) {
+            // §25.2 rule 1: the tenant requires MFA and this account has none
+            // yet. The setup token IS the credential — no session exists to
+            // enrol a passkey with the ordinary register/* pair.
+            std::cout << "\nforced first-login enrolment, passkey as the first factor (§24.1):\n";
+            enrol_first_factor_after_forced_setup(client, login);
+        } else if (login.user) {
             std::cout << "\nenrolling a passkey for the signed-in user (§24.1):\n";
             enrol_a_passkey(client);
         } else {

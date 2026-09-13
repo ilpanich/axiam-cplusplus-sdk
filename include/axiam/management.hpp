@@ -1139,6 +1139,13 @@ public:
     /// @param body The request body.
     GeneratedCertificate generate(const CreateCertificateRequest& body);
 
+    /// `POST /api/v1/certificates/sign-csr`
+    ///
+    /// `POST /api/v1/certificates/sign-csr`.
+    ///
+    /// @param body The request body.
+    Certificate sign_csr(const SignCertificateCsrRequest& body);
+
     /// `GET /api/v1/certificates/{id}`
     ///
     /// `GET /api/v1/certificates/{id}`.
@@ -2190,7 +2197,7 @@ private:
     CallScope scope_;
 };
 
-/// The CONTRACT.md §27 management surface: 159 operations across 24 namespaces.
+/// The CONTRACT.md §27 management surface: 160 operations across 24 namespaces.
 ///
 /// Reached as `client.management()`. Each accessor hands back a namespace handle (§27.2) that
 /// can be re-scoped per call with `in_org()` / `for_tenant()`.

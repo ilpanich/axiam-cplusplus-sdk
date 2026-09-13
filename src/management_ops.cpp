@@ -926,6 +926,16 @@ GeneratedCertificate CertificatesApi::generate(const CreateCertificateRequest& b
     return Transport::decode<GeneratedCertificate>(response, "certificates.generate");
 }
 
+Certificate CertificatesApi::sign_csr(const SignCertificateCsrRequest& body) {
+    const std::vector<PathValue> values{};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("certificates.sign_csr", "POST", "/api/v1/certificates/sign-csr",
+                                            values, query, payload);
+
+    return Transport::decode<Certificate>(response, "certificates.sign_csr");
+}
+
 Certificate CertificatesApi::get(const std::string& id) {
     const std::vector<PathValue> values{{"id", id}};
     const std::vector<QueryValue> query{};
@@ -2090,7 +2100,7 @@ PlatformApi ManagementApi::platform() const {
 namespace axiam {
 
 // The one place the §27 surface is attached to a Client. Defined here rather than in client.cpp
-// so that translation unit keeps knowing nothing about the 159 generated operations.
+// so that translation unit keeps knowing nothing about the 160 generated operations.
 management::ManagementApi Client::management() {
     p_->ensure_open();
     management::CallScope scope;

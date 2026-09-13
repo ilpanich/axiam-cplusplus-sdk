@@ -34,6 +34,21 @@ struct HttpRequest {
     std::string url;     // fully-qualified
     HeaderMap headers;
     std::string body;    // JSON body (may be empty)
+
+    /// CONTRACT.md §24.1 (contract 1.45): `webauthn_setup_register_start` /
+    /// `_finish` take a setup token as their ONLY credential and MUST NOT carry
+    /// the client's session credential, even when a session is configured. For
+    /// this SDK's cookie-jar transport (§4) that means the request must not
+    /// replay a cookie the jar holds for this host — a per-request flag rather
+    /// than a client-wide switch, because the call still ADOPTS a session on
+    /// success (§24.8: "setup/register/finish adopts credentials exactly as
+    /// mfa_setup_confirm does") and the resulting Set-Cookie must still reach
+    /// the shared jar for every request after this one.
+    ///
+    /// A transport with no cookie engine of its own (the in-memory fake the
+    /// test suite uses, say) has nothing to isolate and MAY ignore this field;
+    /// CurlTransport does not ignore it (see http_curl.cpp).
+    bool no_stored_cookies = false;
 };
 
 /// An HTTP response, or a transport failure. When `transport_error` is non-empty

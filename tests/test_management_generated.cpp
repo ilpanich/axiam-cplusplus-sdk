@@ -10,7 +10,7 @@
 #include "axiam/management.hpp"
 #include "management_test_util.hpp"
 
-// One case per CONTRACT.md §27 operation -- all 159 of them. Each asserts the operation issues
+// One case per CONTRACT.md §27 operation -- all 160 of them. Each asserts the operation issues
 // the METHOD the registry names against the PATH the registry names, and that the response
 // decodes into the model without throwing. The fake transport sits at the BOTTOM of the real
 // client, so a §27.8 violation (an operation opening its own request path) fails these rather
@@ -766,6 +766,17 @@ AXIAM_TEST("management certificates.generate reaches its route") {
 
     AXIAM_CHECK(fixture.state->last().method == "POST");
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/certificates");
+}
+
+AXIAM_TEST("management certificates.sign_csr reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"})json");
+    SignCertificateCsrRequest body{};
+    const auto result = fixture.client.management().certificates().sign_csr(body);
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "POST");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/certificates/sign-csr");
 }
 
 AXIAM_TEST("management certificates.get reaches its route") {
@@ -1578,11 +1589,11 @@ AXIAM_TEST("management platform.mds_refresh reaches its route") {
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/mds/refresh");
 }
 
-// §27.9: all 159 registry operations are covered by a case above. Counted from the test
-// registry rather than written as a literal on both sides. `AXIAM_CHECK(159 == 159)` is a
+// §27.9: all 160 registry operations are covered by a case above. Counted from the test
+// registry rather than written as a literal on both sides. `AXIAM_CHECK(160 == 160)` is a
 // tautology, and a case removed by a bad regeneration would still pass it -- this fails
 // instead.
-AXIAM_TEST("management surface covers all 159 registry operations") {
+AXIAM_TEST("management surface covers all 160 registry operations") {
     int reached = 0;
     for (const auto& test : axtest::registry()) {
         if (test.name.rfind("management ", 0) == 0 &&
@@ -1590,7 +1601,7 @@ AXIAM_TEST("management surface covers all 159 registry operations") {
             ++reached;
         }
     }
-    AXIAM_CHECK(reached == 159);
+    AXIAM_CHECK(reached == 160);
 }
 
 }  // namespace

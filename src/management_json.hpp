@@ -266,6 +266,8 @@ void to_json(nlohmann::json& j, const SetOrgSettings& value);
 void from_json(const nlohmann::json& j, SetOrgSettings& value);
 void to_json(nlohmann::json& j, const SignAuditBatchRequest& value);
 void from_json(const nlohmann::json& j, SignAuditBatchRequest& value);
+void to_json(nlohmann::json& j, const SignCertificateCsrRequest& value);
+void from_json(const nlohmann::json& j, SignCertificateCsrRequest& value);
 void to_json(nlohmann::json& j, const SignIntermediateCsrRequest& value);
 void from_json(const nlohmann::json& j, SignIntermediateCsrRequest& value);
 void to_json(nlohmann::json& j, const SignedAuditBatch& value);
