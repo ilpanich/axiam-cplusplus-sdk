@@ -95,13 +95,70 @@ private:
 /// A disengaged result for a conditionally-advertised endpoint still means "this
 /// server does not support the feature" — the caller raises that, and never
 /// concatenates a URL onto the issuer.
+/// The scheme of `url`, lowercased, or empty when there is no `://`.
+std::string scheme_of(std::string_view url) {
+    const std::size_t sep = url.find("://");
+    if (sep == std::string_view::npos || sep == 0) return {};
+    std::string scheme(url.substr(0, sep));
+    for (char& c : scheme) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return scheme;
+}
+
+/// Refuse an `mtls_endpoint_aliases` entry that cannot carry a client
+/// certificate (CONTRACT.md §21.3.1 vector C, contract 1.43).
+///
+/// Falling back to the top-level endpoint looks like the safe answer and is the
+/// dangerous one: the caller asked to authenticate with a certificate, the
+/// operator published something unusable, and sending the certificate to the
+/// front-channel host authenticates nothing while appearing to work.
+///
+/// Two defects, each a refusal on its own:
+///
+///  - **Not an absolute URL.** A relative alias resolves against nothing the
+///    client holds, and the base that might seem obvious — the issuer's host —
+///    is precisely the host the alias exists to name a different one from.
+///  - **A scheme weaker than the endpoint it replaces.** An alias substitutes
+///    for exactly one top-level endpoint, so that is what it is compared
+///    against: `https` -> `http` is a downgrade, while `http` -> `http` is a
+///    development deployment, which AXIAM's own `build_mtls_aliases` supports
+///    and this suite's harness is.
+///
+/// The refusal is an AuthError, matching every other "the discovery document
+/// advertises something this client cannot use" in this file. It also matters
+/// operationally: §16.3 retries NetworkError and only NetworkError, so the
+/// other choice would have attempted a permanent, deterministic
+/// misconfiguration three times and reported it as transient.
+void assert_usable_mtls_alias(const std::string& alias, std::string_view replaces) {
+    const std::string scheme = scheme_of(alias);
+    // An absolute URL is scheme://authority — a `://` with something before it
+    // AND something after it. "https://" alone names no host.
+    if (scheme.empty() || alias.size() <= scheme.size() + 3) {
+        throw AuthError("mtls_endpoint_aliases publishes \"" + alias +
+                        "\", which is not an absolute URL. Refusing rather than falling back to "
+                        "the top-level endpoint: this call presents a client certificate, and "
+                        "sending it to the front-channel host would authenticate nothing while "
+                        "appearing to work (CONTRACT.md §21.3.1 vector C)");
+    }
+    if (scheme_of(replaces) == "https" && scheme != "https") {
+        throw AuthError("mtls_endpoint_aliases publishes \"" + alias + "\", whose scheme is \"" +
+                        scheme +
+                        "\", in place of an https endpoint. That is a downgrade, and mutual TLS "
+                        "over cleartext is a contradiction; refusing rather than falling back to "
+                        "the top-level endpoint (CONTRACT.md §21.3.1 vector C)");
+    }
+}
+
 std::optional<std::string> preferred_endpoint(
     const Client::Impl& impl, const OidcConfiguration& config,
     const std::optional<std::string>& (*pick)(const MtlsEndpointAliases&),
     const std::optional<std::string>& top_level) {
     if (impl.presents_client_certificate && config.mtls_endpoint_aliases) {
         const std::optional<std::string>& alias = pick(*config.mtls_endpoint_aliases);
-        if (alias && !alias->empty()) return alias;
+        if (alias && !alias->empty()) {
+            assert_usable_mtls_alias(*alias, top_level ? std::string_view(*top_level)
+                                                       : std::string_view{});
+            return alias;
+        }
     }
     return top_level;
 }
@@ -113,7 +170,10 @@ std::string preferred_endpoint(const Client::Impl& impl, const OidcConfiguration
                                const std::string& top_level) {
     if (impl.presents_client_certificate && config.mtls_endpoint_aliases) {
         const std::optional<std::string>& alias = pick(*config.mtls_endpoint_aliases);
-        if (alias && !alias->empty()) return *alias;
+        if (alias && !alias->empty()) {
+            assert_usable_mtls_alias(*alias, top_level);
+            return *alias;
+        }
     }
     return top_level;
 }

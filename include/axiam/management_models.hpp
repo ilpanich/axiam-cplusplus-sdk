@@ -860,6 +860,7 @@ struct Scope;
 struct SecuritySettings;
 struct ServiceAccountCreatedResponse;
 struct ServiceAccountResponse;
+struct SessionResponse;
 struct SetMtlsTrustAnchor;
 struct SetOrgEmailConfig;
 struct SetOrgSettings;
@@ -2724,6 +2725,38 @@ struct ServiceAccountCreatedResponse {
     std::string tenant_id;
     /// The server's `updated_at` field.
     std::string updated_at;
+};
+
+/// One of a user's sessions, as an administrator sees it.
+struct SessionResponse {
+    /// RFC 8176 method references for that authentication.
+    std::vector<std::string> amr;
+    /// X7.2 — when the end user actually authenticated, which is not `created_at` on a session
+    /// produced by refresh rotation.
+    std::string authenticated_at;
+    /// The server's `created_at` field.
+    std::string created_at;
+    /// The server's `expires_at` field.
+    std::string expires_at;
+    /// The server's `id` field.
+    std::string id;
+    /// The server's `ip_address` field. Optional.
+    std::optional<std::string> ip_address = std::nullopt;
+    /// T-254 — when a refresh token of this session was last presented after it had already
+    /// been rotated. `None` if that has never happened. Optional.
+    std::optional<std::string> refresh_replay_at = std::nullopt;
+    /// T-254 — replays accepted under the FAPI 2.0 §5.3.2.1-9 grace window. Only ever non-zero
+    /// for a client registered `profile: fapi2`.
+    std::int64_t refresh_replay_grace_accepted;
+    /// T-254 — replays refused because there was no window to accept them in. Nothing a
+    /// conformant client does.
+    std::int64_t refresh_replay_refused;
+    /// T-254 — the badge: `none`, `fapi_grace_retry` or `refused`. Derived from the two
+    /// counters below rather than stored, so it cannot disagree with them. A refusal outranks
+    /// an accepted grace retry however the counts compare.
+    std::string refresh_replay_verdict;
+    /// The server's `user_agent` field. Optional.
+    std::optional<std::string> user_agent = std::nullopt;
 };
 
 /// Body for `PUT .../ca-certificates/{id}/mtls-trust-anchor`.
