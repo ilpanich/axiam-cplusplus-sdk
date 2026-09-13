@@ -37,6 +37,7 @@
 #include "axiam/guard.hpp"
 #include "axiam/http_curl.hpp"
 #include "axiam/jwks.hpp"
+#include "axiam/revocation.hpp"
 #include "axiam/sensitive.hpp"
 #include "axiam/transport.hpp"
 #include "axiam/types.hpp"

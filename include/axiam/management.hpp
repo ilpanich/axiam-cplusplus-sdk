@@ -389,6 +389,16 @@ public:
     /// @param user_id The `{user_id}` path parameter.
     std::vector<RoleAssignment> list_roles(const std::string& user_id);
 
+    /// `GET /api/v1/users/{user_id}/sessions`
+    ///
+    /// `GET /api/v1/users/{user_id}/sessions`.
+    ///
+    /// Returns the server's complete list. This endpoint is NOT paginated, so the result is a
+    /// plain vector and never a Page (§27.4 rule 4).
+    ///
+    /// @param user_id The `{user_id}` path parameter.
+    std::vector<SessionResponse> list_sessions(const std::string& user_id);
+
 private:
     std::shared_ptr<Transport> transport_;
     CallScope scope_;
@@ -2180,7 +2190,7 @@ private:
     CallScope scope_;
 };
 
-/// The CONTRACT.md §27 management surface: 158 operations across 24 namespaces.
+/// The CONTRACT.md §27 management surface: 159 operations across 24 namespaces.
 ///
 /// Reached as `client.management()`. Each accessor hands back a namespace handle (§27.2) that
 /// can be re-scoped per call with `in_org()` / `for_tenant()`.

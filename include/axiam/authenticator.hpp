@@ -36,6 +36,7 @@
 #include "axiam/errors.hpp"
 #include "axiam/guard.hpp"
 #include "axiam/jwks.hpp"
+#include "axiam/revocation.hpp"
 
 namespace axiam {
 
@@ -72,6 +73,21 @@ struct AuthenticatorOptions {
 
     /// Time source. Empty => the system clock.
     NowFn now;
+
+    /// CONTRACT.md §10.4 (contract 1.44) — the optional session-revocation
+    /// feed. **Null by default**, and left null this authenticator behaves
+    /// exactly as it did before 1.44: a revoked session's access token verifies
+    /// locally until it expires, which is the §10.2 posture the feed narrows
+    /// rather than replaces.
+    ///
+    /// Non-owning. The feed must outlive every authenticator that names it, and
+    /// is meant to be shared: several authenticators built from one feed poll
+    /// once between them rather than once each.
+    ///
+    /// It is never a control — it can only ever turn an accept into a reject,
+    /// it is never consulted for a token that names no session, and a feed that
+    /// cannot be read denies nothing.
+    RevocationFeed* revocation_feed = nullptr;
 };
 
 /// Safe-by-default local verification of an AXIAM access token.
