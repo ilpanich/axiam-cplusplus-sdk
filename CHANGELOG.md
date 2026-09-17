@@ -6,6 +6,78 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Added
+
+- **MCP resource-server helpers (CONTRACT.md §28, contract 1.48).** The
+  resource-server half of the Model Context Protocol authorization handshake:
+  `protected_resource_metadata()` builds and validates the RFC 9728
+  protected-resource metadata document, `bearer_challenge()` builds the RFC
+  6750 `WWW-Authenticate` value, and `AxiamGuard` / `require_access` gain an
+  opt-in overload that attaches the challenge to a 401 / 403 automatically.
+  AXIAM is the authorization server and implements none of this; your MCP
+  server is the resource server, and this is its side. No operation performs
+  network I/O (§16's retry and §9's single-flight refresh do not apply), and
+  nothing here is a source of truth about a token — whether a request is
+  authorized stays §10's and §11's decision, unchanged.
+
+  ```cpp
+  const auto metadata = axiam::protected_resource_metadata({
+      "https://mcp.example.com/mcp",
+      {"https://axiam.example.com"},
+      {"mcp:read", "mcp:tools"},
+  });
+
+  axiam::AuthenticatorOptions options;
+  options.expected_audience = metadata.document.resource;      // §10.1 row 6 — no second option
+  options.resource_metadata_url = metadata.metadata_url;        // turns §28 on
+  axiam::TokenAuthenticator auth(client.jwks(), tenant_id, options);
+
+  axiam::AxiamGuard<MyRequest> guard(
+      auth.guard_authenticator<MyRequest>(extract_token),
+      auth.mcp_challenges(), has_credential_probe);
+  ```
+
+  **Opt-in and off by default, and the regression proves it.** With
+  `resource_metadata_url` unset, `AxiamGuard`'s single-argument constructor
+  and `require_access`'s pre-existing overloads are byte-for-byte what they
+  were before this change — no `WWW-Authenticate` on any response, no status
+  changed. `tests/test_mcp.cpp` asserts the header's *absence* explicitly
+  rather than the status, because a 401 that grew a header is still a 401.
+
+  **`expected_audience` MUST be set when `resource_metadata_url` is, and this
+  is impossible to misconfigure rather than merely documented**:
+  `TokenAuthenticator`'s constructor refuses the pair with
+  `std::invalid_argument`, naming both options, before any request is served
+  (§28.5 rule 2).
+
+  **C++ has no router**, so there is no `serve_protected_resource_metadata`
+  function (§28.3's carve-out); the README documents the Crow and Pistache
+  adapters that serve the derived path by hand from
+  `ProtectedResourceMetadataDocument::to_json()`, and
+  `is_metadata_document_request()` / `check_mcp_configuration_matches()` are
+  the two helpers those adapters call.
+
+  **Tests**: §28.9's five required tests in `tests/test_mcp.cpp` — document
+  shape and validation negatives; challenge quoting and its refusals; a 401
+  carrying the challenge (via `AxiamGuard`, since this SDK has no request
+  pipeline to drive); a 403 `insufficient_scope` (via `require_access`); and a
+  token whose `aud` is not this resource, refused identically to a
+  general-purpose `axiam:user` token — plus the off-by-default regression.
+
+  **Contract**: `CONTRACT.md` is re-synced (§28, plus the unrelated §12/§27
+  changelog entries the same branch carries) from the `ilpanich/axiam`
+  `claude/t21-2a-public-clients` branch, which is ahead of `axiam`'s `main`
+  until T21's MCP-authorization phase lands there. `openapi.json` is
+  deliberately **not** re-synced to that branch tip in this change — it
+  carries unrelated, pre-existing contract deltas (new discovery paths, a
+  dynamic-registration surface) whose `management-registry.json` companion
+  moved with it, and pulling either in would force a full §27 regeneration
+  this task does not otherwise touch. This SDK has no `proto/` directory:
+  §28 is REST-only here, and this SDK implements no gRPC surface for a
+  `.proto` file to describe (README's existing gRPC scope note already
+  applies). No §28 operation reads either vendored artifact — both are pure
+  local computation over caller-supplied strings.
+
 ## [1.0.0-beta15] - 2026-09-15
 
 ### Added

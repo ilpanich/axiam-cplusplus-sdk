@@ -36,6 +36,7 @@
 #include "axiam/errors.hpp"
 #include "axiam/guard.hpp"
 #include "axiam/jwks.hpp"
+#include "axiam/mcp.hpp"
 #include "axiam/revocation.hpp"
 
 namespace axiam {
@@ -88,6 +89,20 @@ struct AuthenticatorOptions {
     /// it is never consulted for a token that names no session, and a feed that
     /// cannot be read denies nothing.
     RevocationFeed* revocation_feed = nullptr;
+
+    /// CONTRACT.md §28.5 — the URL this resource server's RFC 9728
+    /// protected-resource metadata document is served at, normally
+    /// `protected_resource_metadata(...).metadata_url`. **Unset by default**,
+    /// and unset this authenticator and every guard built from it behave
+    /// byte-for-byte as they did before §28 existed: no `WWW-Authenticate` on
+    /// any response, no status changed (§28.5 rule 1).
+    ///
+    /// Setting it turns §28 on and makes `expected_audience` above mandatory
+    /// (§28.5 rule 2) — the constructor refuses the pair otherwise, naming
+    /// both options. §28 adds no *second* audience option: this authenticator's
+    /// own `expected_audience` is the one §28.2 rule 9 and §28.5 rule 2 both
+    /// mean.
+    std::optional<std::string> resource_metadata_url;
 };
 
 /// Safe-by-default local verification of an AXIAM access token.
@@ -140,6 +155,17 @@ public:
     /// The tenant every token is bound to.
     const std::string& expected_tenant_id() const noexcept { return tenant_id_; }
 
+    /// CONTRACT.md §28.5 — this authenticator's own §28 challenges, precomputed
+    /// at construction from `AuthenticatorOptions::resource_metadata_url` and
+    /// `expected_audience`. `std::nullopt` when `resource_metadata_url` was not
+    /// set: §28 is off, and every guard built from this authenticator emits no
+    /// `WWW-Authenticate` header (§28.5 rule 1).
+    ///
+    /// Feed this straight into `AxiamGuard`'s §28 constructor overload so the
+    /// guard's challenge is always this authenticator's own audience
+    /// configuration — never a value retyped into a second place.
+    const std::optional<McpChallenges>& mcp_challenges() const noexcept { return mcp_challenges_; }
+
     /// Extract a bearer token from an `Authorization` header value.
     /// Returns nullopt when the scheme is absent or is not `Bearer`.
     static std::optional<std::string> bearer_from_authorization(const std::string& header_value);
@@ -165,6 +191,7 @@ private:
     JwksVerifier* jwks_;
     std::string tenant_id_;
     AuthenticatorOptions options_;
+    std::optional<McpChallenges> mcp_challenges_;
 };
 
 /// Convenience factory: an authenticator bound to a client's JWKS verifier.

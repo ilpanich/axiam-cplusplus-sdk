@@ -73,6 +73,15 @@ TokenAuthenticator::TokenAuthenticator(JwksVerifier& jwks, std::string expected_
             "TokenAuthenticator: clock_skew exceeds the maximum permitted leeway "
             "(kMaxClockSkew, 60s) — a larger window would keep expired tokens valid");
     }
+    // CONTRACT.md §28.5 rule 2: mcp_challenges() itself refuses a
+    // resource_metadata_url set without expected_audience, naming both
+    // options — so this is where an impossible §28 configuration surfaces,
+    // at construction, before any request exists.
+    if (options_.resource_metadata_url.has_value()) {
+        mcp_challenges_ =
+            axiam::mcp_challenges(*options_.resource_metadata_url,
+                                  options_.expected_audience.value_or(std::string()));
+    }
 }
 
 AxiamUser TokenAuthenticator::authenticate_sender_constrained(
