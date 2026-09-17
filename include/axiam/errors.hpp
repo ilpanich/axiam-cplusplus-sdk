@@ -69,6 +69,30 @@ private:
     std::string challenge_;
 };
 
+/// An authentication failure that additionally carries a formatted
+/// `WWW-Authenticate: Bearer ...` challenge (CONTRACT.md §28.4 / §28.5 rule 4).
+///
+/// Derives from AuthError on purpose, mirroring AuthzChallengeError below it:
+/// an adapter that knows nothing about §28 still catches AuthError and returns
+/// the same 401 it always did; one that does catches this first (or
+/// dynamic_casts) and copies challenge() onto the response. The addition can
+/// never turn a failure into a different outcome.
+///
+/// Unlike AuthzChallengeError's UMA ticket, nothing here is sensitive
+/// (CONTRACT.md §28.8): the challenge names no credential, so — unlike the
+/// UMA challenge — it is fine to let it show up in what() and in a log line.
+class AuthChallengeError : public AuthError {
+public:
+    AuthChallengeError(const std::string& message, std::string challenge)
+        : AuthError(message), challenge_(std::move(challenge)) {}
+
+    /// The formatted `WWW-Authenticate` value. Send it as a header.
+    const std::string& challenge() const noexcept { return challenge_; }
+
+private:
+    std::string challenge_;
+};
+
 /// Transport-level failure: connection refused, timeout, TLS error, DNS failure,
 /// malformed request (400), rate-limit (408/429) or server error (5xx).
 /// Carries the underlying transport cause string.

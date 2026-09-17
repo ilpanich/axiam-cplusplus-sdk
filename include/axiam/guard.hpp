@@ -21,6 +21,7 @@
 
 #include "axiam/client.hpp"
 #include "axiam/errors.hpp"
+#include "axiam/mcp.hpp"
 #include "axiam/sensitive.hpp"
 #include "axiam/uma.hpp"
 
@@ -162,6 +163,47 @@ inline void require_access(Client& client, const std::optional<AxiamUser>& user,
     }
 }
 
+/// §11 require_access, with CONTRACT.md §28.5 rule 5 challenge emission on a
+/// `no_grant` denial.
+///
+/// Identical to the two-argument overload above in every outcome **except
+/// one**: when `scope` was given, `challenges` carries an
+/// `insufficient_scope` value (i.e. is not `std::nullopt`, built by
+/// `mcp_challenges()`), and the server's decision came back
+/// `allowed = false` with `reason_code` `"no_grant"`, the denial is
+/// `AuthzChallengeError` (which *is* AuthzError) carrying the challenge
+/// naming that scope, verbatim (rule 6). Every other denial — `denied_by_rule`,
+/// an absent or unrecognised `reason_code`, no `scope` argument, or
+/// `challenges` of `std::nullopt` (§28 off) — throws the same plain
+/// `AuthzError` the two-argument overload does, with **no** header: reading
+/// this twice matters more than reading it once, because the §11 JSON body
+/// never changes either way (§28.5 rule 5's own "read this twice").
+inline void require_access(Client& client, const std::optional<AxiamUser>& user,
+                           const std::string& action, const std::string& resource_id,
+                           const std::optional<McpChallenges>& challenges,
+                           std::optional<std::string> scope = std::nullopt) {
+    const AxiamUser& u = require_auth(user);
+    if (resource_id.empty()) {
+        throw std::invalid_argument("invalid_request: unresolved resource id");
+    }
+    AccessDecision decision;
+    try {
+        decision = client.check_access(action, resource_id, scope, u.user_id);
+    } catch (const AuthzError&) {
+        throw;
+    } catch (const NetworkError&) {
+        throw AuthzError("authz_unavailable");
+    }
+    if (decision.allowed) return;
+    if (challenges.has_value() && scope.has_value() && decision.reason_code.has_value() &&
+        *decision.reason_code == ReasonCode::kNoGrant) {
+        throw AuthzChallengeError("authorization_denied",
+                                  mcp_insufficient_scope_challenge(*challenges, *scope), action,
+                                  resource_id);
+    }
+    throw AuthzError("authorization_denied");
+}
+
 /// Resolver-based overload (§11.3c): resolve the resource id from an arbitrary
 /// request object via a callback, then delegate to the guard above.
 template <typename Request>
@@ -175,20 +217,63 @@ void require_access(Client& client, const std::optional<AxiamUser>& user,
 /// §10 guard functor: a callable that turns a request into an AxiamUser using a
 /// caller-supplied authenticator (the §10 verification adapter). Throws AuthError
 /// when the request carries no valid session.
+///
+/// **CONTRACT.md §28.5 rule 4** adds the second constructor below, opt-in:
+/// with it unused, this class is unchanged from before §28 existed, and the
+/// single-argument constructor and operator() are byte-for-byte what they
+/// always were — §28.9's regression is exactly this guarantee.
 template <typename Request>
 class AxiamGuard {
 public:
     using Authenticator = std::function<std::optional<AxiamUser>(const Request&)>;
 
+    /// §28.5's vector 1 / vector 2 choice needs to know whether `request`
+    /// carried a credential of any kind — a fact the plain `Authenticator`
+    /// above no longer has, because both "no credential" and "credential
+    /// rejected" already collapsed to `std::nullopt` by the time it returns.
+    /// `true` does not mean the credential was valid, only that one was
+    /// presented; used only when the §28 constructor below is.
+    using CredentialProbe = std::function<bool(const Request&)>;
+
     explicit AxiamGuard(Authenticator auth) : auth_(std::move(auth)) {}
+
+    /// CONTRACT.md §28.5: a guard that also emits the `WWW-Authenticate`
+    /// challenge on every 401 it produces.
+    ///
+    /// `challenges` is normally `TokenAuthenticator::mcp_challenges()` — built
+    /// from that authenticator's own `resource_metadata_url` /
+    /// `expected_audience`, never a value re-entered here — so passing
+    /// `std::nullopt` (that authenticator's default) is indistinguishable
+    /// from having called the single-argument constructor above (§28.5 rule 1).
+    /// `has_credential` is unused when `challenges` is `std::nullopt`.
+    AxiamGuard(Authenticator auth, std::optional<McpChallenges> challenges,
+              CredentialProbe has_credential)
+        : auth_(std::move(auth)),
+          challenges_(std::move(challenges)),
+          has_credential_(std::move(has_credential)) {}
 
     AxiamUser operator()(const Request& request) const {
         auto user = auth_(request);
-        return require_auth(user);
+        if (user.has_value()) return *user;
+        if (!challenges_.has_value()) return require_auth(user);  // unconfigured: identical to before §28
+        const bool presented = has_credential_ && has_credential_(request);
+        throw AuthChallengeError("authentication_failed",
+                                 presented ? challenges_->invalid_token : challenges_->no_credential);
     }
+
+    /// This guard's own §28 challenges — `std::nullopt` when built from the
+    /// single-argument constructor, or from the §28 one with `std::nullopt`
+    /// (§28 off either way). An adapter applying this guard globally
+    /// (README.md's Crow/Pistache walkthroughs) checks
+    /// `is_metadata_document_request(guard.mcp_challenges(), method, path)`
+    /// **before** calling the guard, to exempt the document itself (§28.3
+    /// rule 2).
+    const std::optional<McpChallenges>& mcp_challenges() const noexcept { return challenges_; }
 
 private:
     Authenticator auth_;
+    std::optional<McpChallenges> challenges_;
+    CredentialProbe has_credential_;
 };
 
 }  // namespace axiam

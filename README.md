@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26 and §27 (including §6.1 mTLS, §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — and §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27 and §28 (including §6.1 mTLS, §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport).**
 
 Sections are named individually rather than folded into ranges: widening a
 range silently turns a statement that was true when written into a different
@@ -1723,6 +1723,233 @@ no rollback, is strictly worse.
   with a second client. This is the one place a §27.5 one-time secret has to be
   caught as it goes past.
 
+## §28 MCP Resource-Server Helpers (RFC 9728 + RFC 6750)
+
+This is the **resource-server** half of the Model Context Protocol
+authorization handshake: publishing the RFC 9728 document that names the
+authorization server guarding an MCP server, and emitting the
+`WWW-Authenticate` challenge that starts a client's discovery. AXIAM is the
+authorization server and implements none of this; the *client* half — parsing
+a challenge, fetching a document, deciding whether to trust the authorization
+server it names — is deliberately not shipped, for the same reason §20.3
+(the "UMA 2.0" section above) stops at parsing a UMA challenge rather than
+acting on one.
+
+**No operation here performs network I/O.** `protected_resource_metadata()`
+and `bearer_challenge()` are pure local computation, like `oidc_begin` and
+`uma_parse_challenge` — §16's retry policy and §9's single-flight refresh do
+not apply, and nothing here touches the SDK client's own session. **Nothing
+here is a source of truth about a token either**: the document is a claim a
+resource server publishes about itself, and the challenge is a hint given to
+a caller that already failed. Whether a request is authorized stays
+[§10](#authenticating-a-request-10)'s and [§11](#declarative-helpers-11)'s
+decision, unchanged and unreachable from here.
+
+```cpp
+#include <axiam/mcp.hpp>
+
+const auto metadata = axiam::protected_resource_metadata({
+    "https://mcp.example.com/mcp",           // resource
+    {"https://axiam.example.com"},           // authorization_servers
+    {"mcp:read", "mcp:tools"},               // scopes_supported
+});
+// metadata.metadata_path == "/.well-known/oauth-protected-resource/mcp"
+// metadata.metadata_url  == "https://mcp.example.com/.well-known/oauth-protected-resource/mcp"
+```
+
+Validation happens here and it refuses; it never repairs. A relative
+`resource`, one carrying a query or a fragment, `http` on a non-loopback
+host, an empty `authorization_servers`, a duplicate scope, or anything else
+§28.2 forbids throws `std::invalid_argument` — a configuration mistake an
+operator fixes in one line, before any route exists and before any request
+is served. `scopes_supported` empty and `resource_documentation` unset both
+omit their member from `document.to_json()`'s output — never `null` — and
+the caller's scope order is preserved, never sorted.
+
+### Turning the challenge on
+
+`resource_metadata_url` is a new `AuthenticatorOptions` field, next to the
+`expected_audience` it makes mandatory:
+
+```cpp
+axiam::AuthenticatorOptions options;
+options.expected_audience = metadata.document.resource;     // §10.1 row 6 — §28 adds no second option
+options.resource_metadata_url = metadata.metadata_url;       // turns §28 on
+
+axiam::TokenAuthenticator auth(client.jwks(), tenant_id, options);
+```
+
+Setting `resource_metadata_url` without `expected_audience` is not
+discouraged — it is **impossible**: the constructor refuses the pair,
+naming both options, before a single request is served (§28.5 rule 2).
+Leave `resource_metadata_url` unset (the default) and this authenticator —
+and every `AxiamGuard` built from it — behaves byte-for-byte as it did
+before §28 existed: no `WWW-Authenticate` on any response, no status
+changed. That regression is asserted directly in `tests/test_mcp.cpp`.
+
+`AxiamGuard` gains a second constructor that carries the challenge:
+
+```cpp
+axiam::AxiamGuard<MyRequest> guard(
+    auth.guard_authenticator<MyRequest>([](const MyRequest& r) {
+        return axiam::TokenAuthenticator::bearer_from_authorization(r.header("Authorization"));
+    }),
+    auth.mcp_challenges(),                 // std::nullopt when §28 is off
+    [](const MyRequest& r) { return !r.header("Authorization").empty(); });  // was a credential presented?
+
+try {
+    axiam::AxiamUser user = guard(request);
+} catch (const axiam::AuthChallengeError& e) {
+    response.set_header("WWW-Authenticate", e.challenge());  // vector 1 (no credential) or vector 2 (rejected)
+    response.status(401);
+}
+```
+
+`auth.mcp_challenges()` is this authenticator's own configuration —
+`resource_metadata_url` is never re-entered as a second audience option, and
+retyping it into a second place is exactly what would let the two drift.
+The third argument exists because, by the time `guard_authenticator`'s
+`optional<AxiamUser>` comes back, "no credential" and "credential rejected"
+have already collapsed into the same `std::nullopt` — RFC 6750 §3 requires
+telling them apart (no `error=` parameter vs. `error="invalid_token"`), so
+the probe is how the guard recovers that fact. `AuthChallengeError`
+**derives from `AuthError`**, so an adapter that has never heard of §28
+still catches what it always caught and returns the same 401.
+
+§11's `require_access` gains a matching overload for the one 403 that
+carries a challenge:
+
+```cpp
+try {
+    axiam::require_access(client, user, "mcp:invoke", "tool-1", auth.mcp_challenges(), "mcp:tools");
+} catch (const axiam::AuthzChallengeError& denial) {
+    response.set_header("WWW-Authenticate", denial.challenge());
+    response.status(403);
+}
+```
+
+This throws the challenge-carrying `AuthzChallengeError` **only** when the
+route named a scope and the decision's `reason_code` came back `no_grant` —
+*ask for more*. A `denied_by_rule` denial, an absent or unrecognised
+`reason_code`, or a call with no `scope` argument all throw the same plain
+`AuthzError` they always did, with no header: §11's JSON body never changes
+either way, and `insufficient_scope` appears **only** inside the challenge
+string.
+
+### Serving the document — Crow and Pistache adapters
+
+C++ ships no router, so there is no `serve_protected_resource_metadata`
+function (§28.3's carve-out) — the six response rules that function would
+enforce elsewhere are enforced by hand, once, in your adapter. Both
+walkthroughs below are illustrative: neither framework is a dependency of
+this SDK.
+
+**Crow:**
+
+```cpp
+crow::SimpleApp app;
+const std::string body = metadata.document.to_json();
+
+CROW_ROUTE(app, metadata.metadata_path).methods("GET"_method)(
+    [body](const crow::request&) {
+        crow::response res(200, body);
+        res.set_header("Content-Type", "application/json");
+        res.set_header("Cache-Control", "public, max-age=3600");
+        res.set_header("Access-Control-Allow-Origin", "*");
+        return res;  // no Access-Control-Allow-Credentials — nothing here is per-caller
+    });
+
+CROW_ROUTE(app, "/mcp")(
+    [&](const crow::request& req) {
+        try {
+            axiam::AxiamUser user = guard(req);  // your extraction + the guard above
+            return crow::response(200, handle(req, user));
+        } catch (const axiam::AuthChallengeError& e) {
+            crow::response res(401, R"({"error":"authentication_failed"})");
+            res.set_header("WWW-Authenticate", e.challenge());
+            return res;
+        }
+    });
+```
+
+The metadata route is registered on `app` directly rather than behind
+whatever authenticates `/mcp`: §28.3 rule 2 requires it reachable with no
+credential of any kind, and a Crow route not wrapped by the guard already
+satisfies that — nothing needs exempting explicitly. Where a deployment
+*does* run the guard as global Crow middleware, check
+`axiam::is_metadata_document_request(auth.mcp_challenges(), req.method_string(), req.url)`
+**before** invoking it, and skip straight to the document response above
+when it is `true`.
+
+**Pistache:**
+
+```cpp
+using namespace Pistache;
+
+Rest::Router router;
+const std::string body = metadata.document.to_json();
+
+Rest::Routes::Get(router, metadata.metadata_path,
+    [body](const Rest::Request&, Http::ResponseWriter response) {
+        response.headers()
+            .add<Http::Header::ContentType>(MIME(Application, Json))
+            .add<Http::Header::CacheControl>(Http::CacheDirective(Http::CacheDirective::Public))
+            .addRaw({"Access-Control-Allow-Origin", "*"});
+        response.send(Http::Code::Ok, body);
+        return Rest::Route::Result::Ok;
+    });
+
+Rest::Routes::Get(router, "/mcp",
+    [&](const Rest::Request& req, Http::ResponseWriter response) {
+        try {
+            axiam::AxiamUser user = guard(req);
+            response.send(Http::Code::Ok, handle(req, user));
+        } catch (const axiam::AuthChallengeError& e) {
+            response.headers().addRaw({"WWW-Authenticate", e.challenge()});
+            response.send(Http::Code::Unauthorized, R"({"error":"authentication_failed"})");
+        }
+        return Rest::Route::Result::Ok;
+    });
+```
+
+Both snippets serve `document.to_json()` byte-for-byte — §28.3 rule 4
+requires the response be identical for every caller, so it is built once,
+outside the handler, rather than per request.
+
+### The startup cross-check (§28.5 rule 3)
+
+Where one process builds both the guard and the document — the shape both
+walkthroughs above use — `check_mcp_configuration_matches()` catches a
+mismatch at startup instead of at whatever client eventually reads a
+document that disagrees with the guard's own `aud` check:
+
+```cpp
+axiam::check_mcp_configuration_matches(auth.mcp_challenges(), metadata);  // throws std::invalid_argument on a mismatch
+```
+
+Where the guard and the document are configured in separate processes,
+nothing can be checked — configure both from the one `metadata.metadata_url`
+a shared constant provides, and do not call this with guessed values.
+
+### A deliberate scope boundary
+
+The challenge is attached by `AxiamGuard` and by `require_access`'s new
+overload — this SDK's two guard entry points. A caller that authenticates
+through `TokenAuthenticator::authenticate()` directly and hands the result
+to bare `require_auth()`, bypassing `AxiamGuard` entirely, gets the
+unmodified `AuthError`/`AuthzError` it always did, with no challenge
+attached: those two functions' signatures are untouched, on purpose, so
+that the byte-for-byte-when-unconfigured guarantee needs no special case for
+them. Route every request through `AxiamGuard` (as the
+[§10 section](#authenticating-a-request-10) above already recommends) to get
+the challenge on every 401.
+
+Five tests in `tests/test_mcp.cpp` cover §28.9 exactly: the document's shape
+and its validation negatives, the challenge's quoting and its refusals, a
+401 carrying the challenge, a 403 `insufficient_scope`, and a token whose
+`aud` is not this resource — plus the regression proving that, unconfigured,
+nothing about `AxiamGuard` or `require_access` changed at all.
+
 ## Deferred / follow-ups
 
 - **gRPC transport** (Tonic-parity authz checks). The §6.1 "both transports" rule
@@ -1740,5 +1967,7 @@ no rollback, is strictly worse.
   usable without one and the store is a MAY; a C++ reference implementation with
   the mandated 10-minute TTL, single-use `consume`, and lazy (never
   timer-driven) expiry is a follow-up.
-- Framework adapter samples for Crow / Pistache (the guard interface is already
-  framework-agnostic).
+- **Compiling Crow / Pistache example programs.** [§28](#28-mcp-resource-server-helpers-rfc-9728--rfc-6750)
+  documents both adapters above; the guard interface is already
+  framework-agnostic, but neither framework is vendored here, so there is no
+  `examples/*.cpp` that actually links and runs one yet.

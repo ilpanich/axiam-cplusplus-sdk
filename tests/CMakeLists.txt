@@ -43,6 +43,11 @@ add_executable(axiam_cpp_tests
   test_single_flight.cpp
   test_refresh_guard.cpp
   test_guard.cpp
+  # CONTRACT.md §28 (contract 1.48): the RFC 9728 protected-resource metadata
+  # document, the RFC 6750 bearer challenge, and the AxiamGuard/require_access
+  # opt-in that attaches it to a 401/403 — plus the regression proving that,
+  # unconfigured, both are byte-for-byte what they were before §28 existed.
+  test_mcp.cpp
   test_reason_code.cpp
   test_d5_conformance.cpp
   test_jwks.cpp
