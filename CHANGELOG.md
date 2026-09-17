@@ -76,7 +76,57 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   §28 is REST-only here, and this SDK implements no gRPC surface for a
   `.proto` file to describe (README's existing gRPC scope note already
   applies). No §28 operation reads either vendored artifact — both are pure
-  local computation over caller-supplied strings.
+  local computation over caller-supplied strings. **That deferred re-sync now
+  has a name and a schedule: F-28-01 below.**
+
+### Changed
+
+- **Two contract clauses this port had to read around are now written down**
+  (contract 1.49, CONTRACT.md §28.11 rows R-8 and R-10, T21.9 T9d).
+
+  **§28.5 rule 4 now provides for `require_auth()`'s scope boundary.** This
+  port left bare `require_auth()` and `require_access()` without a challenge
+  because both take an already-resolved `std::optional<AxiamUser>` and have no
+  request to ask whether a credential was ever presented — only `AxiamGuard`,
+  which sits at the credential-extraction boundary and holds a
+  `CredentialProbe`, can tell §28.4's vector 1 from vector 2. The PHP port's
+  `AccessEnforcer::enforceAuth()` is in exactly the same position for exactly
+  the same reason. The cross-SDK review judged the boundary forced rather than
+  chosen, and rule 4 now states it: such a helper's missing-identity 401
+  carries no challenge, is reachable only where the §10 guard did not run, and
+  is recorded in that SDK's §28.10 row. No code change here — the README
+  already calls it "a deliberate scope boundary", and it now has a clause to
+  point at.
+
+  **§28.7 now states that "raises the SDK's `ValidationError`" is a
+  per-language mapping.** This port's use of `std::invalid_argument` — because
+  `axiam::ValidationError` in `management.hpp` specifically denotes a *server's*
+  400/422 on the management surface, and because reusing it would have pulled
+  the ~5,000-line management surface into every `<axiam/guard.hpp>` consumer —
+  is conformant. §28.6 forbids inventing a type *for §28*, not using the one a
+  language already has for a local, pre-request refusal.
+
+- **§28.3 rule 1's `Content-Type` now binds the media type rather than the
+  header verbatim** (contract 1.49, §28.11 row R-4). Reported by the TypeScript
+  reference against Fastify; it does not affect this SDK, which ships no router
+  and whose README states the six §28.3 response rules at the adapter.
+
+### Deferred
+
+- **F-28-01 — the vendored `openapi.json` and `CONTRACT.md` re-sync.** This
+  repository declined the `openapi.json` re-sync during T21.9 T9c, for the
+  reason stated above, and the T9d cross-SDK review found that decision
+  **correct and now normative**. Seven of the eleven SDKs re-synced it from
+  `ilpanich/axiam`'s `claude/t21-2a-public-clients` phase branch; that branch
+  kept moving, so those seven were stale against it within hours, and none of
+  the eleven matches `ilpanich/axiam`'s current tree. Between them the eleven
+  held five distinct byte-states of `CONTRACT.md` and two of `openapi.json`,
+  all calling themselves contract 1.48 (CONTRACT.md §28.11 row R-1). Contract
+  **1.49** states the rule that was missing: a vendored artefact is re-synced
+  from a **merged** `main`, never a phase branch. Both artefacts are therefore
+  re-synced here **once**, as F-28-01, after AXIAM Phase 21 lands on `main`.
+  F-28-01 is recorded identically in all eleven SDK repositories so that it
+  cannot be lost.
 
 ## [1.0.0-beta15] - 2026-09-15
 
