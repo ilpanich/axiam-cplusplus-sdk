@@ -1282,6 +1282,26 @@ void Oauth2ClientsApi::delete_(const std::string& id) {
                                             values, query, payload);
 }
 
+CreateRegistrationTokenResponse Oauth2ClientsApi::create_registration_token(const CreateRegistrationTokenRequest& body) {
+    const std::vector<PathValue> values{};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("oauth2_clients.create_registration_token", "POST", "/api/v1/oauth2-clients/registration-tokens",
+                                            values, query, payload);
+
+    return Transport::decode<CreateRegistrationTokenResponse>(response, "oauth2_clients.create_registration_token");
+}
+
+std::vector<RegistrationTokenResponse> Oauth2ClientsApi::list_registration_tokens() {
+    const std::vector<PathValue> values{};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("oauth2_clients.list_registration_tokens", "GET", "/api/v1/oauth2-clients/registration-tokens",
+                                            values, query, payload);
+
+    return Transport::decode<std::vector<RegistrationTokenResponse>>(response, "oauth2_clients.list_registration_tokens");
+}
+
 FederationApi::FederationApi(std::shared_ptr<Transport> transport, CallScope scope)
     : transport_(std::move(transport)), scope_(std::move(scope)) {}
 
@@ -2100,7 +2120,7 @@ PlatformApi ManagementApi::platform() const {
 namespace axiam {
 
 // The one place the §27 surface is attached to a Client. Defined here rather than in client.cpp
-// so that translation unit keeps knowing nothing about the 160 generated operations.
+// so that translation unit keeps knowing nothing about the 162 generated operations.
 management::ManagementApi Client::management() {
     p_->ensure_open();
     management::CallScope scope;

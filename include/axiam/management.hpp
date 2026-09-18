@@ -1496,6 +1496,21 @@ public:
     /// @param id The `{id}` path parameter.
     void delete_(const std::string& id);
 
+    /// `POST /api/v1/oauth2-clients/registration-tokens`
+    ///
+    /// `POST /api/v1/oauth2-clients/registration-tokens`.
+    ///
+    /// @param body The request body.
+    CreateRegistrationTokenResponse create_registration_token(const CreateRegistrationTokenRequest& body);
+
+    /// `GET /api/v1/oauth2-clients/registration-tokens`
+    ///
+    /// `GET /api/v1/oauth2-clients/registration-tokens`.
+    ///
+    /// Returns the server's complete list. This endpoint is NOT paginated, so the result is a
+    /// plain vector and never a Page (§27.4 rule 4).
+    std::vector<RegistrationTokenResponse> list_registration_tokens();
+
 private:
     std::shared_ptr<Transport> transport_;
     CallScope scope_;
@@ -2197,7 +2212,7 @@ private:
     CallScope scope_;
 };
 
-/// The CONTRACT.md §27 management surface: 160 operations across 24 namespaces.
+/// The CONTRACT.md §27 management surface: 162 operations across 24 namespaces.
 ///
 /// Reached as `client.management()`. Each accessor hands back a namespace handle (§27.2) that
 /// can be re-scoped per call with `in_org()` / `for_tenant()`.

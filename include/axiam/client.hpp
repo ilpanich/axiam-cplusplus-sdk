@@ -1050,7 +1050,7 @@ public:
     /// construct or inspect one — the alternative was a second copy of the
     /// request plumbing living beside the first, which is exactly the "second,
     /// parallel stack" the §12.6 deferral warned about.
-    /// The CONTRACT.md §27 management surface: 160 operations across 24 namespaces.
+    /// The CONTRACT.md §27 management surface: 162 operations across 24 namespaces.
     ///
     /// `client.management().users().list()`. §27.3's C++ row is
     /// `client.service_accounts().rotate_secret(id)` — a method returning a handle,

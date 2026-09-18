@@ -230,6 +230,7 @@ std::string to_wire(ClientAuthMethod value) {
         case ClientAuthMethod::TlsClientAuth: return "tls_client_auth";
         case ClientAuthMethod::SelfSignedTlsClientAuth: return "self_signed_tls_client_auth";
         case ClientAuthMethod::PrivateKeyJwt: return "private_key_jwt";
+        case ClientAuthMethod::None: return "none";
         // The empty string, which no server value is: an unrecognised value carried back into
         // an update is refused by the server rather than written as a spelling it never used.
         case ClientAuthMethod::Unknown: return "";
@@ -245,6 +246,7 @@ ClientAuthMethod client_auth_method_from_wire(const std::string& value) {
     if (value == "tls_client_auth") return ClientAuthMethod::TlsClientAuth;
     if (value == "self_signed_tls_client_auth") return ClientAuthMethod::SelfSignedTlsClientAuth;
     if (value == "private_key_jwt") return ClientAuthMethod::PrivateKeyJwt;
+    if (value == "none") return ClientAuthMethod::None;
     // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
     // whole response the value arrived in, so one field of one record takes down the page it
     // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
@@ -339,6 +341,36 @@ KeyAlgorithm key_algorithm_from_wire(const std::string& value) {
 void to_json(nlohmann::json& j, const KeyAlgorithm& value) { j = to_wire(value); }
 void from_json(const nlohmann::json& j, KeyAlgorithm& value) {
     value = key_algorithm_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(ManagedBy value) {
+    switch (value) {
+        case ManagedBy::Admin: return "admin";
+        case ManagedBy::Dcr: return "dcr";
+        case ManagedBy::Cimd: return "cimd";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case ManagedBy::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "admin";
+}
+
+ManagedBy managed_by_from_wire(const std::string& value) {
+    if (value == "admin") return ManagedBy::Admin;
+    if (value == "dcr") return ManagedBy::Dcr;
+    if (value == "cimd") return ManagedBy::Cimd;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return ManagedBy::Unknown;
+}
+
+void to_json(nlohmann::json& j, const ManagedBy& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, ManagedBy& value) {
+    value = managed_by_from_wire(j.get<std::string>());
 }
 
 std::string to_wire(MfaMethodType value) {
@@ -998,6 +1030,67 @@ void from_json(const nlohmann::json& j, CertificatePolicy& value) {
     value.max_cert_validity_days = j.at("max_cert_validity_days").get<std::int64_t>();
 }
 
+void to_json(nlohmann::json& j, const CimdPolicy& value) {
+    j = nlohmann::json::object();
+    if (value.allow_http) {
+        j["allow_http"] = *value.allow_http;
+    }
+    if (value.confidential_only) {
+        j["confidential_only"] = *value.confidential_only;
+    }
+    if (value.enabled) {
+        j["enabled"] = *value.enabled;
+    }
+    if (value.max_cache_secs) {
+        j["max_cache_secs"] = *value.max_cache_secs;
+    }
+    if (value.max_metadata_bytes) {
+        j["max_metadata_bytes"] = *value.max_metadata_bytes;
+    }
+    if (value.min_cache_secs) {
+        j["min_cache_secs"] = *value.min_cache_secs;
+    }
+    if (value.restrict_same_domain) {
+        j["restrict_same_domain"] = *value.restrict_same_domain;
+    }
+    if (value.trusted_client_id_domains) {
+        j["trusted_client_id_domains"] = *value.trusted_client_id_domains;
+    }
+    if (value.trusted_redirect_domains) {
+        j["trusted_redirect_domains"] = *value.trusted_redirect_domains;
+    }
+}
+
+void from_json(const nlohmann::json& j, CimdPolicy& value) {
+    if (auto it = j.find("allow_http"); it != j.end() && !it->is_null()) {
+        value.allow_http = it->get<bool>();
+    }
+    if (auto it = j.find("confidential_only"); it != j.end() && !it->is_null()) {
+        value.confidential_only = it->get<bool>();
+    }
+    if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
+        value.enabled = it->get<bool>();
+    }
+    if (auto it = j.find("max_cache_secs"); it != j.end() && !it->is_null()) {
+        value.max_cache_secs = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("max_metadata_bytes"); it != j.end() && !it->is_null()) {
+        value.max_metadata_bytes = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("min_cache_secs"); it != j.end() && !it->is_null()) {
+        value.min_cache_secs = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("restrict_same_domain"); it != j.end() && !it->is_null()) {
+        value.restrict_same_domain = it->get<bool>();
+    }
+    if (auto it = j.find("trusted_client_id_domains"); it != j.end() && !it->is_null()) {
+        value.trusted_client_id_domains = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("trusted_redirect_domains"); it != j.end() && !it->is_null()) {
+        value.trusted_redirect_domains = it->get<std::vector<std::string>>();
+    }
+}
+
 void to_json(nlohmann::json& j, const ComplianceReportEntry& value) {
     j = nlohmann::json::object();
     if (value.aaguid) {
@@ -1313,6 +1406,9 @@ void from_json(const nlohmann::json& j, CreateNotificationRuleRequest& value) {
 
 void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value) {
     j = nlohmann::json::object();
+    if (value.allowed_resources) {
+        j["allowed_resources"] = *value.allowed_resources;
+    }
     if (value.authn_request_params) {
         j["authn_request_params"] = to_wire(*value.authn_request_params);
     }
@@ -1368,6 +1464,9 @@ void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value) {
 }
 
 void from_json(const nlohmann::json& j, CreateOAuth2ClientRequest& value) {
+    if (auto it = j.find("allowed_resources"); it != j.end() && !it->is_null()) {
+        value.allowed_resources = it->get<std::vector<std::string>>();
+    }
     if (auto it = j.find("authn_request_params"); it != j.end() && !it->is_null()) {
         value.authn_request_params = authn_request_params_mode_from_wire(it->get<std::string>());
     }
@@ -1489,6 +1588,63 @@ void from_json(const nlohmann::json& j, CreateReactorRequest& value) {
     if (auto it = j.find("timeout_ms"); it != j.end() && !it->is_null()) {
         value.timeout_ms = it->get<std::int64_t>();
     }
+}
+
+void to_json(nlohmann::json& j, const CreateRegistrationTokenRequest& value) {
+    j = nlohmann::json::object();
+    if (value.expires_in_hours) {
+        j["expires_in_hours"] = *value.expires_in_hours;
+    }
+    j["name"] = value.name;
+}
+
+void from_json(const nlohmann::json& j, CreateRegistrationTokenRequest& value) {
+    if (auto it = j.find("expires_in_hours"); it != j.end() && !it->is_null()) {
+        value.expires_in_hours = it->get<std::int64_t>();
+    }
+    value.name = j.at("name").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const RegistrationTokenResponse& value) {
+    j = nlohmann::json::object();
+    j["created_at"] = value.created_at;
+    j["created_by"] = value.created_by;
+    j["expires_at"] = value.expires_at;
+    j["id"] = value.id;
+    j["name"] = value.name;
+    j["tenant_id"] = value.tenant_id;
+    if (value.used_at) {
+        j["used_at"] = *value.used_at;
+    }
+    if (value.used_by_client_id) {
+        j["used_by_client_id"] = *value.used_by_client_id;
+    }
+}
+
+void from_json(const nlohmann::json& j, RegistrationTokenResponse& value) {
+    value.created_at = j.at("created_at").get<std::string>();
+    value.created_by = j.at("created_by").get<std::string>();
+    value.expires_at = j.at("expires_at").get<std::string>();
+    value.id = j.at("id").get<std::string>();
+    value.name = j.at("name").get<std::string>();
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+    if (auto it = j.find("used_at"); it != j.end() && !it->is_null()) {
+        value.used_at = it->get<std::string>();
+    }
+    if (auto it = j.find("used_by_client_id"); it != j.end() && !it->is_null()) {
+        value.used_by_client_id = it->get<std::string>();
+    }
+}
+
+void to_json(nlohmann::json& j, const CreateRegistrationTokenResponse& value) {
+    j = nlohmann::json::object();
+    j["initial_access_token"] = value.initial_access_token;
+    j["token"] = value.token;
+}
+
+void from_json(const nlohmann::json& j, CreateRegistrationTokenResponse& value) {
+    value.initial_access_token = j.at("initial_access_token").get<std::string>();
+    value.token = j.at("token").get<RegistrationTokenResponse>();
 }
 
 void to_json(nlohmann::json& j, const CreateResourceRequest& value) {
@@ -2364,7 +2520,9 @@ void from_json(const nlohmann::json& j, NotificationRuleResponse& value) {
 void to_json(nlohmann::json& j, const OAuth2ClientCreatedResponse& value) {
     j = nlohmann::json::object();
     j["client_id"] = value.client_id;
-    j["client_secret"] = detail::reveal(value.client_secret);
+    if (value.client_secret) {
+        j["client_secret"] = detail::reveal(*value.client_secret);
+    }
     j["created_at"] = value.created_at;
     j["grant_types"] = value.grant_types;
     j["id"] = value.id;
@@ -2377,7 +2535,9 @@ void to_json(nlohmann::json& j, const OAuth2ClientCreatedResponse& value) {
 
 void from_json(const nlohmann::json& j, OAuth2ClientCreatedResponse& value) {
     value.client_id = j.at("client_id").get<std::string>();
-    value.client_secret = Sensitive<std::string>(j.at("client_secret").get<std::string>());
+    if (auto it = j.find("client_secret"); it != j.end() && !it->is_null()) {
+        value.client_secret = Sensitive<std::string>(it->get<std::string>());
+    }
     value.created_at = j.at("created_at").get<std::string>();
     value.grant_types = j.at("grant_types").get<std::vector<std::string>>();
     value.id = j.at("id").get<std::string>();
@@ -2390,6 +2550,7 @@ void from_json(const nlohmann::json& j, OAuth2ClientCreatedResponse& value) {
 
 void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
     j = nlohmann::json::object();
+    j["allowed_resources"] = value.allowed_resources;
     j["authn_request_params"] = to_wire(value.authn_request_params);
     j["browser_sso"] = value.browser_sso;
     j["client_id"] = value.client_id;
@@ -2404,6 +2565,10 @@ void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
     if (value.jwks_uri) {
         j["jwks_uri"] = *value.jwks_uri;
     }
+    if (value.last_authorized_at) {
+        j["last_authorized_at"] = *value.last_authorized_at;
+    }
+    j["managed_by"] = to_wire(value.managed_by);
     j["name"] = value.name;
     j["profile"] = to_wire(value.profile);
     j["redirect_uris"] = value.redirect_uris;
@@ -2426,6 +2591,7 @@ void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
 }
 
 void from_json(const nlohmann::json& j, OAuth2ClientResponse& value) {
+    value.allowed_resources = j.at("allowed_resources").get<std::vector<std::string>>();
     value.authn_request_params = authn_request_params_mode_from_wire(j.at("authn_request_params").get<std::string>());
     value.browser_sso = j.at("browser_sso").get<bool>();
     value.client_id = j.at("client_id").get<std::string>();
@@ -2440,6 +2606,10 @@ void from_json(const nlohmann::json& j, OAuth2ClientResponse& value) {
     if (auto it = j.find("jwks_uri"); it != j.end() && !it->is_null()) {
         value.jwks_uri = it->get<std::string>();
     }
+    if (auto it = j.find("last_authorized_at"); it != j.end() && !it->is_null()) {
+        value.last_authorized_at = it->get<std::string>();
+    }
+    value.managed_by = managed_by_from_wire(j.at("managed_by").get<std::string>());
     value.name = j.at("name").get<std::string>();
     value.profile = client_profile_from_wire(j.at("profile").get<std::string>());
     value.redirect_uris = j.at("redirect_uris").get<std::vector<std::string>>();
@@ -2517,15 +2687,57 @@ void from_json(const nlohmann::json& j, OidcCallbackResponse& value) {
 
 void to_json(nlohmann::json& j, const OidcPolicy& value) {
     j = nlohmann::json::object();
+    if (value.cimd) {
+        j["cimd"] = *value.cimd;
+    }
+    if (value.dcr_allowed_redirect_hosts) {
+        j["dcr_allowed_redirect_hosts"] = *value.dcr_allowed_redirect_hosts;
+    }
+    if (value.dcr_allowed_scopes) {
+        j["dcr_allowed_scopes"] = *value.dcr_allowed_scopes;
+    }
+    if (value.dcr_max_clients) {
+        j["dcr_max_clients"] = *value.dcr_max_clients;
+    }
+    if (value.dcr_unused_client_ttl_days) {
+        j["dcr_unused_client_ttl_days"] = *value.dcr_unused_client_ttl_days;
+    }
     if (value.default_locale) {
         j["default_locale"] = *value.default_locale;
+    }
+    if (value.dynamic_registration) {
+        j["dynamic_registration"] = *value.dynamic_registration;
+    }
+    if (value.external_client_allowed_resources) {
+        j["external_client_allowed_resources"] = *value.external_client_allowed_resources;
     }
     j["sensitive_scopes_enabled"] = value.sensitive_scopes_enabled;
 }
 
 void from_json(const nlohmann::json& j, OidcPolicy& value) {
+    if (auto it = j.find("cimd"); it != j.end() && !it->is_null()) {
+        value.cimd = it->get<CimdPolicy>();
+    }
+    if (auto it = j.find("dcr_allowed_redirect_hosts"); it != j.end() && !it->is_null()) {
+        value.dcr_allowed_redirect_hosts = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("dcr_allowed_scopes"); it != j.end() && !it->is_null()) {
+        value.dcr_allowed_scopes = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("dcr_max_clients"); it != j.end() && !it->is_null()) {
+        value.dcr_max_clients = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("dcr_unused_client_ttl_days"); it != j.end() && !it->is_null()) {
+        value.dcr_unused_client_ttl_days = it->get<std::int64_t>();
+    }
     if (auto it = j.find("default_locale"); it != j.end() && !it->is_null()) {
         value.default_locale = it->get<std::string>();
+    }
+    if (auto it = j.find("dynamic_registration"); it != j.end() && !it->is_null()) {
+        value.dynamic_registration = it->get<std::string>();
+    }
+    if (auto it = j.find("external_client_allowed_resources"); it != j.end() && !it->is_null()) {
+        value.external_client_allowed_resources = it->get<std::vector<std::string>>();
     }
     value.sensitive_scopes_enabled = j.at("sensitive_scopes_enabled").get<bool>();
 }
@@ -3191,6 +3403,21 @@ void to_json(nlohmann::json& j, const SetOrgSettings& value) {
     j = nlohmann::json::object();
     j["access_token_lifetime_secs"] = value.access_token_lifetime_secs;
     j["admin_notifications_enabled"] = value.admin_notifications_enabled;
+    if (value.cimd) {
+        j["cimd"] = *value.cimd;
+    }
+    if (value.dcr_allowed_redirect_hosts) {
+        j["dcr_allowed_redirect_hosts"] = *value.dcr_allowed_redirect_hosts;
+    }
+    if (value.dcr_allowed_scopes) {
+        j["dcr_allowed_scopes"] = *value.dcr_allowed_scopes;
+    }
+    if (value.dcr_max_clients) {
+        j["dcr_max_clients"] = *value.dcr_max_clients;
+    }
+    if (value.dcr_unused_client_ttl_days) {
+        j["dcr_unused_client_ttl_days"] = *value.dcr_unused_client_ttl_days;
+    }
     j["default_cert_validity_days"] = value.default_cert_validity_days;
     if (value.default_locale) {
         j["default_locale"] = *value.default_locale;
@@ -3198,8 +3425,14 @@ void to_json(nlohmann::json& j, const SetOrgSettings& value) {
     if (value.deletion_grace_period_days) {
         j["deletion_grace_period_days"] = *value.deletion_grace_period_days;
     }
+    if (value.dynamic_registration) {
+        j["dynamic_registration"] = *value.dynamic_registration;
+    }
     j["email_verification_grace_period_hours"] = value.email_verification_grace_period_hours;
     j["email_verification_required"] = value.email_verification_required;
+    if (value.external_client_allowed_resources) {
+        j["external_client_allowed_resources"] = *value.external_client_allowed_resources;
+    }
     j["hibp_check_enabled"] = value.hibp_check_enabled;
     j["lockout_backoff_multiplier"] = value.lockout_backoff_multiplier;
     j["lockout_duration_secs"] = value.lockout_duration_secs;
@@ -3235,6 +3468,21 @@ void to_json(nlohmann::json& j, const SetOrgSettings& value) {
 void from_json(const nlohmann::json& j, SetOrgSettings& value) {
     value.access_token_lifetime_secs = j.at("access_token_lifetime_secs").get<std::int64_t>();
     value.admin_notifications_enabled = j.at("admin_notifications_enabled").get<bool>();
+    if (auto it = j.find("cimd"); it != j.end() && !it->is_null()) {
+        value.cimd = it->get<CimdPolicy>();
+    }
+    if (auto it = j.find("dcr_allowed_redirect_hosts"); it != j.end() && !it->is_null()) {
+        value.dcr_allowed_redirect_hosts = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("dcr_allowed_scopes"); it != j.end() && !it->is_null()) {
+        value.dcr_allowed_scopes = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("dcr_max_clients"); it != j.end() && !it->is_null()) {
+        value.dcr_max_clients = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("dcr_unused_client_ttl_days"); it != j.end() && !it->is_null()) {
+        value.dcr_unused_client_ttl_days = it->get<std::int64_t>();
+    }
     value.default_cert_validity_days = j.at("default_cert_validity_days").get<std::int64_t>();
     if (auto it = j.find("default_locale"); it != j.end() && !it->is_null()) {
         value.default_locale = it->get<std::string>();
@@ -3242,8 +3490,14 @@ void from_json(const nlohmann::json& j, SetOrgSettings& value) {
     if (auto it = j.find("deletion_grace_period_days"); it != j.end() && !it->is_null()) {
         value.deletion_grace_period_days = it->get<std::int64_t>();
     }
+    if (auto it = j.find("dynamic_registration"); it != j.end() && !it->is_null()) {
+        value.dynamic_registration = it->get<std::string>();
+    }
     value.email_verification_grace_period_hours = j.at("email_verification_grace_period_hours").get<std::int64_t>();
     value.email_verification_required = j.at("email_verification_required").get<bool>();
+    if (auto it = j.find("external_client_allowed_resources"); it != j.end() && !it->is_null()) {
+        value.external_client_allowed_resources = it->get<std::vector<std::string>>();
+    }
     value.hibp_check_enabled = j.at("hibp_check_enabled").get<bool>();
     value.lockout_backoff_multiplier = j.at("lockout_backoff_multiplier").get<double>();
     value.lockout_duration_secs = j.at("lockout_duration_secs").get<std::int64_t>();
@@ -3391,6 +3645,21 @@ void to_json(nlohmann::json& j, const TenantSettingsOverride& value) {
     if (value.admin_notifications_enabled) {
         j["admin_notifications_enabled"] = *value.admin_notifications_enabled;
     }
+    if (value.cimd) {
+        j["cimd"] = *value.cimd;
+    }
+    if (value.dcr_allowed_redirect_hosts) {
+        j["dcr_allowed_redirect_hosts"] = *value.dcr_allowed_redirect_hosts;
+    }
+    if (value.dcr_allowed_scopes) {
+        j["dcr_allowed_scopes"] = *value.dcr_allowed_scopes;
+    }
+    if (value.dcr_max_clients) {
+        j["dcr_max_clients"] = *value.dcr_max_clients;
+    }
+    if (value.dcr_unused_client_ttl_days) {
+        j["dcr_unused_client_ttl_days"] = *value.dcr_unused_client_ttl_days;
+    }
     if (value.default_cert_validity_days) {
         j["default_cert_validity_days"] = *value.default_cert_validity_days;
     }
@@ -3400,11 +3669,17 @@ void to_json(nlohmann::json& j, const TenantSettingsOverride& value) {
     if (value.deletion_grace_period_days) {
         j["deletion_grace_period_days"] = *value.deletion_grace_period_days;
     }
+    if (value.dynamic_registration) {
+        j["dynamic_registration"] = *value.dynamic_registration;
+    }
     if (value.email_verification_grace_period_hours) {
         j["email_verification_grace_period_hours"] = *value.email_verification_grace_period_hours;
     }
     if (value.email_verification_required) {
         j["email_verification_required"] = *value.email_verification_required;
+    }
+    if (value.external_client_allowed_resources) {
+        j["external_client_allowed_resources"] = *value.external_client_allowed_resources;
     }
     if (value.hibp_check_enabled) {
         j["hibp_check_enabled"] = *value.hibp_check_enabled;
@@ -3475,6 +3750,21 @@ void from_json(const nlohmann::json& j, TenantSettingsOverride& value) {
     if (auto it = j.find("admin_notifications_enabled"); it != j.end() && !it->is_null()) {
         value.admin_notifications_enabled = it->get<bool>();
     }
+    if (auto it = j.find("cimd"); it != j.end() && !it->is_null()) {
+        value.cimd = it->get<CimdPolicy>();
+    }
+    if (auto it = j.find("dcr_allowed_redirect_hosts"); it != j.end() && !it->is_null()) {
+        value.dcr_allowed_redirect_hosts = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("dcr_allowed_scopes"); it != j.end() && !it->is_null()) {
+        value.dcr_allowed_scopes = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("dcr_max_clients"); it != j.end() && !it->is_null()) {
+        value.dcr_max_clients = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("dcr_unused_client_ttl_days"); it != j.end() && !it->is_null()) {
+        value.dcr_unused_client_ttl_days = it->get<std::int64_t>();
+    }
     if (auto it = j.find("default_cert_validity_days"); it != j.end() && !it->is_null()) {
         value.default_cert_validity_days = it->get<std::int64_t>();
     }
@@ -3484,11 +3774,17 @@ void from_json(const nlohmann::json& j, TenantSettingsOverride& value) {
     if (auto it = j.find("deletion_grace_period_days"); it != j.end() && !it->is_null()) {
         value.deletion_grace_period_days = it->get<std::int64_t>();
     }
+    if (auto it = j.find("dynamic_registration"); it != j.end() && !it->is_null()) {
+        value.dynamic_registration = it->get<std::string>();
+    }
     if (auto it = j.find("email_verification_grace_period_hours"); it != j.end() && !it->is_null()) {
         value.email_verification_grace_period_hours = it->get<std::int64_t>();
     }
     if (auto it = j.find("email_verification_required"); it != j.end() && !it->is_null()) {
         value.email_verification_required = it->get<bool>();
+    }
+    if (auto it = j.find("external_client_allowed_resources"); it != j.end() && !it->is_null()) {
+        value.external_client_allowed_resources = it->get<std::vector<std::string>>();
     }
     if (auto it = j.find("hibp_check_enabled"); it != j.end() && !it->is_null()) {
         value.hibp_check_enabled = it->get<bool>();
@@ -3745,6 +4041,9 @@ void from_json(const nlohmann::json& j, UpdateNotificationRuleRequest& value) {
 
 void to_json(nlohmann::json& j, const UpdateOAuth2ClientRequest& value) {
     j = nlohmann::json::object();
+    if (value.allowed_resources) {
+        j["allowed_resources"] = *value.allowed_resources;
+    }
     if (value.authn_request_params) {
         j["authn_request_params"] = to_wire(*value.authn_request_params);
     }
@@ -3808,6 +4107,9 @@ void to_json(nlohmann::json& j, const UpdateOAuth2ClientRequest& value) {
 }
 
 void from_json(const nlohmann::json& j, UpdateOAuth2ClientRequest& value) {
+    if (auto it = j.find("allowed_resources"); it != j.end() && !it->is_null()) {
+        value.allowed_resources = it->get<std::vector<std::string>>();
+    }
     if (auto it = j.find("authn_request_params"); it != j.end() && !it->is_null()) {
         value.authn_request_params = authn_request_params_mode_from_wire(it->get<std::string>());
     }

@@ -111,22 +111,64 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   reference against Fastify; it does not affect this SDK, which ships no router
   and whose README states the six §28.3 response rules at the adapter.
 
-### Deferred
+- **F-28-01 — `CONTRACT.md` (1.49), `openapi.json` and
+  `management-registry.json` re-synced from a merged `main`** (CONTRACT.md
+  §28.11 row R-1, contract 1.49's vendoring rule). This repository declined the
+  T9c phase-branch `openapi.json` re-sync, and contract 1.49 made that decision
+  normative. All three artefacts are now byte-copies of `ilpanich/axiam`
+  `main` @ `e4c62180e`, after Phase 21 landed there:
 
-- **F-28-01 — the vendored `openapi.json` and `CONTRACT.md` re-sync.** This
-  repository declined the `openapi.json` re-sync during T21.9 T9c, for the
-  reason stated above, and the T9d cross-SDK review found that decision
-  **correct and now normative**. Seven of the eleven SDKs re-synced it from
-  `ilpanich/axiam`'s `claude/t21-2a-public-clients` phase branch; that branch
-  kept moving, so those seven were stale against it within hours, and none of
-  the eleven matches `ilpanich/axiam`'s current tree. Between them the eleven
-  held five distinct byte-states of `CONTRACT.md` and two of `openapi.json`,
-  all calling themselves contract 1.48 (CONTRACT.md §28.11 row R-1). Contract
-  **1.49** states the rule that was missing: a vendored artefact is re-synced
-  from a **merged** `main`, never a phase branch. Both artefacts are therefore
-  re-synced here **once**, as F-28-01, after AXIAM Phase 21 lands on `main`.
-  F-28-01 is recorded identically in all eleven SDK repositories so that it
-  cannot be lost.
+  | Artefact | Git blob |
+  |----------|----------|
+  | `CONTRACT.md` (contract 1.49) | `2493348c32852fd1972696d3c1672021cb8f878c` |
+  | `openapi.json` | `b75e30eaa3597d2e1063bb50e7c0e469634ba60b` |
+  | `management-registry.json` | `4619f441aac0b1f4ed18da7ad45178ca14a3f449` |
+
+  No `proto/` directory exists here to re-sync. The §27 management surface is
+  regenerated in the same commit with `python3 scripts/gen_management.py`,
+  nothing hand-edited: **160 → 162 operations across the same 24
+  namespaces**. Because this repository skipped the phase-branch re-sync, the
+  regeneration also picks up the T21.2–T21.5 schema additions the other SDKs
+  took then:
+
+  - `oauth2_clients()` gains `create_registration_token`
+    (`POST /api/v1/oauth2-clients/registration-tokens`) and
+    `list_registration_tokens` (`GET` on the same path) — the T21.4
+    initial-access tokens for RFC 7591 dynamic client registration — with the
+    models `CreateRegistrationTokenRequest`, `CreateRegistrationTokenResponse`
+    (carries the one-time `initial_access_token`) and
+    `RegistrationTokenResponse`.
+  - `TokenEndpointAuthMethod::None` (T21.2 public clients) and a new
+    `ManagedBy` enum (`Admin`, `Dcr`, `Cimd`, plus `Unknown`).
+  - `OAuth2ClientResponse` gains the required `allowed_resources` (RFC 8707)
+    and `managed_by`, and the optional `last_authorized_at`;
+    `CreateOAuth2ClientRequest` and `UpdateOAuth2ClientRequest` gain an optional
+    `allowed_resources`.
+  - `OidcPolicy`, `SetOrgSettings` and `TenantSettingsOverride` gain the
+    optional `dcr_allowed_redirect_hosts`, `dcr_allowed_scopes`,
+    `dcr_max_clients`, `dcr_unused_client_ttl_days`, `dynamic_registration`,
+    `external_client_allowed_resources` and `cimd` (the new `CimdPolicy`,
+    T21.5 client ID metadata documents).
+
+  The only hand-written follow-up is the minimal `OAuth2ClientResponse`
+  fixture in `tests/test_management_models_optional.cpp`, which now carries
+  the two new required members and nulls `last_authorized_at`, plus the "160
+  operations" counts in the README, `axiam.hpp`, `client.hpp` and a test
+  comment. The README's conformance statement already names §28 and no
+  contract version, so it is unchanged.
+
+### Breaking
+
+- **`OAuth2ClientCreatedResponse::client_secret` is now
+  `std::optional<Sensitive<std::string>>`** (was `Sensitive<std::string>`).
+  This is §27.8 generator output from `ilpanich/axiam` `main` @ `e4c62180e`
+  (the F-28-01 regeneration above), not a hand edit, and it aligns C++ with
+  the other ten SDKs, which took the same shape in the T21.9 re-sync. T21.2
+  lets a client register with `token_endpoint_auth_method: none`; such a
+  public client is issued no secret, and the server omits the member rather
+  than sending `""`. Every confidential registration still carries it. Code
+  that read `created.client_secret` directly must now test it first, e.g.
+  `if (created.client_secret) { store(*created.client_secret); }`.
 
 ## [1.0.0-beta15] - 2026-09-15
 

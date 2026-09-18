@@ -1128,7 +1128,7 @@ AXIAM_TEST("management model MtlsTrustAnchorResponse withholds optionals it was 
 AXIAM_TEST("management model OAuth2ClientResponse withholds optionals it was not given") {
     // Every REQUIRED property, and not one optional property.
     const auto minimal = nlohmann::json::parse(
-        R"json({"authn_request_params": "ignore", "browser_sso": true, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"allowed_resources": ["example"], "authn_request_params": "ignore", "browser_sso": true, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "dpop_bound_access_tokens": true, "dpop_require_nonce": true, "grant_types": ["example"], "id": "11111111-1111-4111-8111-111111111111", "managed_by": "admin", "name": "example", "profile": "standard", "redirect_uris": ["example"], "require_par": true, "scopes": ["example"], "self_signed_tls_client_auth_thumbprints": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "tls_client_certificate_bound_access_tokens": true, "token_endpoint_auth_method": "client_secret_post", "updated_at": "2026-08-26T00:00:00Z"})json");
 
     const nlohmann::json encoded = minimal.get<OAuth2ClientResponse>();
     // Byte-identical: an optional the server did not send must not reappear as a
@@ -1140,6 +1140,7 @@ AXIAM_TEST("management model OAuth2ClientResponse withholds optionals it was not
     auto nulls = minimal;
     nulls["jwks"] = nullptr;
     nulls["jwks_uri"] = nullptr;
+    nulls["last_authorized_at"] = nullptr;
     nulls["tls_client_auth_san_dns"] = nullptr;
     nulls["tls_client_auth_san_uri"] = nullptr;
     nulls["tls_client_auth_subject_dn"] = nullptr;

@@ -1515,7 +1515,7 @@ sign path, in both directions. Worked example, including a transport skeleton:
 
 ## §27 Management API
 
-160 operations across 24 namespaces, reached through namespace handles that sit
+162 operations across 24 namespaces, reached through namespace handles that sit
 directly on the client — the form §27.3's C++ row specifies:
 
 ```cpp
