@@ -6,7 +6,11 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+## [1.0.0-beta16] - 2026-09-19
+
 ### Added
+
+- Resource-server helpers (CONTRACT.md §28, contract 1.48)
 
 - **MCP resource-server helpers (CONTRACT.md §28, contract 1.48).** The
   resource-server half of the Model Context Protocol authorization handshake:
@@ -80,6 +84,10 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   has a name and a schedule: F-28-01 below.**
 
 ### Changed
+
+- F-28-01 — re-sync CONTRACT.md 1.49, openapi.json and management-registry.json from axiam main @ e4c62180e
+
+- Record the two clauses written down for this port, and F-28-01 (T21.9 T9d)
 
 - **Two contract clauses this port had to read around are now written down**
   (contract 1.49, CONTRACT.md §28.11 rows R-8 and R-10, T21.9 T9d).
@@ -156,6 +164,10 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
   operations" counts in the README, `axiam.hpp`, `client.hpp` and a test
   comment. The README's conformance statement already names §28 and no
   contract version, so it is unchanged.
+
+### Fixed
+
+- 1.50 — initial_access_token becomes Sensitive<std::string> (#480)
 
 ### Breaking
 
