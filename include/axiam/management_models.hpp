@@ -1606,7 +1606,7 @@ struct RegistrationTokenResponse {
 struct CreateRegistrationTokenResponse {
     /// The plaintext handle, shown exactly once. Presented by the registering client as
     /// `Authorization: Bearer <this>`.
-    std::string initial_access_token;
+    Sensitive<std::string> initial_access_token;
     /// The token's metadata.
     RegistrationTokenResponse token;
 };
