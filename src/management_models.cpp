@@ -1638,12 +1638,12 @@ void from_json(const nlohmann::json& j, RegistrationTokenResponse& value) {
 
 void to_json(nlohmann::json& j, const CreateRegistrationTokenResponse& value) {
     j = nlohmann::json::object();
-    j["initial_access_token"] = value.initial_access_token;
+    j["initial_access_token"] = detail::reveal(value.initial_access_token);
     j["token"] = value.token;
 }
 
 void from_json(const nlohmann::json& j, CreateRegistrationTokenResponse& value) {
-    value.initial_access_token = j.at("initial_access_token").get<std::string>();
+    value.initial_access_token = Sensitive<std::string>(j.at("initial_access_token").get<std::string>());
     value.token = j.at("token").get<RegistrationTokenResponse>();
 }
 

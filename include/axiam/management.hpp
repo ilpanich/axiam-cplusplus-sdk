@@ -1500,6 +1500,9 @@ public:
     ///
     /// `POST /api/v1/oauth2-clients/registration-tokens`.
     ///
+    /// The response carries a ONE-TIME secret (`initial_access_token`): the server will not
+    /// return it again, so a caller that does not persist it here cannot recover it (§27.5).
+    ///
     /// @param body The request body.
     CreateRegistrationTokenResponse create_registration_token(const CreateRegistrationTokenRequest& body);
 
