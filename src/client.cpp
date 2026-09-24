@@ -1074,12 +1074,30 @@ DeviceAuth Client::authenticate_device() {
     }
 
     auto j = json::parse(resp.body, nullptr, false);
-    DeviceAuth da;
-    if (!j.is_discarded()) {
-        da.access_token = Sensitive<std::string>(j.value("access_token", ""));
-        da.token_type = j.value("token_type", "");
-        da.expires_in = j.value("expires_in", static_cast<std::int64_t>(0));
+    // C-12 N4.2: "a refused OR MALFORMED device login changes no client
+    // state" -- the previous credential, the cookie jar and the
+    // acting-tenant gate are left exactly as they were. Before this fix, a
+    // 200 with an unparseable or object-less body, or an object with no
+    // (or an empty) `access_token`, still ADOPTED: it overwrote
+    // device_access_token with an EMPTY Sensitive, set device_session =
+    // true anyway, and reset login_user_info to unknown -- a caller then
+    // held has_session() == true and a credential that could never
+    // authenticate anything. Checked BEFORE the state_mtx block below, so
+    // a refusal here touches nothing that block would otherwise write.
+    const bool well_formed =
+        !j.is_discarded() && j.is_object() && j.contains("access_token") &&
+        j["access_token"].is_string() && !j["access_token"].get<std::string>().empty();
+    if (!well_formed) {
+        throw NetworkError(
+            "authenticate_device: the server's 200 body is not a well-formed "
+            "DeviceAuth (CONTRACT.md §6.1 rule 6 / CONTRACT 1.52 N4.2 (C-12)) -- "
+            "no access_token, or an empty one; this client's state is unchanged",
+            "malformed_body");
     }
+    DeviceAuth da;
+    da.access_token = Sensitive<std::string>(j.value("access_token", ""));
+    da.token_type = j.value("token_type", "");
+    da.expires_in = j.value("expires_in", static_cast<std::int64_t>(0));
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         // Rule 6: adopted as this client's credential, exactly as login() adopts

@@ -284,6 +284,76 @@ AXIAM_TEST("§5.2 rule 1: authenticate_device() resets the acting-tenant gate to
 }
 
 // ---------------------------------------------------------------------------
+// C-12 N4.2: a refused or MALFORMED device login changes no client state
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("C-12 N4.2: a 200 with an unparseable body is refused, not adopted") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) { return json_response(200, "not json at all"); };
+    auto client = device_client(st);
+
+    bool threw = false;
+    try {
+        client.authenticate_device();
+    } catch (const NetworkError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+    // Before the fix: an empty Sensitive<std::string> was still ADOPTED
+    // (device_session = true), so has_session() reported true for a
+    // credential that could never authenticate anything.
+    AXIAM_CHECK_FALSE(client.has_session());
+}
+
+AXIAM_TEST("C-12 N4.2: a 200 with no access_token field is refused, not adopted") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) {
+        return json_response(200, R"({"token_type":"Bearer","expires_in":900})");
+    };
+    auto client = device_client(st);
+
+    AXIAM_REQUIRE_THROWS_AS(client.authenticate_device(), NetworkError);
+    AXIAM_CHECK_FALSE(client.has_session());
+}
+
+AXIAM_TEST("C-12 N4.2: a 200 with an empty access_token is refused, not adopted") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) {
+        return json_response(200, R"({"access_token":"","token_type":"Bearer","expires_in":900})");
+    };
+    auto client = device_client(st);
+
+    AXIAM_REQUIRE_THROWS_AS(client.authenticate_device(), NetworkError);
+    AXIAM_CHECK_FALSE(client.has_session());
+}
+
+AXIAM_TEST("C-12 N4.2: a malformed RE-authentication leaves the previous device "
+          "credential exactly as it was") {
+    auto st = std::make_shared<FakeState>();
+    int device_calls = 0;
+    st->router = [&device_calls](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            ++device_calls;
+            if (device_calls == 1) return json_response(200, kDeviceOk);
+            return json_response(200, "not json at all");  // the re-auth attempt
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_client(st);
+    client.authenticate_device();  // adopts "device-token-xyz"
+
+    AXIAM_REQUIRE_THROWS_AS(client.authenticate_device(), NetworkError);
+
+    // The ORIGINAL device credential is still the one presented -- unchanged
+    // by the refused re-authentication attempt.
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    auto it = req.headers.find("Authorization");
+    AXIAM_CHECK(it != req.headers.end());
+    AXIAM_CHECK(it->second == "Bearer device-token-xyz");
+}
+
+// ---------------------------------------------------------------------------
 // C-12 N4.4: "any later session-establishing call replaces" the device
 // credential, and logout() clears it. Before this fix, ONLY close() touched
 // device_access_token/device_session at all — a device credential, once

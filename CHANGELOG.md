@@ -97,6 +97,19 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
 
 ### Fixed
 
+- **A malformed `200` from `POST /api/v1/auth/device` is refused, not
+  adopted** (CONTRACT.md §6.1 rule 6, CONTRACT 1.52 N4.2 (C-12)). Before this
+  fix, an unparseable body, a non-object body, or an object with no (or an
+  empty) `access_token` was still adopted: `device_access_token` was
+  overwritten with an EMPTY `Sensitive<std::string>`, `device_session` was
+  set `true` regardless, and the acting-tenant gate was reset to unknown —
+  leaving the client with `has_session() == true` and a credential that
+  could never authenticate anything, and clobbering whatever device
+  credential a prior successful `authenticate_device()` call had adopted.
+  `authenticate_device()` now throws `NetworkError` for a malformed `200`
+  and changes no client state at all — the previous credential (if any), the
+  cookie jar and the acting-tenant gate are left exactly as they were,
+  matching the existing behaviour for a refused (non-2xx) device login.
 - **An adopted device credential is now released the instant any other call
   completes a session** (CONTRACT.md §6.1 rule 6, CONTRACT 1.52 N4.4 (C-12)).
   Before this fix, `authenticate_device()`'s `device_access_token` /
