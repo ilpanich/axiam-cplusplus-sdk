@@ -25,6 +25,15 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   bound tokens now calls `authenticate_sender_constrained(token,
   presented_thumbprint)` instead, passing the peer certificate's thumbprint
   from its own TLS layer.
+- **`RoleGroupAssignment::inherit`, `RoleServiceAccountAssignment::inherit`
+  and `RoleUserAssignment::inherit` widen from `bool` to
+  `std::optional<bool>`**, each gaining an `inherits()` accessor (CONTRACT.md
+  §27.13 S-10 rule 3) — the same shape `RoleAssignment::inherit` already had.
+  Source-breaking for any caller reading `.inherit` directly as a `bool`:
+  read `.inherits()` instead, never `.inherit.value_or(false)`. Forced by the
+  fix below — a `roles.list_users` / `_groups` / `_service_accounts` decode
+  that tolerates an absent `inherit` has nowhere to put "absent" in a plain
+  `bool`.
 
 ### Added
 
@@ -116,6 +125,18 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   a stated `true` is now accepted and planned identically to an omitted
   field, and still never reaches `assign_to_*`'s body — only an engaged
   `false` does.
+- **A role-side role listing no longer throws on a server that predates
+  `inherit`** (CONTRACT.md §27.13 S-10 rule 3). `roles().list_groups()`,
+  `list_users()` and `list_service_accounts()` decoded `inherit` with
+  `j.at("inherit")`, which `openapi.json` marks required because a
+  contract-1.51 server always sends it — but a server older than 1.51 sends
+  nothing, and the `j.at(...)` throw failed the **whole** listing rather than
+  the one field, surfacing as `NetworkError` (`management_transport.hpp`).
+  Fixed in the generator (`scripts/gen_management.py`), so a regeneration
+  from a future registry keeps the fix: the three role-side types are now
+  generated exactly like the subject-side `RoleAssignment` already was, with
+  the absent-means-inherits `inherits()` accessor this same rule requires.
+  See the Breaking entry above for the type change this forces.
 
 ### Declined
 

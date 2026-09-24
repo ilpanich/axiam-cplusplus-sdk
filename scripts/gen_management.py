@@ -490,6 +490,24 @@ def projection_map() -> dict[str, list[dict[str, Any]]]:
 
 PROJECTED: dict[str, list[dict[str, Any]]] = projection_map()
 
+# CONTRACT.md §27.13 S-10 rule 3: `openapi.json` lists `inherit` as REQUIRED on the
+# three ROLE-side listings below, because a contract-1.51 server always sends it. A
+# server that PREDATES the field -- every server before 1.51 -- sends nothing, exactly
+# as it always omitted `inherit` on the subject-side `RoleAssignment` (already optional
+# here). Decoding a required field with `j.at(...)` throws on that absence, which fails
+# the WHOLE listing (the same failure mode §27.11 rule 1 fixes for an open enum). This
+# treats the three as optional for GENERATION purposes only -- the wire `required` list
+# in openapi.json is untouched, so a schema-validating client elsewhere is unaffected --
+# which gives each struct the SAME `std::optional<bool> inherit` / `inherits()` pair the
+# subject-side type already has (the generic rule just below, keyed off the field being
+# an optional bool named `inherit`), rather than a second hand-rolled convention for the
+# same rule.
+LENIENT_OPTIONAL: dict[str, set[str]] = {
+    "RoleGroupAssignment": {"inherit"},
+    "RoleServiceAccountAssignment": {"inherit"},
+    "RoleUserAssignment": {"inherit"},
+}
+
 
 def fields_of(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]], str | None]:
     """Every member of ``schema_name``, in the spec's own order.
@@ -533,6 +551,7 @@ def fields_of(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]]
         ], schema.get("description"))
 
     props, required, description = flatten(schema_name)
+    required = required - LENIENT_OPTIONAL.get(schema_name, set())
     props = dict(props)
     for extra in PROJECTED.get(schema_name, []):
         if extra["name"] in props:

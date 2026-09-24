@@ -2880,14 +2880,19 @@ struct RoleGroupAssignment {
     /// The assigned group.
     Group group;
     /// Whether the assignment also reaches the descendants of `resource_id` (`true`, the
-    /// default) or applies at that resource only (`false`).
-    bool inherit;
+    /// default) or applies at that resource only (`false`). Optional.
+    std::optional<bool> inherit = std::nullopt;
     /// `None` means the role was assigned globally (no resource scope). Optional.
     std::optional<std::string> resource_id = std::nullopt;
     /// The tenants this assignment reaches, or omitted for "wherever the role does". Shown next
     /// to the assignment so an operator can tell a deliberately narrowed grant from an
     /// organization-wide one. Optional.
     std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
+
+    /// Whether this assignment inherits (CONTRACT.md §27.13 S-10 rule 3). `inherit` above is
+    /// `std::nullopt` both when the server omitted the field and when it explicitly sent
+    /// `true`; EITHER WAY that means inherits. Read this, never `inherit.value_or(false)`.
+    bool inherits() const noexcept { return inherit.value_or(true); }
 };
 
 /// Public-safe service account representation.
@@ -2913,8 +2918,8 @@ struct ServiceAccountResponse {
 /// A service account together with the resource scope of its assignment.
 struct RoleServiceAccountAssignment {
     /// Whether the assignment also reaches the descendants of `resource_id` (`true`, the
-    /// default) or applies at that resource only (`false`).
-    bool inherit;
+    /// default) or applies at that resource only (`false`). Optional.
+    std::optional<bool> inherit = std::nullopt;
     /// `None` means the role was assigned globally (no resource scope). Optional.
     std::optional<std::string> resource_id = std::nullopt;
     /// The assigned service account. Carries no secret — the client secret is returned once, at
@@ -2924,6 +2929,11 @@ struct RoleServiceAccountAssignment {
     /// to the assignment so an operator can tell a deliberately narrowed grant from an
     /// organization-wide one. Optional.
     std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
+
+    /// Whether this assignment inherits (CONTRACT.md §27.13 S-10 rule 3). `inherit` above is
+    /// `std::nullopt` both when the server omitted the field and when it explicitly sent
+    /// `true`; EITHER WAY that means inherits. Read this, never `inherit.value_or(false)`.
+    bool inherits() const noexcept { return inherit.value_or(true); }
 };
 
 /// Public-safe user representation (no password_hash, no mfa_secret).
@@ -2960,8 +2970,8 @@ struct UserResponse {
 /// A user together with the resource scope of their assignment of this role.
 struct RoleUserAssignment {
     /// Whether the assignment also reaches the descendants of `resource_id` (`true`, the
-    /// default) or applies at that resource only (`false`).
-    bool inherit;
+    /// default) or applies at that resource only (`false`). Optional.
+    std::optional<bool> inherit = std::nullopt;
     /// `None` means the role was assigned globally (no resource scope). Optional.
     std::optional<std::string> resource_id = std::nullopt;
     /// The tenants this assignment reaches, or omitted for "wherever the role does". Shown next
@@ -2970,6 +2980,11 @@ struct RoleUserAssignment {
     std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
     /// The assigned user.
     UserResponse user;
+
+    /// Whether this assignment inherits (CONTRACT.md §27.13 S-10 rule 3). `inherit` above is
+    /// `std::nullopt` both when the server omitted the field and when it explicitly sent
+    /// `true`; EITHER WAY that means inherits. Read this, never `inherit.value_or(false)`.
+    bool inherits() const noexcept { return inherit.value_or(true); }
 };
 
 /// Response for secret rotation.
