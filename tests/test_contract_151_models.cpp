@@ -71,11 +71,14 @@ AXIAM_TEST("§27.13 S-7 rule 2: certificates.list survives a cert_type this SDK 
 // ---------------------------------------------------------------------------
 
 // §27.13 draws the line between the ROLE-side listings (`roles.list_users` /
-// `list_groups` / `list_service_accounts`, `RoleUserAssignment` etc.) where `inherit` is
-// REQUIRED, and the SUBJECT-side listings (`users.list_roles`, `groups.list_roles`,
-// `service_accounts.list_roles`) which return `RoleAssignment`, where it is OPTIONAL and
-// absence means inherits. This pins the subject side, which is where the open-default
-// decode actually has something to get wrong.
+// `list_groups` / `list_service_accounts`, `RoleUserAssignment` etc.) where a
+// CONTRACT-1.51 server's `inherit` is REQUIRED, and the SUBJECT-side listings
+// (`users.list_roles`, `groups.list_roles`, `service_accounts.list_roles`) which return
+// `RoleAssignment`, where it is OPTIONAL and absence means inherits. This pins the
+// subject side first, which is where the open-default decode actually has something to
+// get wrong; the block below it (S-10 rule 3, role side) pins the same discipline for a
+// server that PREDATES the field and so sends nothing on the role-side listings either,
+// even though this SDK's copy of the spec marks the wire field required there.
 const char* kRoleForAssignment =
     R"json({"created_at":"2026-08-26T00:00:00Z","description":"d",)json"
     R"json("id":"11111111-1111-4111-8111-111111111111","is_global":false,)json"
@@ -112,6 +115,141 @@ AXIAM_TEST("§27.13 S-10 rule 3: RoleAssignment.inherit=false decodes as inherit
     AXIAM_CHECK(listed.size() == 1);
     AXIAM_CHECK(listed[0].inherit.has_value());
     AXIAM_CHECK(listed[0].inherits() == false);
+}
+
+// ---------------------------------------------------------------------------
+// S-10 rule 3 -- inherit absent on a ROLE-side listing also means inherits
+// ---------------------------------------------------------------------------
+
+// C-12: `openapi.json` marks `inherit` REQUIRED on the three role-side listings below,
+// because a contract-1.51 server always sends it. A server OLDER than 1.51 -- every
+// server before it -- sends nothing, same as it always omitted `inherit` on the
+// subject-side `RoleAssignment` above. Decoding a required field with `j.at("inherit")`
+// throws `nlohmann::detail::out_of_range` on that absence, and `management_transport.hpp`
+// surfaces it as a plain `NetworkError` -- so a role's ENTIRE group/user/service-account
+// listing fails against a pre-1.51 server, not merely one row of it. §27.13 S-10 rule 3
+// governs the role side exactly as it does the subject side: absent MUST read as
+// `inherits() == true`.
+const char* kGroupForAssignment =
+    R"json({"created_at":"2026-08-26T00:00:00Z","description":"d","id":)json"
+    R"json("11111111-1111-4111-8111-111111111111","metadata":{},"name":"ops",)json"
+    R"json("tenant_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("updated_at":"2026-08-26T00:00:00Z"})json";
+const char* kServiceAccountForAssignment =
+    R"json({"client_id":"c","created_at":"2026-08-26T00:00:00Z","description":"d",)json"
+    R"json("id":"11111111-1111-4111-8111-111111111111","name":"svc","status":"Active",)json"
+    R"json("tenant_id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("updated_at":"2026-08-26T00:00:00Z"})json";
+const char* kUserForAssignment =
+    R"json({"created_at":"2026-08-26T00:00:00Z","email":"a@x","email_verified":true,)json"
+    R"json("failed_login_attempts":0,"id":"11111111-1111-4111-8111-111111111111",)json"
+    R"json("is_locked":false,"metadata":{},"mfa_enabled":false,"status":"Active",)json"
+    R"json("tenant_id":"11111111-1111-4111-8111-111111111111","updated_at":)json"
+    R"json("2026-08-26T00:00:00Z","username":"a"})json";
+
+AXIAM_TEST("§27.13 S-10 rule 3: RoleGroupAssignment.inherit absent decodes as "
+          "inherits() == true, and does not fail the listing") {
+    const std::string body = std::string(R"json({"group":)json") + kGroupForAssignment + "}";
+    auto fixture = axtest::mgmt::signed_in(200, "[" + body + "]");
+
+    // Before the fix this threw NetworkError (management_transport.hpp) and never
+    // reached the assertions below -- the whole listing failed on one absent field.
+    const auto listed = fixture.client.management().roles().list_groups(kUuid);
+
+    AXIAM_CHECK(listed.size() == 1);
+    AXIAM_CHECK(!listed[0].inherit.has_value());
+    AXIAM_CHECK(listed[0].inherits() == true);
+}
+
+AXIAM_TEST("§27.13 S-10 rule 3: RoleGroupAssignment.inherit=false/true decode as stated "
+          "(the I4 twin)") {
+    {
+        const std::string body = std::string(R"json({"group":)json") + kGroupForAssignment +
+                                 R"json(,"inherit":false})json";
+        auto fixture = axtest::mgmt::signed_in(200, "[" + body + "]");
+        const auto listed = fixture.client.management().roles().list_groups(kUuid);
+        AXIAM_CHECK(listed.size() == 1);
+        AXIAM_CHECK(listed[0].inherit.has_value());
+        AXIAM_CHECK(listed[0].inherits() == false);
+    }
+    {
+        const std::string body = std::string(R"json({"group":)json") + kGroupForAssignment +
+                                 R"json(,"inherit":true})json";
+        auto fixture = axtest::mgmt::signed_in(200, "[" + body + "]");
+        const auto listed = fixture.client.management().roles().list_groups(kUuid);
+        AXIAM_CHECK(listed.size() == 1);
+        AXIAM_CHECK(listed[0].inherit.has_value());
+        AXIAM_CHECK(listed[0].inherits() == true);
+    }
+}
+
+AXIAM_TEST("§27.13 S-10 rule 3: RoleUserAssignment.inherit absent decodes as "
+          "inherits() == true, and does not fail the listing") {
+    const std::string body = std::string(R"json({"user":)json") + kUserForAssignment + "}";
+    auto fixture = axtest::mgmt::signed_in(200, "[" + body + "]");
+
+    const auto listed = fixture.client.management().roles().list_users(kUuid);
+
+    AXIAM_CHECK(listed.size() == 1);
+    AXIAM_CHECK(!listed[0].inherit.has_value());
+    AXIAM_CHECK(listed[0].inherits() == true);
+}
+
+AXIAM_TEST("§27.13 S-10 rule 3: RoleUserAssignment.inherit=false/true decode as stated "
+          "(the I4 twin)") {
+    {
+        const std::string body = std::string(R"json({"user":)json") + kUserForAssignment +
+                                 R"json(,"inherit":false})json";
+        auto fixture = axtest::mgmt::signed_in(200, "[" + body + "]");
+        const auto listed = fixture.client.management().roles().list_users(kUuid);
+        AXIAM_CHECK(listed.size() == 1);
+        AXIAM_CHECK(listed[0].inherit.has_value());
+        AXIAM_CHECK(listed[0].inherits() == false);
+    }
+    {
+        const std::string body = std::string(R"json({"user":)json") + kUserForAssignment +
+                                 R"json(,"inherit":true})json";
+        auto fixture = axtest::mgmt::signed_in(200, "[" + body + "]");
+        const auto listed = fixture.client.management().roles().list_users(kUuid);
+        AXIAM_CHECK(listed.size() == 1);
+        AXIAM_CHECK(listed[0].inherit.has_value());
+        AXIAM_CHECK(listed[0].inherits() == true);
+    }
+}
+
+AXIAM_TEST("§27.13 S-10 rule 3: RoleServiceAccountAssignment.inherit absent decodes as "
+          "inherits() == true, and does not fail the listing") {
+    const std::string body =
+        std::string(R"json({"service_account":)json") + kServiceAccountForAssignment + "}";
+    auto fixture = axtest::mgmt::signed_in(200, "[" + body + "]");
+
+    const auto listed = fixture.client.management().roles().list_service_accounts(kUuid);
+
+    AXIAM_CHECK(listed.size() == 1);
+    AXIAM_CHECK(!listed[0].inherit.has_value());
+    AXIAM_CHECK(listed[0].inherits() == true);
+}
+
+AXIAM_TEST("§27.13 S-10 rule 3: RoleServiceAccountAssignment.inherit=false/true decode "
+          "as stated (the I4 twin)") {
+    {
+        const std::string body = std::string(R"json({"service_account":)json") +
+                                 kServiceAccountForAssignment + R"json(,"inherit":false})json";
+        auto fixture = axtest::mgmt::signed_in(200, "[" + body + "]");
+        const auto listed = fixture.client.management().roles().list_service_accounts(kUuid);
+        AXIAM_CHECK(listed.size() == 1);
+        AXIAM_CHECK(listed[0].inherit.has_value());
+        AXIAM_CHECK(listed[0].inherits() == false);
+    }
+    {
+        const std::string body = std::string(R"json({"service_account":)json") +
+                                 kServiceAccountForAssignment + R"json(,"inherit":true})json";
+        auto fixture = axtest::mgmt::signed_in(200, "[" + body + "]");
+        const auto listed = fixture.client.management().roles().list_service_accounts(kUuid);
+        AXIAM_CHECK(listed.size() == 1);
+        AXIAM_CHECK(listed[0].inherit.has_value());
+        AXIAM_CHECK(listed[0].inherits() == true);
+    }
 }
 
 // ---------------------------------------------------------------------------

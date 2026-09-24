@@ -35,6 +35,10 @@ add_executable(axiam_cpp_tests
   # CONTRACT.md §6.1 rules 6-10 (contract 1.51): authenticate_device()'s reachability
   # gate, token adoption, stale-cookie withholding, and no-refresh-on-401.
   test_device_auth.cpp
+  # CONTRACT.md §6.1 rule 6 (contract 1.51): the SAME call, at the wire, over a REAL
+  # loopback TLS connection -- what the fake transport above cannot see libcurl add on
+  # its own (a defect this SDK had independently of client.cpp's own explicit header).
+  test_device_auth_tls.cpp
   # CONTRACT.md §5.2 rule 1 (contract 1.51): the acting-tenant gate reset on every
   # SSO/federation session completion, with each completion's refused-completion twin.
   test_sso_gate_reset.cpp

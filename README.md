@@ -1878,7 +1878,12 @@ device.roles = {{"editor_role", std::nullopt, std::nullopt}};
   tenant already has it. A binding it DOES name that is bound with a different
   `resource`/`inherit` is rebound — unassign, then assign, carrying the server
   binding's `tenant_scope` across, with the previous binding reassigned
-  (best-effort) if the new assign fails.
+  (best-effort) if the new assign fails. §27.6.1's "report both outcomes": when
+  that happens, `ApplyReport::restore_attempted` is `true`, `restore_succeeded`
+  names whether the reassign itself landed, `restore_error` carries its own
+  message on a failed restore, and `failed_binding` names which one it was for
+  — additive fields that default to `false`/disengaged for every other kind of
+  failure, including a rebind whose FIRST assign succeeds outright.
 - **`service_accounts`** — reconciled by `name`, which the server does not
   enforce unique: `plan()` fails, before any write, when a stated name matches
   more than one existing account. `Create`'s one-time `client_secret` is on

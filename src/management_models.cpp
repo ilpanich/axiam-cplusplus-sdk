@@ -3108,7 +3108,9 @@ void from_json(const nlohmann::json& j, RoleAssignment& value) {
 void to_json(nlohmann::json& j, const RoleGroupAssignment& value) {
     j = nlohmann::json::object();
     j["group"] = value.group;
-    j["inherit"] = value.inherit;
+    if (value.inherit) {
+        j["inherit"] = *value.inherit;
+    }
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -3119,7 +3121,9 @@ void to_json(nlohmann::json& j, const RoleGroupAssignment& value) {
 
 void from_json(const nlohmann::json& j, RoleGroupAssignment& value) {
     value.group = j.at("group").get<Group>();
-    value.inherit = j.at("inherit").get<bool>();
+    if (auto it = j.find("inherit"); it != j.end() && !it->is_null()) {
+        value.inherit = it->get<bool>();
+    }
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
     }
@@ -3157,7 +3161,9 @@ void from_json(const nlohmann::json& j, ServiceAccountResponse& value) {
 
 void to_json(nlohmann::json& j, const RoleServiceAccountAssignment& value) {
     j = nlohmann::json::object();
-    j["inherit"] = value.inherit;
+    if (value.inherit) {
+        j["inherit"] = *value.inherit;
+    }
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -3168,7 +3174,9 @@ void to_json(nlohmann::json& j, const RoleServiceAccountAssignment& value) {
 }
 
 void from_json(const nlohmann::json& j, RoleServiceAccountAssignment& value) {
-    value.inherit = j.at("inherit").get<bool>();
+    if (auto it = j.find("inherit"); it != j.end() && !it->is_null()) {
+        value.inherit = it->get<bool>();
+    }
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
     }
@@ -3217,7 +3225,9 @@ void from_json(const nlohmann::json& j, UserResponse& value) {
 
 void to_json(nlohmann::json& j, const RoleUserAssignment& value) {
     j = nlohmann::json::object();
-    j["inherit"] = value.inherit;
+    if (value.inherit) {
+        j["inherit"] = *value.inherit;
+    }
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -3228,7 +3238,9 @@ void to_json(nlohmann::json& j, const RoleUserAssignment& value) {
 }
 
 void from_json(const nlohmann::json& j, RoleUserAssignment& value) {
-    value.inherit = j.at("inherit").get<bool>();
+    if (auto it = j.find("inherit"); it != j.end() && !it->is_null()) {
+        value.inherit = it->get<bool>();
+    }
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
     }

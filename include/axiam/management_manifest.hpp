@@ -180,6 +180,32 @@ struct ApplyReport {
     std::string failure;                   ///< Why it failed.
     std::vector<PlannedChange> remaining;  ///< Never attempted because of the failure.
 
+    /// CONTRACT.md §27.6.1: a role binding's `Update` has no update endpoint, so it is
+    /// performed as unassign-then-assign. "If the assign fails, the SDK MUST attempt to
+    /// assign the previous binding again (same resource, same `inherit`) and report
+    /// both outcomes." `restore_attempted` is true exactly when `failed` (above) failed
+    /// on that re-assign leg (the unassign having already landed) and a restore of the
+    /// previous binding was therefore attempted. False for every other failure — a
+    /// `Create`, a plain description `Update`, or one whose role-binding reconcile never
+    /// reached the assign step — which leaves these four fields at their defaults, so a
+    /// caller compiled against the pre-1.51 report still reads `failed`/`failure`
+    /// exactly as it always did.
+    bool restore_attempted = false;
+
+    /// Whether the restore (immediately above) itself succeeded. Meaningless when
+    /// `restore_attempted` is false, and defaults to `false` alongside it — the SAFER
+    /// of the two readings for a caller who checks this before `restore_attempted`.
+    bool restore_succeeded = false;
+
+    /// The restore's own error message. Engaged only when `restore_attempted &&
+    /// !restore_succeeded`.
+    std::optional<std::string> restore_error;
+
+    /// Which binding the rebind was for — `role:<role id> resource:<resource id or
+    /// "(global)">`, the server ids the restore attempt itself addressed the binding by.
+    /// Disengaged unless `restore_attempted`.
+    std::optional<std::string> failed_binding;
+
     /// True when every planned change landed.
     bool complete() const { return !failed.has_value(); }
 

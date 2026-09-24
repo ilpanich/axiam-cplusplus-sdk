@@ -25,6 +25,20 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   bound tokens now calls `authenticate_sender_constrained(token,
   presented_thumbprint)` instead, passing the peer certificate's thumbprint
   from its own TLS layer.
+- **`RoleGroupAssignment::inherit`, `RoleServiceAccountAssignment::inherit`
+  and `RoleUserAssignment::inherit` widen from `bool` to
+  `std::optional<bool>`**, each gaining an `inherits()` accessor (CONTRACT.md
+  §27.13 S-10 rule 3) — the same shape `RoleAssignment::inherit` already had.
+  Source-breaking for any caller reading `.inherit` directly as a `bool`:
+  read `.inherits()` instead, never `.inherit.value_or(false)`. Forced by the
+  fix below — a `roles.list_users` / `_groups` / `_service_accounts` decode
+  that tolerates an absent `inherit` has nowhere to put "absent" in a plain
+  `bool`.
+- **`authenticate_device()` sends no `Content-Type` on the wire, in addition
+  to no body** (CONTRACT.md §6.1 rule 6). Previously sent
+  `Content-Type: application/json` with a body of `{}`. A caller's own test
+  double for `POST /api/v1/auth/device` that asserted on either is now
+  asserting on bytes this SDK no longer sends.
 
 ### Added
 
@@ -116,6 +130,39 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   a stated `true` is now accepted and planned identically to an omitted
   field, and still never reaches `assign_to_*`'s body — only an engaged
   `false` does.
+- **A role-side role listing no longer throws on a server that predates
+  `inherit`** (CONTRACT.md §27.13 S-10 rule 3). `roles().list_groups()`,
+  `list_users()` and `list_service_accounts()` decoded `inherit` with
+  `j.at("inherit")`, which `openapi.json` marks required because a
+  contract-1.51 server always sends it — but a server older than 1.51 sends
+  nothing, and the `j.at(...)` throw failed the **whole** listing rather than
+  the one field, surfacing as `NetworkError` (`management_transport.hpp`).
+  Fixed in the generator (`scripts/gen_management.py`), so a regeneration
+  from a future registry keeps the fix: the three role-side types are now
+  generated exactly like the subject-side `RoleAssignment` already was, with
+  the absent-means-inherits `inherits()` accessor this same rule requires.
+  See the Breaking entry above for the type change this forces.
+- **A manifest's failed rebind now reports the restore's own outcome**
+  (CONTRACT.md §27.6.1: "If the assign fails, the SDK MUST attempt to assign
+  the previous binding again … and report both outcomes"). The restore was
+  already attempted; its result was silently discarded
+  (`catch (const AxiamError&) {}`) and the original failure rethrown
+  unchanged, so a caller reading `ApplyReport` had no way to tell a restored
+  tenant from one left holding neither binding. `ApplyReport` gains
+  `restore_attempted`, `restore_succeeded`, `restore_error` and
+  `failed_binding` — additive fields, defaulted to
+  `false`/`false`/disengaged/disengaged, so a caller compiled against the
+  pre-fix report still reads `failed`/`failure` exactly as before.
+- **`authenticate_device()` sends no request body** (CONTRACT.md §6.1 rule
+  6: "issues `POST /api/v1/auth/device` with no request body"). Previously
+  sent `Content-Type: application/json` with a body of `{}`. Two independent
+  causes, both fixed: `client.cpp` stated the header and body explicitly, and
+  (found while fixing the first, and verified against a real loopback TLS
+  server rather than the fake transport, which cannot see it) libcurl
+  defaults an unstated `Content-Type` to `application/x-www-form-urlencoded`
+  on its own whenever `CURLOPT_POSTFIELDS` is set, even to an empty buffer —
+  `http_curl.cpp` now suppresses it for any body-less non-`GET` request that
+  states no `Content-Type` of its own.
 
 ### Declined
 
