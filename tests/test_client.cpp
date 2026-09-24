@@ -300,10 +300,12 @@ AXIAM_TEST("refresh sends org_id decoded from the access-token cookie (D-14)") {
 }
 
 // §6.1 rule 7: reachable only on a client built with a certificate identity.
+// with_client_cert() only checks for a "-----BEGIN" prefix; deliberately no
+// real (or real-looking) key material, matching test_mtls_endpoint_aliases.cpp.
 static const std::string kDeviceCertPem =
     "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
 static const std::string kDeviceKeyPem =
-    "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n";
+    "-----BEGIN AXIAM TEST PLACEHOLDER-----\nMIIB\n-----END AXIAM TEST PLACEHOLDER-----\n";
 
 static Client make_device_client(std::shared_ptr<FakeState> st) {
     return Client::builder()

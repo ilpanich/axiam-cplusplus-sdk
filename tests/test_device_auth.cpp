@@ -19,10 +19,12 @@ using axtest::json_response;
 
 namespace {
 
+// with_client_cert() only checks for a "-----BEGIN" prefix; deliberately no
+// real (or real-looking) key material, matching test_mtls_endpoint_aliases.cpp.
 const std::string kCertPem =
     "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
 const std::string kKeyPem =
-    "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n";
+    "-----BEGIN AXIAM TEST PLACEHOLDER-----\nMIIB\n-----END AXIAM TEST PLACEHOLDER-----\n";
 const char* kDeviceOk =
     R"({"access_token":"device-token-xyz","token_type":"Bearer","expires_in":900})";
 
