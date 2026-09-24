@@ -1403,7 +1403,20 @@ client.clear_acting_tenant();             // back to sending no header at all
 ```
 
 `with_acting_tenant()` (builder) and `acting_tenant()` / `clear_acting_tenant()`
-(on an existing client) are new in contract 1.51. `X-Axiam-Tenant` is sent on
+(on an existing client) are new in contract 1.51.
+
+**Form (CONTRACT 1.52 N5.2 (C-12)).** The on-client form changes the client
+**in place** — it returns `Client&` (a reference to `*this`), not a new
+handle — and every other `Client` value sharing the same underlying session
+(for instance one obtained from `login_async()`'s internal re-wrap, or any
+handle constructed over the same session) sees the change too: the acting
+tenant, like the rest of a client's session state, lives on the session
+itself, not on the individual `Client` object. `logout()` does **not**
+clear it — an acting tenant set before `logout()` is still set, and still
+sent, after a later `login()` on the same client, until `clear_acting_tenant()`
+or another `acting_tenant()` call changes it.
+
+`X-Axiam-Tenant` is sent on
 **every** `/api/v1` REST call this client makes from here — management,
 `check_access`/`batch_check`, `login`, `refresh`, `logout`, and every
 self-service and WebAuthn POST alike (§5.2.2 rule 4: the header is never
