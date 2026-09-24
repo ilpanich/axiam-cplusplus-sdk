@@ -129,4 +129,92 @@ AXIAM_TEST("§13 row-17: a nested resource's Create body carries the created par
     AXIAM_CHECK(replan.converged());
 }
 
+// ---------------------------------------------------------------------------
+// §13 row-17, defect 2: resource_type silently defaulted to "folder"
+// ---------------------------------------------------------------------------
+
+// The stated type reaches the wire verbatim -- never silently "folder" for a resource
+// that asked for something else. A NESTED manifest (parent "space", child "endpoint")
+// so the assertion is not vacuously true of a lone root.
+AXIAM_TEST("§13 row-17: the resource_type sent is the one stated, never a silent "
+          "\"folder\", and apply-then-plan is empty") {
+    auto st = std::make_shared<FakeState>();
+    bool root_created = false, child_created = false;
+    json captured_root_type, captured_child_type;
+    st->router = [&](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) return ok_empty();
+        if (req.method == "GET" && req.url.find("/resources") != std::string::npos) {
+            json items = json::array();
+            if (root_created) items.push_back(resource_json(kRootId, "space", "workspace"));
+            if (child_created) {
+                items.push_back(resource_json(kChildId, "endpoint", "service", kRootId));
+            }
+            return ok(page_of(items));
+        }
+        if (req.method == "POST" && req.url.find("/resources") != std::string::npos) {
+            const auto body = json::parse(req.body);
+            if (body.at("name") == "space") {
+                root_created = true;
+                captured_root_type = body.at("resource_type");
+                return ok(resource_json(kRootId, "space", "workspace"));
+            }
+            child_created = true;
+            captured_child_type = body.at("resource_type");
+            return ok(resource_json(kChildId, "endpoint", "service", kRootId));
+        }
+        return ok_empty();
+    };
+    auto client = login_client(st);
+    client.login("a", "b");
+
+    ManifestEntity root;
+    root.kind = ManifestKind::Resource;
+    root.key = "space";
+    root.name = "space";
+    root.resource_type = "workspace";  // deliberately NOT "folder"
+
+    ManifestEntity child;
+    child.kind = ManifestKind::Resource;
+    child.key = "endpoint";
+    child.name = "endpoint";
+    child.resource_type = "service";  // also deliberately NOT "folder"
+    child.depends_on = "space";
+
+    Manifest m{{root, child}};
+    const auto report = client.management().manifest().apply(m);
+    AXIAM_CHECK(report.complete());
+
+    AXIAM_CHECK(captured_root_type == "workspace");
+    AXIAM_CHECK(captured_child_type == "service");
+
+    const auto replan = client.management().manifest().plan(m);
+    AXIAM_CHECK(replan.converged());
+}
+
+// The other half: a resource that states NO type is refused client-side, before any
+// request -- never silently sent as "folder".
+AXIAM_TEST("§13 row-17: a resource with no stated resource_type is refused client-side, "
+          "zero wire calls") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) -> HttpResponse { return ok_empty(); };
+    auto client = login_client(st);
+    // No login() -- this must fail before ANY wire call.
+
+    ManifestEntity res;
+    res.kind = ManifestKind::Resource;
+    res.key = "r";
+    res.name = "r";
+    // res.resource_type left empty on purpose.
+
+    Manifest m{{res}};
+    bool threw = false;
+    try {
+        client.management().manifest().plan(m);
+    } catch (const ManifestError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+    AXIAM_CHECK(st->count() == 0);
+}
+
 }  // namespace

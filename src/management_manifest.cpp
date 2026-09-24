@@ -126,6 +126,20 @@ void ManifestApi::validate(const Manifest& manifest) {
             throw ManifestError("manifest declares \"" + e.key +
                                 "\" twice -- a key must be unique within its kind");
         }
+        // §13 row-17 (dogfooding plan): `resource_type` is REQUIRED by
+        // CreateResourceRequest -- there is no server default this SDK could omit the
+        // field and still get right. Refusing a stated-empty one here, before any
+        // request, is the alternative to guessing "folder" on the caller's behalf: a
+        // silent default is a second, undocumented meaning for "the manifest said
+        // nothing", and the one every resource entity in a manifest must not need
+        // rediscovered from a support ticket. The sent value is always exactly what the
+        // manifest states -- never a value this SDK invented.
+        if (e.kind == ManifestKind::Resource && e.resource_type.empty()) {
+            throw ManifestError("\"" + e.key +
+                                "\" (resource) states no resource_type -- this SDK does "
+                                "not default it to \"folder\" or anything else; state one "
+                                "explicitly (CONTRACT.md §27.10)");
+        }
     }
 
     // A dangling reference is invisible until apply reaches the entity that needs it, by
@@ -443,7 +457,11 @@ void perform(const ManagementApi& api, const Manifest& manifest, PlannedChange& 
             if (create) {
                 CreateResourceRequest body{};
                 body.name = e.name;
-                body.resource_type = e.resource_type.empty() ? "folder" : e.resource_type;
+                // validate() (run by ordered(), which plan()/apply() both call before
+                // any request) already refused an empty resource_type -- reaching here
+                // means the manifest stated one explicitly, and it is what is sent,
+                // never a silent "folder".
+                body.resource_type = e.resource_type;
                 body.parent_id = parent_id;
                 // §27.6.1 item 1: sent on Create when stated; omitted (never `{}` or
                 // `null`) when the manifest says nothing about metadata (rule 3).
