@@ -104,6 +104,13 @@ std::vector<std::string> ApplyReport::describe() const {
     for (const auto& c : applied) lines.push_back("applied  " + c.describe());
     if (failed) {
         lines.push_back("FAILED   " + failed->describe() + ": " + failure);
+        // §27.6.1 "report both outcomes" -- only present when the failure was a role
+        // binding's rebind (see ManifestApi::apply()).
+        if (restore_attempted) {
+            lines.push_back(
+                "         restore of " + failed_binding.value_or("previous binding") +
+                (restore_succeeded ? " succeeded" : " FAILED: " + restore_error.value_or("")));
+        }
         for (const auto& c : remaining) lines.push_back("skipped  " + c.describe());
     }
     return lines;
@@ -337,6 +344,39 @@ using ResolvedIds = std::map<std::pair<ManifestKind, std::string>, std::string>;
 
 namespace {
 
+// Decorates the ORIGINAL assign failure from reconcile_role_bindings' Update path
+// (unassign, then re-assign) with the §27.6.1 "report both outcomes" restore result,
+// so ManifestApi::apply() -- the only place with access to ApplyReport -- can attach it
+// without reconcile_role_bindings (or perform(), between the two) needing to know about
+// ApplyReport at all. what() stays the ORIGINAL failure's message: a caller that only
+// ever catches this as a plain AxiamError sees EXACTLY what it would have seen before
+// this decoration existed.
+class RebindFailure : public AxiamError {
+public:
+    RebindFailure(const std::string& original_message, std::string binding,
+                 bool restore_succeeded, std::optional<std::string> restore_error)
+        : AxiamError(original_message),
+          binding_(std::move(binding)),
+          restore_succeeded_(restore_succeeded),
+          restore_error_(std::move(restore_error)) {}
+
+    /// `role:<role id> resource:<resource id or "(global)">` -- the server ids the
+    /// restore attempt itself addressed the binding by.
+    const std::string& binding() const noexcept { return binding_; }
+    bool restore_succeeded() const noexcept { return restore_succeeded_; }
+    const std::optional<std::string>& restore_error() const noexcept { return restore_error_; }
+
+private:
+    std::string binding_;
+    bool restore_succeeded_;
+    std::optional<std::string> restore_error_;
+};
+
+std::string describe_binding(const std::string& role_id,
+                             const std::optional<std::string>& resource_id) {
+    return "role:" + role_id + " resource:" + resource_id.value_or("(global)");
+}
+
 std::string require_resolved(const ResolvedIds& resolved, ManifestKind kind,
                              const std::string& key, const char* what) {
     auto it = resolved.find({kind, key});
@@ -405,18 +445,26 @@ void reconcile_role_bindings(
         unassign(role_id, existing.resource_id);
         try {
             assign(role_id, resource_id, wire_inherit, existing.tenant_scope);
-        } catch (const AxiamError&) {
+        } catch (const AxiamError& original) {
             const bool existing_narrowed =
                 existing.inherit.has_value() && !*existing.inherit;
+            // §27.6.1: "report both outcomes" -- restore_succeeded and, on a failed
+            // restore, the restore's OWN error message, distinct from `original`'s.
+            bool restore_succeeded = false;
+            std::optional<std::string> restore_error;
             try {
                 assign(role_id, existing.resource_id,
                       existing_narrowed ? std::optional<bool>(false) : std::nullopt,
                       existing.tenant_scope);
-            } catch (const AxiamError&) {
+                restore_succeeded = true;
+            } catch (const AxiamError& restore_failure) {
                 // Best-effort restore also failed; nothing more this call can do --
-                // the ORIGINAL failure below is what the caller must see and act on.
+                // the ORIGINAL failure is still what the caller must act on, now
+                // carrying the restore's own outcome alongside it.
+                restore_error = restore_failure.what();
             }
-            throw;
+            throw RebindFailure(original.what(), describe_binding(role_id, existing.resource_id),
+                                restore_succeeded, std::move(restore_error));
         }
     }
 }
@@ -736,6 +784,16 @@ ApplyReport ManifestApi::apply(const Manifest& manifest) const {
             // server is already saying something is wrong.
             report.failed = pending[i];
             report.failure = e.what();
+            // §27.6.1 "report both outcomes": reconcile_role_bindings decorates the
+            // rebind case with a RebindFailure rather than a plain AxiamError, but
+            // e.what() above already carries the SAME message either way -- an
+            // existing caller reading only `failed`/`failure` sees no change.
+            if (const auto* rebind = dynamic_cast<const RebindFailure*>(&e)) {
+                report.restore_attempted = true;
+                report.restore_succeeded = rebind->restore_succeeded();
+                report.restore_error = rebind->restore_error();
+                report.failed_binding = rebind->binding();
+            }
             report.remaining.assign(pending.begin() + static_cast<long>(i) + 1, pending.end());
             return report;
         }

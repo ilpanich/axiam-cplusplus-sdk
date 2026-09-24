@@ -137,6 +137,17 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   generated exactly like the subject-side `RoleAssignment` already was, with
   the absent-means-inherits `inherits()` accessor this same rule requires.
   See the Breaking entry above for the type change this forces.
+- **A manifest's failed rebind now reports the restore's own outcome**
+  (CONTRACT.md §27.6.1: "If the assign fails, the SDK MUST attempt to assign
+  the previous binding again … and report both outcomes"). The restore was
+  already attempted; its result was silently discarded
+  (`catch (const AxiamError&) {}`) and the original failure rethrown
+  unchanged, so a caller reading `ApplyReport` had no way to tell a restored
+  tenant from one left holding neither binding. `ApplyReport` gains
+  `restore_attempted`, `restore_succeeded`, `restore_error` and
+  `failed_binding` — additive fields, defaulted to
+  `false`/`false`/disengaged/disengaged, so a caller compiled against the
+  pre-fix report still reads `failed`/`failure` exactly as before.
 
 ### Declined
 

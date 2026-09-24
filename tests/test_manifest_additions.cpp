@@ -414,6 +414,144 @@ AXIAM_TEST("§27.6.1 item 2: a failed rebind assign restores the previous bindin
     AXIAM_CHECK(assign_resource_ids.size() == 2);
     AXIAM_CHECK(assign_resource_ids[0] == kResourceIdTwo);  // tried the new binding
     AXIAM_CHECK(assign_resource_ids[1] == kResourceId);     // restored the old one
+
+    // C-12 / §27.6.1: "report both outcomes" -- the restore succeeded, so the report
+    // says so, and names the binding (the OLD one, kResourceId, that the restore
+    // itself re-addressed) it was for.
+    AXIAM_CHECK(report.restore_attempted == true);
+    AXIAM_CHECK(report.restore_succeeded == true);
+    AXIAM_CHECK(!report.restore_error.has_value());
+    AXIAM_REQUIRE(report.failed_binding.has_value());
+    AXIAM_CHECK(report.failed_binding->find(kResourceId) != std::string::npos);
+}
+
+// The other half of "report both outcomes": the restore ALSO fails. The ORIGINAL
+// failure is still what `failed`/`failure` report (§27.7 -- apply() does not swap in
+// the restore's own error as if it were the reason apply stopped), but
+// `restore_succeeded` is false and `restore_error` carries the restore's own message,
+// which must be a DIFFERENT string from the original failure's.
+AXIAM_TEST("§27.6.1 item 2: a failed rebind whose restore ALSO fails reports both "
+          "failures") {
+    auto st = std::make_shared<FakeState>();
+    int assign_calls = 0;
+    st->router = [&](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) return ok_empty();
+        if (req.method == "GET" && req.url.find("/resources") != std::string::npos) {
+            return ok(page_of(json::array({resource_json(kResourceId, "docs", "{}"),
+                                          resource_json(kResourceIdTwo, "eng", "{}")})));
+        }
+        if (req.method == "GET" && req.url.find("/roles") != std::string::npos &&
+            req.url.find("/groups") == std::string::npos) {
+            return ok(page_of(json::array({role_json(kRoleId, "editor")})));
+        }
+        if (req.method == "GET" && req.url.find("/groups") != std::string::npos &&
+            req.url.find("/roles") == std::string::npos) {
+            return ok(page_of(json::array({group_json(kGroupId, "g")})));
+        }
+        if (req.method == "GET" && req.url.find("/groups/") != std::string::npos &&
+            req.url.find("/roles") != std::string::npos) {
+            return status_only(
+                200, json::array({role_assignment_json(role_json(kRoleId, "editor"), kResourceId,
+                                                       std::nullopt, std::nullopt)}));
+        }
+        if (req.method == "DELETE" && req.url.find("/roles/") != std::string::npos) {
+            return ok_empty();
+        }
+        if (req.method == "POST" && req.url.find("/roles/") != std::string::npos &&
+            req.url.find("/groups") != std::string::npos) {
+            ++assign_calls;
+            // BOTH the new binding's assign AND the restore's assign fail, with
+            // DIFFERENT messages, so a test asserting on the wrong one is caught. 403,
+            // not 500: client_impl.hpp's raise_for_status echoes the body's `message`
+            // for 403/409 but collapses every 5xx to a fixed "server error (N)" string,
+            // which would make the two failures indistinguishable on the wire.
+            if (assign_calls == 1) {
+                return status_only(403, json{{"message", "new binding rejected"}});
+            }
+            return status_only(403, json{{"message", "restore also rejected"}});
+        }
+        return ok_empty();
+    };
+    auto client = login_client(st);
+    client.login("a", "b");
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    group.roles = {ManifestRoleBinding{"r", std::string("eng"), std::nullopt}};
+
+    Manifest m{{resource_entity("docs", "docs", std::nullopt), resource_entity("eng", "eng", std::nullopt),
+               role_entity("r", "editor"), group}};
+
+    const auto report = client.management().manifest().apply(m);
+    AXIAM_CHECK(!report.complete());
+    AXIAM_CHECK(assign_calls == 2);
+    // The ORIGINAL failure, not the restore's -- §27.7 stops at the first failure and
+    // reports IT; the restore is a best-effort recovery attempt, not a replacement
+    // outcome.
+    AXIAM_CHECK(report.failure.find("new binding rejected") != std::string::npos);
+
+    AXIAM_CHECK(report.restore_attempted == true);
+    AXIAM_CHECK(report.restore_succeeded == false);
+    AXIAM_REQUIRE(report.restore_error.has_value());
+    AXIAM_CHECK(report.restore_error->find("restore also rejected") != std::string::npos);
+}
+
+// The twin: a rebind that succeeds on the FIRST assign never enters the restore path
+// at all, so the four restore fields stay at their defaults -- exactly what an
+// ApplyReport from before this field existed would report.
+AXIAM_TEST("§27.6.1 item 2: a successful rebind leaves the restore fields at their "
+          "defaults") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [&](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) return ok_empty();
+        if (req.method == "GET" && req.url.find("/resources") != std::string::npos) {
+            return ok(page_of(json::array({resource_json(kResourceId, "docs", "{}"),
+                                          resource_json(kResourceIdTwo, "eng", "{}")})));
+        }
+        if (req.method == "GET" && req.url.find("/roles") != std::string::npos &&
+            req.url.find("/groups") == std::string::npos) {
+            return ok(page_of(json::array({role_json(kRoleId, "editor")})));
+        }
+        if (req.method == "GET" && req.url.find("/groups") != std::string::npos &&
+            req.url.find("/roles") == std::string::npos) {
+            return ok(page_of(json::array({group_json(kGroupId, "g")})));
+        }
+        if (req.method == "GET" && req.url.find("/groups/") != std::string::npos &&
+            req.url.find("/roles") != std::string::npos) {
+            return status_only(
+                200, json::array({role_assignment_json(role_json(kRoleId, "editor"), kResourceId,
+                                                       std::nullopt,
+                                                       std::vector<std::string>{kUuid})}));
+        }
+        if (req.method == "DELETE" && req.url.find("/roles/") != std::string::npos) {
+            return ok_empty();
+        }
+        if (req.method == "POST" && req.url.find("/roles/") != std::string::npos &&
+            req.url.find("/groups") != std::string::npos) {
+            return ok_empty();  // the new binding's assign succeeds outright
+        }
+        return ok_empty();
+    };
+    auto client = login_client(st);
+    client.login("a", "b");
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    group.roles = {ManifestRoleBinding{"r", std::string("eng"), std::nullopt}};
+
+    Manifest m{{resource_entity("docs", "docs", std::nullopt), resource_entity("eng", "eng", std::nullopt),
+               role_entity("r", "editor"), group}};
+
+    const auto report = client.management().manifest().apply(m);
+    AXIAM_CHECK(report.complete());
+    AXIAM_CHECK(report.restore_attempted == false);
+    AXIAM_CHECK(report.restore_succeeded == false);
+    AXIAM_CHECK(!report.restore_error.has_value());
+    AXIAM_CHECK(!report.failed_binding.has_value());
 }
 
 // ---------------------------------------------------------------------------
