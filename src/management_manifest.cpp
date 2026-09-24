@@ -191,15 +191,6 @@ void ManifestApi::validate(const Manifest& manifest) {
                                     "\" to resource \"" + *b.resource +
                                     "\", which this manifest does not declare as a resource");
             }
-            // §27.6.1 item 2: "An SDK MUST NOT send inherit: true explicitly" -- refused
-            // here rather than silently downgraded to omitted, which would describe a
-            // DIFFERENT manifest than the one written.
-            if (b.inherit && *b.inherit) {
-                throw ManifestError("\"" + e.key + "\" states inherit: true for role \"" +
-                                    b.role +
-                                    "\" -- omit the field for an inheritable binding "
-                                    "(CONTRACT.md §27.6.1 item 2)");
-            }
             // §27.6.1 item 2, last bullet: a global role bound with inherit: false is a
             // 400 the server would refuse in any case ("a global role ignores resource
             // scope"); checked here only because the role IS in the manifest, exactly
@@ -390,6 +381,13 @@ void reconcile_role_bindings(
             resource_id = require_resolved(resolved, ManifestKind::Resource, *b.resource,
                                            "resource");
         }
+        // §27.6.1 item 2: `inherit` defaults to `true`, and a manifest MAY state it
+        // explicitly -- that is a valid, inheritable binding, planned exactly like one
+        // that omits the field. What the contract forbids is putting `inherit: true` ON
+        // THE WIRE ("An SDK MUST NOT send inherit: true explicitly, so that an
+        // inheritable binding's body stays byte-for-byte a pre-1.51 body"), which is why
+        // `wire_inherit` collapses both "omitted" and "stated true" to `std::nullopt` --
+        // only an engaged `false` (narrowed) ever reaches assign_to_*'s body.
         const bool declared_narrowed = b.inherit.has_value() && !*b.inherit;
         const std::optional<bool> wire_inherit = declared_narrowed ? std::optional<bool>(false)
                                                                     : std::nullopt;

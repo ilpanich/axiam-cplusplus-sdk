@@ -1865,10 +1865,13 @@ device.roles = {{"editor_role", std::nullopt, std::nullopt}};
   when stated, on `Update`; drift is whole-object JSON value equality, never a
   key-by-key merge.
 - **The two-shape role binding**, on `Group` and `ServiceAccount` alike: a bare
-  role key, or `{role, resource, inherit}` (`inherit` reaches the wire only as
-  `false` — stating `true` is refused at `validate()`, so an inheritable
-  binding's body stays byte-for-byte what it was before 1.51). Reconciled
-  **additively**: a binding the manifest does not name is left exactly as the
+  role key, or `{role, resource, inherit}`. `inherit` defaults to `true`, and a
+  manifest MAY state it explicitly — that is a valid, inheritable binding,
+  planned exactly like one that omits the field. What never happens is putting
+  `inherit: true` on the wire: only an engaged `false` ever reaches
+  `assign_to_*`'s body, so an inheritable binding's body stays byte-for-byte
+  what it was before 1.51, whether the manifest stated `true` or said nothing.
+  Reconciled **additively**: a binding the manifest does not name is left exactly as the
   tenant already has it. A binding it DOES name that is bound with a different
   `resource`/`inherit` is rebound — unassign, then assign, carrying the server
   binding's `tenant_scope` across, with the previous binding reassigned

@@ -106,6 +106,16 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   would have cleared the server's real description. Both branches send or
   skip the field based on whether the manifest states one, and skip the
   PUT/PATCH entirely — never an empty no-op — when it does not.
+- **A manifest that states `inherit: true` explicitly is no longer refused.**
+  §27.6.1 item 2 says `inherit` "default[s] to `true`" and forbids only
+  *sending* `inherit: true` on the wire ("so that an inheritable binding's
+  body stays byte-for-byte a pre-1.51 body") — it does not forbid a manifest
+  from stating it. `validate()` briefly (this same contract-1.51 landing, not
+  a prior release) refused any binding with `inherit: true` stated, which was
+  a deviation from the contract rather than the contract's own rule. Fixed:
+  a stated `true` is now accepted and planned identically to an omitted
+  field, and still never reaches `assign_to_*`'s body — only an engaged
+  `false` does.
 
 ### Declined
 

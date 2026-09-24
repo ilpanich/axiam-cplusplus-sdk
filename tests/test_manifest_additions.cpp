@@ -28,6 +28,8 @@ constexpr const char* kRoleId = "33333333-3333-4333-8333-333333333333";
 constexpr const char* kGroupId = "44444444-4444-4444-8444-444444444444";
 constexpr const char* kResourceIdTwo = "55555555-5555-4555-8555-555555555555";
 constexpr const char* kGroupIdTwo = "66666666-6666-4666-8666-666666666666";
+constexpr const char* kRoleIdTwo = "77777777-7777-4777-8777-777777777777";
+constexpr const char* kServiceAccountId = "88888888-8888-4888-8888-888888888888";
 
 // Every response in this file is built from a real json value and dumped explicitly --
 // never handed to json_response() as a bare json object, which would implicitly (and
@@ -343,7 +345,10 @@ AXIAM_TEST("§27.6.1 item 2: changing a binding's resource is unassign-then-assi
 
     const auto report = client.management().manifest().apply(m);
     AXIAM_CHECK(report.complete());
-    AXIAM_CHECK(call_order.size() == 2);
+    // REQUIRE, not CHECK: call_order[0]/[1] below index unconditionally, and a
+    // regression that drops one of the two calls must fail this test cleanly rather
+    // than read past the end of the vector.
+    AXIAM_REQUIRE(call_order.size() == 2);
     AXIAM_CHECK(call_order[0] == "unassign");
     AXIAM_CHECK(call_order[1] == "assign");
 }
@@ -573,26 +578,77 @@ AXIAM_TEST("§27.6.1 item 2: a binding naming an undeclared resource is refused,
     AXIAM_CHECK(st->count() == 0);
 }
 
-AXIAM_TEST("§27.6.1 item 2: inherit stated as true is refused, zero wire calls") {
+// §27.6.1 item 2: "`inherit` [is] a boolean defaulting to `true`" -- a manifest MAY
+// state it explicitly; that is a valid, inheritable binding, planned exactly like one
+// that omits the field. What the contract forbids is different: "An SDK MUST NOT send
+// inherit: true explicitly, so that an inheritable binding's body stays byte-for-byte a
+// pre-1.51 body." So a STATED `true` is accepted, reaches no `inherit` key on the wire,
+// and apply(m) then plan(m) over it is NoChange -- exactly as if the field had been
+// omitted.
+AXIAM_TEST("§27.6.1 item 2: inherit stated as true is accepted and never reaches the "
+          "wire -- apply then plan is NoChange") {
     auto st = std::make_shared<FakeState>();
-    st->router = [](const HttpRequest&, FakeState&) -> HttpResponse { return ok_empty(); };
+    bool group_created = false;
+    bool role_assigned = false;
+    std::string captured_body;
+    st->router = [&](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) return ok_empty();
+        // The role-binding drift check in plan() reads the tenant's resources
+        // unconditionally once a Group/ServiceAccount declares any binding, even one
+        // that names no resource -- this manifest has none, so the list stays empty.
+        if (req.method == "GET" && req.url.find("/resources") != std::string::npos) {
+            return ok(page_of(json::array()));
+        }
+        if (req.method == "GET" && req.url.find("/roles") != std::string::npos &&
+            req.url.find("/groups") == std::string::npos) {
+            return ok(page_of(json::array({role_json(kRoleId, "editor")})));
+        }
+        if (req.method == "GET" && req.url.find("/groups") != std::string::npos &&
+            req.url.find("/roles") == std::string::npos) {
+            if (!group_created) return ok(page_of(json::array()));
+            return ok(page_of(json::array({group_json(kGroupId, "g")})));
+        }
+        if (req.method == "POST" && req.url.find("/groups") != std::string::npos &&
+            req.url.find("/roles") == std::string::npos) {
+            group_created = true;
+            return ok(group_json(kGroupId, "g"));
+        }
+        if (req.method == "GET" && req.url.find("/groups/") != std::string::npos &&
+            req.url.find("/roles") != std::string::npos) {
+            if (!role_assigned) return status_only(200, json::array());
+            // The server reports `inherit` ABSENT -- inheriting, exactly what the
+            // manifest that stated `inherit: true` declares.
+            return status_only(
+                200, json::array({role_assignment_json(role_json(kRoleId, "editor"),
+                                                       std::nullopt, std::nullopt)}));
+        }
+        if (req.method == "POST" && req.url.find("/roles/") != std::string::npos &&
+            req.url.find("/groups") != std::string::npos) {
+            role_assigned = true;
+            captured_body = req.body;
+            return ok_empty();
+        }
+        return ok_empty();
+    };
     auto client = login_client(st);
+    client.login("a", "b");
 
     ManifestEntity group;
     group.kind = ManifestKind::Group;
     group.key = "g";
     group.name = "g";
-    group.roles = {ManifestRoleBinding{"r", std::nullopt, true}};
+    group.roles = {ManifestRoleBinding{"r", std::nullopt, true}};  // inherit STATED true
     Manifest m{{role_entity("r", "editor"), group}};
 
-    bool threw = false;
-    try {
-        client.management().manifest().plan(m);
-    } catch (const ManifestError&) {
-        threw = true;
-    }
-    AXIAM_CHECK(threw);
-    AXIAM_CHECK(st->count() == 0);
+    const auto report = client.management().manifest().apply(m);
+    AXIAM_CHECK(report.complete());
+
+    AXIAM_CHECK(!captured_body.empty());
+    const auto body = json::parse(captured_body);
+    AXIAM_CHECK(!body.contains("inherit"));  // never sent, though the manifest states true
+
+    const auto replan = client.management().manifest().plan(m);
+    AXIAM_CHECK(replan.converged());
 }
 
 AXIAM_TEST("§27.6.1 item 2: a global role bound with inherit:false is refused, "
@@ -810,6 +866,196 @@ AXIAM_TEST("§27.6.1: an existing group's description drift alone yields an Upda
     AXIAM_CHECK(!captured_body.empty());
     const auto body = json::parse(captured_body);
     AXIAM_CHECK(body.at("description") == "a real new description");
+}
+
+// §27.6.1 item 2: a manifest declaring a PLAIN binding for a role the server currently
+// holds SCOPED (to a resource) is drift -- a binding's natural key is (subject, role),
+// and its resource is a FIELD that decides NoChange vs Update, exactly as the reverse
+// direction (plain -> scoped) already covers. Reconciled as unassign-then-assign, and
+// the new assign carries no resource_id at all (the declared shape).
+AXIAM_TEST("§27.6.1 item 2: a plain binding over a scoped server assignment is an "
+          "Update -- unassign, then assign with no resource_id") {
+    auto st = std::make_shared<FakeState>();
+    std::vector<std::string> call_order;
+    std::string assign_body;
+    st->router = [&](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) return ok_empty();
+        if (req.method == "GET" && req.url.find("/resources") != std::string::npos) {
+            return ok(page_of(json::array({resource_json(kResourceId, "docs", "{}")})));
+        }
+        if (req.method == "GET" && req.url.find("/roles") != std::string::npos &&
+            req.url.find("/groups") == std::string::npos) {
+            return ok(page_of(json::array({role_json(kRoleId, "editor")})));
+        }
+        if (req.method == "GET" && req.url.find("/groups") != std::string::npos &&
+            req.url.find("/roles") == std::string::npos) {
+            return ok(page_of(json::array({group_json(kGroupId, "g")})));
+        }
+        if (req.method == "GET" && req.url.find("/groups/") != std::string::npos &&
+            req.url.find("/roles") != std::string::npos) {
+            // Currently bound SCOPED to "docs" -- the manifest below declares it plain.
+            return status_only(
+                200, json::array({role_assignment_json(role_json(kRoleId, "editor"),
+                                                       kResourceId, std::nullopt)}));
+        }
+        if (req.method == "DELETE" && req.url.find("/roles/") != std::string::npos) {
+            call_order.push_back("unassign");
+            return ok_empty();
+        }
+        if (req.method == "POST" && req.url.find("/roles/") != std::string::npos &&
+            req.url.find("/groups") != std::string::npos) {
+            call_order.push_back("assign");
+            assign_body = req.body;
+            return ok_empty();
+        }
+        return ok_empty();
+    };
+    auto client = login_client(st);
+    client.login("a", "b");
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    // Declares the PLAIN shape -- no resource -- for a role the server holds scoped.
+    group.roles = {ManifestRoleBinding{"r", std::nullopt, std::nullopt}};
+
+    Manifest m{{resource_entity("docs", "docs", std::nullopt), role_entity("r", "editor"), group}};
+
+    const auto plan = client.management().manifest().plan(m);
+    const auto& change = plan.changes[plan.changes.size() - 1];  // Group sorts last
+    AXIAM_CHECK(change.entity.kind == ManifestKind::Group);
+    AXIAM_CHECK(change.action == ChangeAction::Update);
+
+    const auto report = client.management().manifest().apply(m);
+    AXIAM_CHECK(report.complete());
+    // REQUIRE, not CHECK: call_order[0]/[1] below index unconditionally, and a
+    // regression that drops one of the two calls must fail this test cleanly rather
+    // than read past the end of the vector.
+    AXIAM_REQUIRE(call_order.size() == 2);
+    AXIAM_CHECK(call_order[0] == "unassign");
+    AXIAM_CHECK(call_order[1] == "assign");
+    AXIAM_CHECK(!assign_body.empty());
+    const auto body = json::parse(assign_body);
+    AXIAM_CHECK(!body.contains("resource_id"));
+}
+
+// §27.9's "Manifest additions" list ties rule 6's idempotence test to ALL THREE
+// additions together, not each in isolation: metadata, a resource-scoped binding with
+// inherit:false, and a service account with a role binding, applied in one manifest,
+// then re-planned. The existing metadata and nested-resource idempotence tests cover
+// their own additions alone; this is the one that exercises all three at once, the way
+// a real tenant's manifest would.
+AXIAM_TEST("§27.6.1: apply then plan converges with metadata, a resource-scoped "
+          "inherit:false binding and a service account's role binding together") {
+    auto st = std::make_shared<FakeState>();
+    bool resource_created = false;
+    bool group_created = false;
+    bool group_role_assigned = false;
+    bool sa_created = false;
+    bool sa_role_assigned = false;
+    st->router = [&](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) return ok_empty();
+
+        if (req.method == "GET" && req.url.find("/resources") != std::string::npos) {
+            if (!resource_created) return ok(page_of(json::array()));
+            return ok(page_of(
+                json::array({resource_json(kResourceId, "docs", R"({"team":"docs"})")})));
+        }
+        if (req.method == "POST" && req.url.find("/resources") != std::string::npos) {
+            resource_created = true;
+            const auto body = json::parse(req.body);
+            AXIAM_REQUIRE(body.at("metadata") == json::parse(R"({"team":"docs"})"));
+            return ok(resource_json(kResourceId, "docs", R"({"team":"docs"})"));
+        }
+
+        if (req.method == "GET" && req.url.find("/roles") != std::string::npos &&
+            req.url.find("/groups") == std::string::npos &&
+            req.url.find("/service-accounts") == std::string::npos) {
+            return ok(page_of(json::array(
+                {role_json(kRoleId, "editor"), role_json(kRoleIdTwo, "viewer")})));
+        }
+
+        if (req.method == "GET" && req.url.find("/groups") != std::string::npos &&
+            req.url.find("/roles") == std::string::npos) {
+            if (!group_created) return ok(page_of(json::array()));
+            return ok(page_of(json::array({group_json(kGroupId, "g")})));
+        }
+        if (req.method == "POST" && req.url.find("/groups") != std::string::npos &&
+            req.url.find("/roles") == std::string::npos) {
+            group_created = true;
+            return ok(group_json(kGroupId, "g"));
+        }
+        if (req.method == "GET" && req.url.find("/groups/") != std::string::npos &&
+            req.url.find("/roles") != std::string::npos) {
+            if (!group_role_assigned) return status_only(200, json::array());
+            return status_only(
+                200, json::array({role_assignment_json(role_json(kRoleId, "editor"),
+                                                       kResourceId, false)}));
+        }
+        if (req.method == "POST" && req.url.find("/roles/") != std::string::npos &&
+            req.url.find("/groups") != std::string::npos) {
+            group_role_assigned = true;
+            const auto body = json::parse(req.body);
+            AXIAM_REQUIRE(body.at("resource_id") == kResourceId);
+            AXIAM_REQUIRE(body.at("inherit") == false);
+            return ok_empty();
+        }
+
+        if (req.method == "GET" && req.url.find("/service-accounts") != std::string::npos &&
+            req.url.find("/roles") == std::string::npos) {
+            if (!sa_created) return ok(page_of(json::array()));
+            return ok(page_of(json::array({service_account_json(kServiceAccountId, "sa")})));
+        }
+        if (req.method == "POST" && req.url.find("/service-accounts") != std::string::npos &&
+            req.url.find("/roles/") == std::string::npos) {
+            sa_created = true;
+            json body = service_account_json(kServiceAccountId, "sa");
+            body["client_secret"] = "secret";
+            return ok(body);
+        }
+        if (req.method == "GET" && req.url.find("/service-accounts/") != std::string::npos &&
+            req.url.find("/roles") != std::string::npos) {
+            if (!sa_role_assigned) return status_only(200, json::array());
+            return status_only(
+                200, json::array({role_assignment_json(role_json(kRoleIdTwo, "viewer"),
+                                                       std::nullopt, std::nullopt)}));
+        }
+        if (req.method == "POST" && req.url.find("/roles/") != std::string::npos &&
+            req.url.find("/service-accounts") != std::string::npos) {
+            sa_role_assigned = true;
+            const auto body = json::parse(req.body);
+            AXIAM_REQUIRE(!body.contains("resource_id"));
+            AXIAM_REQUIRE(!body.contains("inherit"));
+            return ok_empty();
+        }
+
+        return ok_empty();
+    };
+    auto client = login_client(st);
+    client.login("a", "b");
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    group.roles = {ManifestRoleBinding{"editor_role", std::string("docs"), false}};
+
+    ManifestEntity sa;
+    sa.kind = ManifestKind::ServiceAccount;
+    sa.key = "sa";
+    sa.name = "sa";
+    sa.roles = {ManifestRoleBinding{"viewer_role", std::nullopt, std::nullopt}};
+
+    Manifest m{{resource_entity("docs", "docs", R"({"team":"docs"})"),
+               role_entity("editor_role", "editor"), role_entity("viewer_role", "viewer"),
+               group, sa}};
+
+    const auto report = client.management().manifest().apply(m);
+    AXIAM_CHECK(report.complete());
+
+    const auto replan = client.management().manifest().plan(m);
+    AXIAM_CHECK(replan.converged());
 }
 
 }  // namespace
