@@ -6,6 +6,125 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
+(sha256 `0ac7fd75f83c…`), `openapi.json` and `management-registry.json` from
+`axiam@56fbe44`; this SDK vendors no `proto/`, having no gRPC transport.
+
+### Breaking
+
+- **`TokenAuthenticator::authenticate()` now enforces CONTRACT.md §10.1 rule
+  9.** This is the default, no-evidence entry point — the one `AxiamUser`,
+  the §11 declarative-helper macros, `guard_authenticator()` and every
+  `AxiamGuard` built from it reach. It previously never inspected a token's
+  `cnf` claim at all, so a certificate-bound token (exactly what
+  `authenticate_device()` mints, §6.1 rule 9) or a DPoP-bound one verified as
+  an ordinary bearer token through every guard built on it — the
+  SEC-071/SEC-080 shape §10.1 exists to close. An **unbound** token (no
+  `cnf`, the overwhelming majority of any deployment that has not turned on
+  mTLS or DPoP) is unaffected. A resource server that intends to accept
+  bound tokens now calls `authenticate_sender_constrained(token,
+  presented_thumbprint)` instead, passing the peer certificate's thumbprint
+  from its own TLS layer.
+
+### Added
+
+- **`Client::Builder::with_acting_tenant(std::string)` and, on an existing
+  client, `Client::acting_tenant(const std::string&)` /
+  `Client::clear_acting_tenant()`** (CONTRACT.md §5.2 rule 1). Sends
+  `X-Axiam-Tenant` on every `/api/v1` REST call this client makes — login,
+  refresh, logout, `check_access`/`batch_check`, every `management()` call,
+  and every self-service/WebAuthn POST alike (§5.2.2 rule 4) — only when
+  set, byte-for-byte what every request sent before this. The value must be
+  a UUID, checked client-side with zero wire calls on both forms. The
+  on-client form is gated on a held login result: refused client-side
+  (`AuthzError`, zero wire calls) unless `organization_level` is `true`, and
+  refused outside `reachable_tenant_ids` when present (§5.2.3 rule 4); a
+  client holding no login result sends the header and lets the server's
+  `403` decide. `login`, `login_opaque`, `verify_mfa`, `mfa_setup_confirm`
+  and the WebAuthn setup completion reset the gate to exactly what their own
+  response reports; the WebAuthn authenticate ceremony,
+  `authenticate_device()`, `sso_complete()`, `sso_complete_oauth2()`,
+  `sso_complete_handoff()` and `logout()` reset it to UNKNOWN (never to "not
+  organization-level"). The §17 decision memo key gained a fifth, optional
+  component (the acting tenant), so two tenants asking the same question
+  through one session no longer share a cached answer. Scoped to
+  `Client::Impl` and shared across every `Client` copy of one `build()`
+  call, like every other piece of session state this SDK already shares —
+  see the README for why this differs from the Rust reference's per-handle
+  scoping.
+- **`authenticate_device()` now behaves per CONTRACT.md §6.1 rules 6–10.**
+  The return type (`DeviceAuth { access_token, token_type, expires_in }`)
+  was already correct. Reachable only on a client built with
+  `with_client_cert()` — `AuthError`, client-side, zero wire calls,
+  otherwise. On success the token is **adopted** as this client's
+  credential (`Authorization: Bearer`, on every request from here on) and
+  every request — this one included — withholds any cookie a prior session
+  on this client left in the jar. There is no refresh token for this
+  credential (D-6 of the dogfooding remediation plan): a later `401` on it
+  is `AuthError` with no §9 refresh attempt, even when this client also
+  holds a cookie session. A `429` is `NetworkError`, not `AuthError`, and is
+  not retried. Resets the §5.2 acting-tenant gate to unknown (no
+  `LoginUserInfo`) and clears the §17 decision memo (a credential change).
+- **CONTRACT.md §27.6.1 manifest additions**, at this SDK's flat-entity
+  tier: `resources[].metadata` (`ManifestEntity::metadata_json`, whole-object
+  JSON-value drift); the two-shape role binding on `Group` and the new
+  `ServiceAccount` kind (`ManifestRoleBinding` — a bare role key, or
+  `{role, resource, inherit}`, reconciled additively, with a full rebind —
+  unassign, assign, `tenant_scope` carried across, best-effort restore on a
+  failed assign — for a binding whose resource/inherit changed);
+  `service_accounts` (`ManifestKind::ServiceAccount`,
+  `AXIAM_SERVICE_ACCOUNT(...)`), reconciled by `name` with a client-side
+  refusal when a stated name matches more than one existing account, and
+  whose `Create` outcome carries the one-time `client_secret`
+  (`PlannedChange::service_account_secret`, `Sensitive<T>`) even when a
+  later action of the same `apply` fails.
+- **`PlannedChange::service_account_secret`** (new field, `std::optional<
+  Sensitive<std::string>>`) — see above.
+
+### Fixed
+
+- **The manifest now sends group → role bindings at all.** Before this, a
+  `Group`'s `depends_on` only ordered it after the roles it named; nothing
+  ever called `roles().assign_to_group()`. Bindings are now reconciled
+  additively — a binding the manifest does not name is left untouched,
+  whichever subjects hold it.
+- **A nested resource's `parent_id` now reaches the wire** (dogfooding plan
+  §13 row 17). `ManifestEntity::depends_on` on a `Resource` already ordered
+  a child after its parent; `perform()` never read it when building the
+  `Create`/`Update` request, so a manifest describing a tree created it
+  flat. Resolved through the same id map §27.6.1's role bindings resolve
+  `role`/`resource` keys through.
+- **`resource_type` is stated, or the manifest is refused — never silently
+  `"folder"`** (dogfooding plan §13 row 17). `CreateResourceRequest.resource_type`
+  is required by the server's schema; a `Resource` manifest entity that
+  leaves it empty is now refused by `validate()` before any request, rather
+  than defaulting to a value the contract never states.
+- Group's and ServiceAccount's own `Update` no longer sends `description`
+  unconditionally. Before the two additions above, `Update` was reachable
+  only via a real description difference; now a role-binding difference
+  alone can also produce it, and sending `description: ""` in that case
+  would have cleared the server's real description. Both branches send or
+  skip the field based on whether the manifest states one, and skip the
+  PUT/PATCH entirely — never an empty no-op — when it does not.
+
+### Declined
+
+- **`validate_token` / `introspect_token`** (CONTRACT.md §1.1.1, contract
+  1.51) and **`get_user_info`** (§1.1) — all three are gRPC-only by §1's
+  locked vocabulary. This SDK ships no gRPC transport at all (unchanged
+  since before 1.51), so all three are documented deferrals, per §1.1.1 rule
+  7 / §1.1 rule 6 — never a REST substitution (`POST /oauth2/introspect`
+  authenticates a registered OAuth2 client and is outside the SDK
+  vocabulary in any case).
+- **`role → permission` grant reconciliation** in the manifest, and the
+  **`users`/`scopes`** manifest namespaces — the pre-existing flat-entity
+  tier gap (§27.10), unchanged by this contract version. The three §27.6.1
+  additions this release ships (`metadata`, the two-shape binding,
+  `service_accounts`) do not close it; a consumer needing either still uses
+  the imperative surface for that piece.
+- **`webhooks`** in the manifest — unimplemented, per §27.6's own note that
+  no consumer has asked for it; unchanged.
+
 ## [1.0.0-beta16] - 2026-09-19
 
 ### Added
