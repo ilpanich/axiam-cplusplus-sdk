@@ -34,6 +34,7 @@
 
 #include "axiam/errors.hpp"
 #include "axiam/management.hpp"
+#include "axiam/sensitive.hpp"
 
 namespace axiam::management {
 
@@ -48,6 +49,11 @@ enum class ManifestKind {
     Permission,    ///< A permission (an action). Depends on nothing.
     Role,          ///< A role. Depends on permissions.
     Group,         ///< A group. Depends on roles.
+    /// A machine identity (CONTRACT.md §27.6.1 item 3, contract 1.51). Depends on
+    /// roles (its `roles[]` bindings) and, when a binding is resource-scoped, on the
+    /// resource it names — both already ordered ahead of this by the enumerator
+    /// values above.
+    ServiceAccount,
 };
 
 /// What a plan intends to do to one declared entity.
@@ -60,6 +66,27 @@ enum class ChangeAction {
     Unchanged = 0,  ///< Already matches; nothing will be sent.
     Create,         ///< Does not exist; will be created.
     Update,         ///< Exists but differs; updated in place.
+};
+
+/// One CONTRACT.md §27.6.1 role binding (contract 1.51): a `groups[].roles[]` or
+/// `service_accounts[].roles[]` entry. Either shape the contract specifies —
+///
+/// - a bare role key (`{.role = "editor"}`): no resource, so no inheritance question,
+///   the binding as every SDK had it before 1.51; or
+/// - the resource-scoped shape (`{.role = "editor", .resource = "docs-root", .inherit
+///   = false}`): `resource` and `inherit` are both optional, and `inherit` reaches the
+///   wire ONLY as `false` — an engaged `true` is refused client-side (§27.6.1: "An SDK
+///   MUST NOT send `inherit: true` explicitly, so that an inheritable binding's body
+///   stays byte-for-byte a pre-1.51 body").
+///
+/// is this one struct; a bare role key is simply `resource`/`inherit` both disengaged.
+struct ManifestRoleBinding {
+    std::string role;                     ///< Manifest-local key of the role (a Role entity).
+    std::optional<std::string> resource;  ///< Manifest-local key of the resource, when scoped.
+    /// `false` narrows the assignment to `resource` alone. `true` is REFUSED
+    /// client-side at `plan()` time (see the note above); omit the field for an
+    /// inheritable binding, which is the default both here and on the wire.
+    std::optional<bool> inherit;
 };
 
 /// One entity a manifest declares must exist.
@@ -76,6 +103,27 @@ struct ManifestEntity {
     ///
     /// A KEY, never a UUID: a manifest describes a tenant that may not exist yet.
     std::optional<std::string> depends_on = std::nullopt;
+
+    // ---- Contract 1.51, §27.6.1 additions. Appended after depends_on so every
+    // existing designated-initializer (positional up to depends_on) and every
+    // AXIAM_RESOURCE/AXIAM_ROLE/AXIAM_GROUP macro use still compiles unchanged. ----
+
+    /// §27.6.1 item 1, for a `Resource`: the desired `metadata` object, as JSON text
+    /// (this SDK's convention for a free-form JSON member — see management_models.hpp).
+    /// Disengaged is silent about the field, per rule 3 — never an assertion that the
+    /// server's `metadata` should become `{}`. Drift is JSON VALUE equality of the
+    /// whole object (never key-by-key), matching the contract's own rule: a merge
+    /// would make `apply` unable to remove a key.
+    std::optional<std::string> metadata_json = std::nullopt;
+
+    /// §27.6.1 item 2, for a `Group` or `ServiceAccount`: the roles it must hold.
+    /// Reconciled ADDITIVELY (this SDK's documented scope, see README): a declared
+    /// binding absent from the subject is assigned; a role the manifest does not name
+    /// is left exactly as the tenant already has it, whether or not this subject holds
+    /// it. Changing an EXISTING binding's `resource`/`inherit` is not performed by
+    /// `apply` — use `roles().unassign_from_group()` / `assign_to_group()` (or the
+    /// service-account pair) directly for that.
+    std::vector<ManifestRoleBinding> roles{};
 };
 
 /// A declarative description of the state a tenant must be in.
@@ -88,6 +136,21 @@ struct PlannedChange {
     ManifestEntity entity;                     ///< The declaration this is for.
     ChangeAction action = ChangeAction::Unchanged;  ///< What would be done.
     std::optional<std::string> id;             ///< Server id when it already exists.
+
+    /// CONTRACT.md §27.5 rule 5 (contract 1.51): the ONE-TIME `client_secret` from a
+    /// `ServiceAccount` `Create` outcome, `Sensitive<T>` as always. Engaged only when
+    /// `entity.kind == ManifestKind::ServiceAccount && action == ChangeAction::Create`
+    /// and the create actually succeeded (only path where this field is ever written).
+    /// `Update` and `NoChange` never rotate a secret to reconcile, so this stays
+    /// disengaged for both -- the only way to see one again is the imperative
+    /// `rotate_secret`, which the caller chooses to make.
+    ///
+    /// Returned here rather than only on `apply()`'s overall result because §27.6 rule 7
+    /// already requires every attempted action's outcome, and this is the one place a
+    /// declarative `apply` touches a credential that cannot be read back: an `apply`
+    /// that stopped at a LATER action still needs this one recoverable from
+    /// `ApplyReport::applied`.
+    std::optional<Sensitive<std::string>> service_account_secret;
 
     /// A one-line rendering, e.g. `create permission:read`.
     std::string describe() const;
@@ -222,6 +285,13 @@ private:
 /// A `ManifestEntity` of kind `Group`; remaining members in declaration order.
 #define AXIAM_GROUP(...) \
     ::axiam::management::ManifestEntity { .kind = ::axiam::management::ManifestKind::Group, __VA_ARGS__ }
+
+/// A `ManifestEntity` of kind `ServiceAccount` (contract 1.51, §27.6.1 item 3);
+/// remaining members in declaration order.
+#define AXIAM_SERVICE_ACCOUNT(...) \
+    ::axiam::management::ManifestEntity { \
+        .kind = ::axiam::management::ManifestKind::ServiceAccount, __VA_ARGS__ \
+    }
 
 /// A `Manifest` holding the entity specs given.
 ///

@@ -38,6 +38,9 @@ add_executable(axiam_cpp_tests
   # CONTRACT.md §5.2 rule 1 (contract 1.51): the acting-tenant gate reset on every
   # SSO/federation session completion, with each completion's refused-completion twin.
   test_sso_gate_reset.cpp
+  # CONTRACT.md §27.6.1 (contract 1.51): the three manifest additions -- resource
+  # metadata, the two-shape role binding, and service_accounts.
+  test_manifest_additions.cpp
   # The contract 1.34 §5.2.2 / 1.35 §5.2.3 rules. Uses the management rig AND the
   # OPAQUE fake: the acting-tenant/principal-tenant distinction shows up on both
   # surfaces, and splitting it in two would hide that they are one rule.
