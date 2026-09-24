@@ -32,6 +32,9 @@ add_executable(axiam_cpp_tests
   # CONTRACT.md §5.2 rule 1 (contract 1.51): the acting-tenant helper -- sent when
   # set, absent when not, gated on a held login result, and part of the §17 memo key.
   test_acting_tenant.cpp
+  # CONTRACT.md §6.1 rules 6-10 (contract 1.51): authenticate_device()'s reachability
+  # gate, token adoption, stale-cookie withholding, and no-refresh-on-401.
+  test_device_auth.cpp
   # The contract 1.34 §5.2.2 / 1.35 §5.2.3 rules. Uses the management rig AND the
   # OPAQUE fake: the acting-tenant/principal-tenant distinction shows up on both
   # surfaces, and splitting it in two would hide that they are one rule.

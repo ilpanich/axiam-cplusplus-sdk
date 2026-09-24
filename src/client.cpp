@@ -1002,7 +1002,51 @@ std::vector<AccessDecision> Client::batch_check(const std::vector<AccessCheck>& 
 
 DeviceAuth Client::authenticate_device() {
     p_->ensure_open();
-    HttpResponse resp = p_->execute("POST", "/api/v1/auth/device", "{}", false);
+    // Rule 7: reachable only on a client built with a certificate identity
+    // (with_client_cert). Checked BEFORE any wire call -- the server would
+    // answer 401 regardless of the certificate's absence, so sending the
+    // request anyway would only turn a configuration mistake into an
+    // authentication failure over the network.
+    if (!p_->presents_client_certificate) {
+        throw AuthError(
+            "authenticate_device: this client was not built with with_client_cert() "
+            "(CONTRACT.md §6.1 rule 7) — there is no certificate for the server to "
+            "authenticate, so this call is refused client-side rather than sent");
+    }
+    // §17.1 rule 9: a credential change, on the caller's INTENT, before the wire --
+    // the same discipline login() applies.
+    if (p_->memo) p_->memo->clear();
+
+    HttpRequest req;
+    req.method = "POST";
+    req.url = p_->base_url + "/api/v1/auth/device";
+    req.headers["X-Tenant-ID"] = p_->tenant_header;  // §5: every request
+    req.headers["Accept"] = "application/json";
+    req.headers["Content-Type"] = "application/json";
+    req.body = "{}";
+    {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        if (p_->acting_tenant_id) req.headers[kActingTenantHeader] = *p_->acting_tenant_id;
+    }
+    // Rule 6: withhold any cookie a PRIOR session on this client left in the jar,
+    // on THIS call and (via build_request() once device_access_token is set below)
+    // every one after it. The server reads the axiam_access cookie BEFORE the
+    // Authorization header, so a re-authentication -- rule 6: "a device
+    // re-authenticates by calling this operation again" -- that still carried a
+    // stale cookie would run as the earlier session's principal, not the device's.
+    req.no_stored_cookies = true;
+
+    // No §9 refresh guard for this call: authenticate_device() IS the login
+    // (rule 8), and there is no refresh token to spend even if a stale session
+    // were somehow still usable.
+    HttpResponse resp = p_->send_raw(req);
+    if (resp.status < 200 || resp.status >= 300) {
+        // Rule 8: every refusal is a 401 -> AuthError. A 429 (the per-client-IP
+        // rate limit) maps to NetworkError here, same as any other route, and is
+        // not retried -- this is a POST, and POSTs are not §16-retry-eligible.
+        Client::Impl::raise_for_status(resp);
+    }
+
     auto j = json::parse(resp.body, nullptr, false);
     DeviceAuth da;
     if (!j.is_discarded()) {
@@ -1012,7 +1056,15 @@ DeviceAuth Client::authenticate_device() {
     }
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
-        p_->session = true;
+        // Rule 6: adopted as this client's credential, exactly as login() adopts
+        // a session -- subsequent calls present it as `Authorization: Bearer`
+        // (build_request()) and withhold the cookie jar for as long as it is set.
+        p_->device_access_token = da.access_token;
+        p_->device_session = true;
+        // §5.2 rule 1: a device token carries no LoginUserInfo -- the
+        // acting-tenant gate resets to unknown, same as logout() and every other
+        // session-completing call with no `user` object.
+        p_->login_user_info = std::nullopt;
     }
     return da;
 }
@@ -1064,7 +1116,10 @@ std::optional<std::string> Client::csrf_token() const {
 
 bool Client::has_session() const {
     std::lock_guard<std::mutex> lock(p_->state_mtx);
-    return p_->session;
+    // §6.1 rule 6: a client that adopted a device token holds a usable
+    // credential from a caller's point of view, even though `device_session`
+    // (not `session`) is what excludes it from the §9 refresh guard.
+    return p_->session || p_->device_session;
 }
 
 JwksVerifier& Client::jwks() { return *p_->jwks_verifier; }

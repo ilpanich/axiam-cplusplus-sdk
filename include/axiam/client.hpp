@@ -438,8 +438,65 @@ public:
                        std::optional<std::string> subject_id = std::nullopt);
     std::vector<AccessDecision> batch_check(const std::vector<AccessCheck>& checks);
 
-    /// §6.1 device / service-account authentication via the configured mTLS
-    /// client certificate (POST /api/v1/auth/device).
+    /// `POST /api/v1/auth/device` — device / service-account authentication via
+    /// the configured mTLS client certificate (CONTRACT.md §6.1 rules 6–10,
+    /// contract 1.51).
+    ///
+    /// **One call, no body, three fields back** (rule 6): `{ access_token,
+    /// token_type, expires_in }`, exactly \ref DeviceAuth. `token_type` is
+    /// `"Bearer"`. There is **no refresh token** — a server decision (D-6 of the
+    /// dogfooding remediation plan) — so this client's §9 single-flight refresh
+    /// guard has nothing to spend on this credential: a later `401` on it,
+    /// including from THIS call itself, is surfaced as `AuthError` with **no**
+    /// refresh attempt. Re-authenticate by calling this again, which costs one
+    /// TLS handshake.
+    ///
+    /// **Reachable only on a client built with \ref Builder::with_client_cert**
+    /// (rule 7). On a client without one, this throws `AuthError` **client-side,
+    /// with zero wire calls** — the server would answer `401` regardless, so
+    /// going to the wire would turn a configuration mistake into an
+    /// authentication failure for no reason.
+    ///
+    /// **Adopted as this client's credential** (rule 6's "exactly as it adopts a
+    /// login result"), the same way `login()` is: subsequent calls on this
+    /// client (`check_access`, `management()`, …) present `access_token` as
+    /// `Authorization: Bearer <token>`. This request, and every one after it,
+    /// withholds any cookie a PRIOR session on this client left in the jar
+    /// (`Client::Impl::no_stored_cookies`) — the server reads the `axiam_access`
+    /// cookie before the `Authorization` header, so a client that adopted a
+    /// device token while still replaying a stale cookie would run as the
+    /// previous session's principal instead.
+    ///
+    /// **Every refusal is a `401`** (rule 8, server T22.4): an unknown,
+    /// untrusted, expired, revoked or unbound certificate, and a `Server`-type
+    /// certificate (§27.13 S-7), all map to `AuthError`. This call does not
+    /// enter the §9 refresh guard for it: this IS the login. A `429` (the
+    /// per-client-IP rate limit) follows §16 and is not an authentication
+    /// failure — surfaced as `NetworkError`, never retried by this call (a POST
+    /// is not §16-retry-eligible).
+    ///
+    /// **The token is certificate-bound, and CONTRACT.md §10.1 rule 9 applies to
+    /// it** (rule 9, server T22.3): when AXIAM itself terminated the TLS
+    /// handshake, `access_token` carries `cnf: { "x5t#S256": <thumbprint> }` and
+    /// is usable only on a connection presenting that certificate — this
+    /// client's own subsequent calls qualify because \ref Builder::with_client_cert
+    /// configures the SAME identity on every request. A resource server
+    /// verifying this token itself MUST go through
+    /// `TokenAuthenticator::authenticate_sender_constrained`, never the plain
+    /// `authenticate()`, which has no certificate evidence to check `cnf`
+    /// against and refuses a bound token outright (see `authenticator.hpp`).
+    /// `token_type` stays `"Bearer"` either way and MUST NOT be read as
+    /// evidence of boundness.
+    ///
+    /// **What the token can do** (rule 10): a service-account token
+    /// (`aud: axiam:m2m`), accepted by `check_access`/`batch_check` and by the
+    /// §27 management operations §27.13's S-9 note lists, on exactly the terms
+    /// a user's token would be.
+    ///
+    /// @throws AuthError when this client was not built with a client
+    ///         certificate (client-side, zero wire calls) or on any server
+    ///         refusal (401).
+    /// @throws NetworkError on a 429 or a transport failure.
     DeviceAuth authenticate_device();
 
     // ---- §20 UMA 2.0 — Protection API and ticket grant ----

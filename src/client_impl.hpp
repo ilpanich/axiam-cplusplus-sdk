@@ -90,6 +90,25 @@ struct Client::Impl {
     // state_mtx.
     std::optional<UserInfo> login_user_info;
 
+    // CONTRACT.md §6.1 rule 6 (contract 1.51): authenticate_device() ADOPTS its
+    // token as this client's credential, the same way login() adopts a session
+    // cookie. Empty means "not adopted" (Sensitive<std::string>::empty()).
+    // Guarded by state_mtx. Presented as `Authorization: Bearer <token>` on
+    // every request build_request() builds from here on, and pairs with
+    // `device_session` below to withhold the §9 refresh guard: there is no
+    // refresh token for this credential (D-6), so a later 401 on it must not
+    // spend a wire call trying to refresh a cookie session that may not even
+    // exist.
+    Sensitive<std::string> device_access_token;
+
+    // Set alongside `device_access_token`, and checked instead of `session` at
+    // both §9 refresh-trigger sites (execute() and execute_retrying()): a
+    // device token has no refresh token to spend, so `session && !device_session`
+    // is what gates a refresh attempt. `has_session()` still reports true for
+    // either, because both mean "this client holds a usable credential" from a
+    // caller's point of view.
+    bool device_session = false;
+
     // CONTRACT.md §5.2.2 — the tenant the signed-in principal's record LIVES in, as
     // reported by the login response. Distinct from `tenant_id`/`tenant_slug`, which
     // name the tenant being ACTED ON: the two diverge for an organization-level
@@ -230,6 +249,18 @@ struct Client::Impl {
             // this request -- X-Tenant-ID above and any {tenant_id} path
             // segment are read by different server mechanisms (§27.4 rule 3).
             if (acting_tenant_id) req.headers[kActingTenantHeader] = *acting_tenant_id;
+            // CONTRACT.md §6.1 rule 6 (contract 1.51): a device token this
+            // client adopted (authenticate_device()) is presented as a bearer
+            // credential, and the request withholds any cookie a PRIOR session
+            // on this same client left in the jar. The server reads the
+            // axiam_access cookie BEFORE the Authorization header, so a client
+            // that adopted the device token while still replaying a stale
+            // session cookie would run as the previous session's principal
+            // instead of the device's.
+            if (!device_access_token.empty()) {
+                req.headers["Authorization"] = "Bearer " + detail::reveal(device_access_token);
+                req.no_stored_cookies = true;
+            }
         }
         return req;
     }
@@ -410,7 +441,10 @@ struct Client::Impl {
                 bool have_session;
                 {
                     std::lock_guard<std::mutex> lock(state_mtx);
-                    have_session = session;
+                    // §6.1 rule 6: a device token has no refresh token to spend
+                    // (D-6), so device_session excludes it from the refresh
+                    // attempt even though `session` may also be true.
+                    have_session = session && !device_session;
                 }
                 if (have_session) {
                     do_single_flight_refresh();  // throws AuthError on failure
@@ -440,7 +474,8 @@ struct Client::Impl {
             bool have_session;
             {
                 std::lock_guard<std::mutex> lock(state_mtx);
-                have_session = session;
+                // §6.1 rule 6: same exclusion as execute_retrying() above.
+                have_session = session && !device_session;
             }
             if (have_session) {
                 try {
