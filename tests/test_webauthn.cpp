@@ -112,6 +112,13 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
             R"("tenant_id":")" + kTenantUuid + R"("}})";
 
         if (url.find("/auth/login") != std::string::npos) return reply(200, kLoginOk, true);
+        // C-12 N4.4: authenticate_device(), so a test can adopt a device
+        // credential before exercising a WebAuthn ceremony's replacement of it.
+        if (url.find("/auth/device") != std::string::npos) {
+            return reply(200,
+                         R"({"access_token":"device-tok","token_type":"Bearer",)"
+                         R"("expires_in":900})");
+        }
         if (url.find("/webauthn/register/start") != std::string::npos) {
             return reply(r->register_start_status,
                          r->register_start_body.empty() ? challenge_create : r->register_start_body);
@@ -160,6 +167,23 @@ axiam::Client make_client(std::shared_ptr<axtest::FakeState> st, std::shared_ptr
         // finish call does to it, and with the memo off both behaviours would
         // pass — every check would go to the wire regardless.
         .decision_memo_ttl(std::chrono::milliseconds{5000})
+        .transport(routed(std::move(st), std::move(r)))
+        .build();
+}
+
+/// A client built with an mTLS identity, so authenticate_device() is reachable
+/// (CONTRACT.md §6.1 rule 7) -- for the C-12 N4.4 device-credential tests below.
+axiam::Client device_capable_client(std::shared_ptr<axtest::FakeState> st,
+                                    std::shared_ptr<Replies> r) {
+    const std::string cert = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+    const std::string key =
+        "-----BEGIN AXIAM TEST PLACEHOLDER-----\nMIIB\n-----END AXIAM TEST PLACEHOLDER-----\n";
+    return axiam::Client::builder()
+        .base_url("https://iam.example.com")
+        .tenant_slug("acme")
+        .tenant_id(kTenantUuid)
+        .org_slug("acme-org")
+        .with_client_cert(cert, key)
         .transport(routed(std::move(st), std::move(r)))
         .build();
 }
@@ -457,6 +481,26 @@ AXIAM_TEST("webauthn: discoverable/finish adopts the session the same way") {
                                                            kResponse);
     AXIAM_REQUIRE(login.session_id == "sess-wa");
     AXIAM_REQUIRE(client.has_session());
+}
+
+// CONTRACT.md §6.1 rule 6 (contract 1.51) / C-12 N4.4: a WebAuthn
+// authentication ceremony completes a session, so it replaces any device
+// credential this client had previously adopted. Before the fix,
+// device_access_token/device_session survived finish_login(), so
+// build_request() kept attaching the STALE device bearer (and withholding
+// the fresh WebAuthn cookie session) to every request made after it.
+AXIAM_TEST("webauthn: authenticate/finish replaces an adopted device credential "
+          "(C-12 N4.4)") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = device_capable_client(st, r);
+    client.authenticate_device();
+
+    client.webauthn_authenticate_finish(axiam::Sensitive<std::string>(kState), kResponse);
+
+    client.check_access("read", "doc-1");
+    const auto req = st->last();
+    AXIAM_CHECK(req.headers.find("Authorization") == req.headers.end());
 }
 
 AXIAM_TEST("webauthn: authenticate/finish clears the decision memo") {

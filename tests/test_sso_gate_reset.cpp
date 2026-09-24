@@ -283,4 +283,67 @@ AXIAM_TEST("§17.1 rule 9: sso_complete() clears the decision memo") {
     AXIAM_CHECK(check_calls == 2);  // memo was cleared -- reached the wire again
 }
 
+// ---------------------------------------------------------------------------
+// C-12 N4.4: an SSO completion is one of the calls that "replaces" a
+// previously adopted device credential. sso_complete() has its own inline
+// adoption block; sso_complete_oauth2()/sso_complete_handoff() share
+// parse_federation_session() -- both code paths get their own test.
+// ---------------------------------------------------------------------------
+
+Client device_capable_client(std::shared_ptr<FakeState> st) {
+    const char* cert = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+    const char* key =
+        "-----BEGIN AXIAM TEST PLACEHOLDER-----\nMIIB\n-----END AXIAM TEST PLACEHOLDER-----\n";
+    return Client::builder()
+        .base_url("https://iam.example.com")
+        .tenant_id("11111111-1111-4111-8111-111111111111")
+        .with_client_cert(cert, key)
+        .transport(axtest::make_fake(st))
+        .build();
+}
+
+AXIAM_TEST("C-12 N4.4: sso_complete() replaces an adopted device credential") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(
+                200, R"({"access_token":"device-tok","token_type":"Bearer","expires_in":900})");
+        }
+        if (req.url.find("/federation/oidc/callback") != std::string::npos) {
+            return json_response(200, kSsoSuccess);
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_capable_client(st);
+    client.authenticate_device();
+
+    client.sso_complete("the-code", "the-state");
+
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    AXIAM_CHECK(req.headers.find("Authorization") == req.headers.end());
+}
+
+AXIAM_TEST("C-12 N4.4: sso_complete_oauth2() replaces an adopted device credential") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(
+                200, R"({"access_token":"device-tok","token_type":"Bearer","expires_in":900})");
+        }
+        if (req.url.find("/federation/oauth2/callback") != std::string::npos) {
+            return json_response(200, kSsoSuccess);
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_capable_client(st);
+    client.authenticate_device();
+
+    client.sso_complete_oauth2("the-code", "the-state");
+
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    AXIAM_CHECK(req.headers.find("Authorization") == req.headers.end());
+}
+
 }  // namespace

@@ -283,4 +283,118 @@ AXIAM_TEST("§5.2 rule 1: authenticate_device() resets the acting-tenant gate to
     AXIAM_CHECK(client.acting_tenant_id().has_value());
 }
 
+// ---------------------------------------------------------------------------
+// C-12 N4.4: "any later session-establishing call replaces" the device
+// credential, and logout() clears it. Before this fix, ONLY close() touched
+// device_access_token/device_session at all — a device credential, once
+// adopted, was permanent for the client's whole lifetime.
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("C-12 N4.4: logout() releases an adopted device credential") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(200, kDeviceOk);
+        }
+        if (req.url.find("/auth/logout") != std::string::npos) {
+            return json_response(200, "{}");
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_client(st);
+    client.authenticate_device();
+    AXIAM_REQUIRE(client.has_session());
+
+    client.logout();
+
+    // Before the fix: logout() cleared only `session`, leaving `device_session`
+    // set, so has_session() (session || device_session) stayed true and the
+    // released device bearer kept riding on every later request.
+    AXIAM_CHECK_FALSE(client.has_session());
+}
+
+AXIAM_TEST("C-12 N4.4: login() replaces an adopted device credential") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(200, kDeviceOk);
+        }
+        if (req.url.find("/auth/login") != std::string::npos) {
+            HttpResponse resp = json_response(
+                200, R"({"session_id":"sess-1","expires_in":900,)"
+                     R"("user":{"id":"u1","username":"root","email":"root@example.com",)"
+                     R"("tenant_id":"11111111-1111-4111-8111-111111111111"}})");
+            resp.set_cookies.push_back("axiam_access=fresh-cookie; HttpOnly; Path=/");
+            return resp;
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_client(st);
+    client.authenticate_device();  // adopts device_access_token/device_session
+
+    client.login("root@example.com", "pw");
+
+    // Before the fix: build_request()'s `!device_access_token.empty()` branch
+    // kept firing after login() too, so this request still carried
+    // `Authorization: Bearer device-token-xyz` and withheld login()'s own
+    // fresh cookie — the new session was unreachable.
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    AXIAM_CHECK(req.headers.find("Authorization") == req.headers.end());
+}
+
+AXIAM_TEST("C-12 N4.4: verify_mfa() replaces an adopted device credential") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(200, kDeviceOk);
+        }
+        if (req.url.find("/auth/mfa/verify") != std::string::npos) {
+            return json_response(
+                200, R"({"session_id":"sess-1","expires_in":900,)"
+                     R"("user":{"id":"u1","username":"root","email":"root@example.com",)"
+                     R"("tenant_id":"11111111-1111-4111-8111-111111111111"}})");
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_client(st);
+    client.authenticate_device();
+
+    client.verify_mfa("challenge-tok", "123456");
+
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    AXIAM_CHECK(req.headers.find("Authorization") == req.headers.end());
+}
+
+// The I4 twin: re-authenticating as the device (calling authenticate_device()
+// again) is "the device re-authenticates" (rule 6), not one of the calls this
+// fix touches — it must keep working exactly as before, overwriting the old
+// device credential with the new one.
+AXIAM_TEST("C-12 N4.4 (I4): a second authenticate_device() call still replaces the "
+          "device credential with the new one") {
+    auto st = std::make_shared<FakeState>();
+    int device_calls = 0;
+    st->router = [&device_calls](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            ++device_calls;
+            const char* body = device_calls == 1
+                                    ? kDeviceOk
+                                    : R"({"access_token":"device-token-2","token_type":)"
+                                      R"("Bearer","expires_in":900})";
+            return json_response(200, body);
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_client(st);
+    client.authenticate_device();
+    client.authenticate_device();  // re-authenticates, per rule 6
+
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    auto it = req.headers.find("Authorization");
+    AXIAM_CHECK(it != req.headers.end());
+    AXIAM_CHECK(it->second == "Bearer device-token-2");
+}
+
 }  // namespace

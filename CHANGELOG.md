@@ -97,6 +97,21 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
 
 ### Fixed
 
+- **An adopted device credential is now released the instant any other call
+  completes a session** (CONTRACT.md §6.1 rule 6, CONTRACT 1.52 N4.4 (C-12)).
+  Before this fix, `authenticate_device()`'s `device_access_token` /
+  `device_session` were set once and never touched again by anything but
+  `close()` — `login()`, `login_opaque()`, `verify_mfa()`,
+  `mfa_setup_confirm()`, both WebAuthn finish ceremonies, `sso_complete()`
+  and `sso_complete_oauth2()`/`sso_complete_handoff()` all left them in
+  place, so `build_request()`'s `!device_access_token.empty()` branch kept
+  attaching the STALE device bearer — and withholding the fresh session's
+  cookie — to every request made after any of those calls succeeded, making
+  the new session unreachable. `logout()` likewise cleared only `session`,
+  so `has_session()` (`session || device_session`) stayed `true` and the
+  released device bearer kept riding on every request after logout.
+  `authenticate_device()` called again (device re-authentication, rule 6) is
+  unaffected — it already overwrote both fields with its own new values.
 - **The manifest now sends group → role bindings at all.** Before this, a
   `Group`'s `depends_on` only ordered it after the roles it named; nothing
   ever called `roles().assign_to_group()`. Bindings are now reconciled

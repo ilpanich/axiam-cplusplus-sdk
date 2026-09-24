@@ -155,6 +155,10 @@ LoginResult Client::mfa_setup_confirm(const Sensitive<std::string>& setup_token,
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // C-12 N4.4: mfa_setup_confirm() completes a login (see the comment
+        // below), so it replaces any device credential this client had
+        // previously adopted, same as login()/verify_mfa().
+        p_->release_device_credential_locked();
         // §5.2 rule 1 gate: reset to exactly what THIS response reported --
         // mfa_setup_confirm is the MFA-setup carve-out of "which sessions count
         // as holding a login result" (C-1's "For C-12" question 5), never

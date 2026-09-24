@@ -109,6 +109,26 @@ struct Client::Impl {
     // caller's point of view.
     bool device_session = false;
 
+    // CONTRACT.md §6.1 rule 6 (contract 1.51) / C-12 N4.4: "any later
+    // session-establishing call replaces it". Until this fix, `login()`,
+    // `login_opaque()`, `verify_mfa()`, the MFA setup confirmation, both
+    // WebAuthn setup-finish calls and the WebAuthn authentication finish all
+    // left `device_access_token`/`device_session` untouched -- so a client
+    // that had adopted a device credential and then established a fresh
+    // session via any of those calls still had every subsequent request
+    // carry the STALE device bearer and withhold the new session's cookie
+    // (see `build_request()`'s `!device_access_token.empty()` branch above),
+    // making the new session unreachable. Only `close()` cleared these
+    // fields at all. `authenticate_device()` itself is exempt from calling
+    // this: re-authenticating as the device is "the device re-authenticates"
+    // (rule 6), and it already overwrites both fields with its own new
+    // values, which is the correct "replaced" outcome for that call.
+    // Callers already hold `state_mtx`; this does not lock it itself.
+    void release_device_credential_locked() {
+        device_access_token = Sensitive<std::string>{};
+        device_session = false;
+    }
+
     // CONTRACT.md §5.2.2 — the tenant the signed-in principal's record LIVES in, as
     // reported by the login response. Distinct from `tenant_id`/`tenant_slug`, which
     // name the tenant being ACTED ON: the two diverge for an organization-level

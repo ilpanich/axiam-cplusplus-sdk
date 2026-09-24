@@ -72,6 +72,13 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
         if (url.find("/auth/login") != std::string::npos) {
             return reply(r->login_status, r->login_body, true);
         }
+        // C-12 N4.4: authenticate_device(), so a test can adopt a device
+        // credential before exercising setup/confirm's replacement of it.
+        if (url.find("/auth/device") != std::string::npos) {
+            return reply(200,
+                         R"({"access_token":"device-tok","token_type":"Bearer",)"
+                         R"("expires_in":900})");
+        }
         if (url.find("/auth/mfa/setup/enroll") != std::string::npos) {
             return reply(r->enroll_status, r->enroll_body);
         }
@@ -117,6 +124,23 @@ axiam::Client make_client(std::shared_ptr<axtest::FakeState> st, std::shared_ptr
         // Two tests here assert what an operation does to the §17 memo, and with
         // the memo off (the default) both would pass either way.
         .decision_memo_ttl(std::chrono::milliseconds{5000})
+        .transport(routed(std::move(st), std::move(r)))
+        .build();
+}
+
+/// A client built with an mTLS identity, so authenticate_device() is reachable
+/// (CONTRACT.md §6.1 rule 7) -- for the C-12 N4.4 device-credential test below.
+axiam::Client device_capable_client(std::shared_ptr<axtest::FakeState> st,
+                                    std::shared_ptr<Replies> r) {
+    const std::string cert = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+    const std::string key =
+        "-----BEGIN AXIAM TEST PLACEHOLDER-----\nMIIB\n-----END AXIAM TEST PLACEHOLDER-----\n";
+    return axiam::Client::builder()
+        .base_url("https://iam.example.com")
+        .tenant_slug("acme")
+        .tenant_id(kTenantUuid)
+        .org_slug("acme-org")
+        .with_client_cert(cert, key)
         .transport(routed(std::move(st), std::move(r)))
         .build();
 }
@@ -306,6 +330,22 @@ AXIAM_TEST("account: setup/confirm adopts credentials exactly as login does") {
     const std::string body = last_body(*st, "/mfa/setup/confirm");
     AXIAM_REQUIRE(contains(body, R"("setup_token":"setup-token-value")"));
     AXIAM_REQUIRE(contains(body, R"("totp_code":"123456")"));
+}
+
+// CONTRACT.md §6.1 rule 6 (contract 1.51) / C-12 N4.4: setup/confirm completes
+// a login (the comment above), so it replaces any device credential this
+// client had previously adopted, same as login()/verify_mfa().
+AXIAM_TEST("account: setup/confirm replaces an adopted device credential (C-12 N4.4)") {
+    auto st = std::make_shared<axtest::FakeState>();
+    auto r = std::make_shared<Replies>();
+    auto client = device_capable_client(st, r);
+    client.authenticate_device();
+
+    client.mfa_setup_confirm(axiam::Sensitive<std::string>(kSetupToken), "123456");
+
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    AXIAM_CHECK(req.headers.find("Authorization") == req.headers.end());
 }
 
 AXIAM_TEST("account: setup/confirm clears the decision memo") {

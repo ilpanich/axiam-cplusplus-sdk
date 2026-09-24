@@ -474,6 +474,12 @@ LoginResult Client::login(const std::string& username_or_email, const std::strin
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // C-12 N4.4: this call completes a session, so any device credential
+        // this client had previously adopted (authenticate_device()) is
+        // replaced -- otherwise build_request()'s `!device_access_token.empty()`
+        // branch would keep attaching the STALE device bearer, and withholding
+        // the cookie THIS response just set, to every request from here on.
+        p_->release_device_credential_locked();
         // §5.2 rule 1 gate: this call just completed a session, so the acting-
         // tenant gate is reset to exactly what THIS response reported -- never
         // carried over from an earlier login (the C-5 lesson: axiam-csharp-sdk
@@ -707,6 +713,12 @@ LoginResult Client::login_opaque(const std::string& username_or_email,
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // C-12 N4.4: this call completes a session, so any device credential
+        // this client had previously adopted (authenticate_device()) is
+        // replaced -- otherwise build_request()'s `!device_access_token.empty()`
+        // branch would keep attaching the STALE device bearer, and withholding
+        // the cookie THIS response just set, to every request from here on.
+        p_->release_device_credential_locked();
         // §5.2 rule 1 gate: this call just completed a session, so the acting-
         // tenant gate is reset to exactly what THIS response reported -- never
         // carried over from an earlier login (the C-5 lesson: axiam-csharp-sdk
@@ -810,6 +822,12 @@ LoginResult Client::verify_mfa(const std::string& challenge_token, const std::st
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // C-12 N4.4: this call completes a session, so any device credential
+        // this client had previously adopted (authenticate_device()) is
+        // replaced -- otherwise build_request()'s `!device_access_token.empty()`
+        // branch would keep attaching the STALE device bearer, and withholding
+        // the cookie THIS response just set, to every request from here on.
+        p_->release_device_credential_locked();
         // §5.2 rule 1 gate: this call just completed a session, so the acting-
         // tenant gate is reset to exactly what THIS response reported -- never
         // carried over from an earlier login (the C-5 lesson: axiam-csharp-sdk
@@ -846,6 +864,11 @@ void Client::logout() {
     }
     std::lock_guard<std::mutex> lock(p_->state_mtx);
     p_->session = false;
+    // C-12 N4.4: "logout clears it" — before this fix, logout() cleared only
+    // `session`, leaving an adopted device credential (`device_access_token`/
+    // `device_session`) in place, so has_session() stayed true and the
+    // released device bearer kept riding on every request made after logout.
+    p_->release_device_credential_locked();
     p_->csrf.clear();
     // §5.2 rule 1: this client no longer holds a login result to gate
     // acting_tenant() on -- reset to "unknown", not to "not organization-level".

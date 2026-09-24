@@ -468,6 +468,15 @@ re-authenticates by calling `authenticate_device()` again. A `429` (the
 per-client-IP rate limit) is `NetworkError`, not `AuthError`, and is never
 retried by this call.
 
+**Held until replaced, on the caller's INTENT (CONTRACT 1.52 N4.4 (C-12)).**
+The device credential is not permanent: it is replaced the instant any other
+call completes a session on this client — `login()`, `login_opaque()`,
+`verify_mfa()`, `mfa_setup_confirm()`, a WebAuthn ceremony, an SSO completion,
+or `authenticate_device()` itself (a device re-authentication). `logout()`
+clears it outright, and `has_session()` reports `false` afterwards.
+`refresh()` never touches it, per rule 6's "there is no refresh token"
+above.
+
 **The token is certificate-bound, and §10.1 rule 9 applies to it.** When
 AXIAM itself terminated the TLS handshake, `access_token` carries
 `cnf: { "x5t#S256": … }` and is usable only on a connection presenting that

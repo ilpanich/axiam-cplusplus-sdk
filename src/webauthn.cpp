@@ -258,6 +258,9 @@ WebauthnLoginResult finish_login(Client::Impl& impl, const char* path,
     {
         std::lock_guard<std::mutex> lock(impl.state_mtx);
         impl.session = true;
+        // C-12 N4.4: a WebAuthn authentication completes a session, so it
+        // replaces any device credential this client had previously adopted.
+        impl.release_device_credential_locked();
         // CONTRACT.md §5.2 rule 1 (contract 1.51): WebauthnLoginResult carries no
         // `LoginUserInfo` -- this ceremony completes a session without one, so
         // the acting-tenant gate resets to UNKNOWN (never to "not
@@ -533,6 +536,10 @@ LoginResult Client::webauthn_setup_register_finish(const Sensitive<std::string>&
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // C-12 N4.4: the WebAuthn setup ceremony completes a login (same as
+        // mfa_setup_confirm()), so it replaces any device credential this
+        // client had previously adopted.
+        p_->release_device_credential_locked();
         // §5.2 rule 1 gate: reset to exactly what THIS response reported (the
         // WebAuthn passkey/security-key setup carve-out of "which sessions
         // count as holding a login result" -- disengaged when the server sent
