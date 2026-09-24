@@ -523,4 +523,293 @@ AXIAM_TEST("§27.6.1 item 3: two existing service accounts with a stated name ma
     AXIAM_CHECK(threw);
 }
 
+// ---------------------------------------------------------------------------
+// validate() -- the rest of §27.6.1 item 2's client-side refusals
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("§27.6.1 item 2: a binding naming an undeclared role is refused, "
+          "zero wire calls") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) -> HttpResponse { return ok_empty(); };
+    auto client = login_client(st);
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    group.roles = {ManifestRoleBinding{"no-such-role", std::nullopt, std::nullopt}};
+    Manifest m{{group}};
+
+    bool threw = false;
+    try {
+        client.management().manifest().plan(m);
+    } catch (const ManifestError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+    AXIAM_CHECK(st->count() == 0);
+}
+
+AXIAM_TEST("§27.6.1 item 2: a binding naming an undeclared resource is refused, "
+          "zero wire calls") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) -> HttpResponse { return ok_empty(); };
+    auto client = login_client(st);
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    group.roles = {ManifestRoleBinding{"r", std::string("no-such-resource"), std::nullopt}};
+    Manifest m{{role_entity("r", "editor"), group}};
+
+    bool threw = false;
+    try {
+        client.management().manifest().plan(m);
+    } catch (const ManifestError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+    AXIAM_CHECK(st->count() == 0);
+}
+
+AXIAM_TEST("§27.6.1 item 2: inherit stated as true is refused, zero wire calls") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) -> HttpResponse { return ok_empty(); };
+    auto client = login_client(st);
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    group.roles = {ManifestRoleBinding{"r", std::nullopt, true}};
+    Manifest m{{role_entity("r", "editor"), group}};
+
+    bool threw = false;
+    try {
+        client.management().manifest().plan(m);
+    } catch (const ManifestError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+    AXIAM_CHECK(st->count() == 0);
+}
+
+AXIAM_TEST("§27.6.1 item 2: a global role bound with inherit:false is refused, "
+          "zero wire calls") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) -> HttpResponse { return ok_empty(); };
+    auto client = login_client(st);
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    group.roles = {ManifestRoleBinding{"r", std::string("docs"), false}};
+    Manifest m{{resource_entity("docs", "docs", std::nullopt),
+               role_entity("r", "global-role", /*is_global=*/true), group}};
+
+    bool threw = false;
+    try {
+        client.management().manifest().plan(m);
+    } catch (const ManifestError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+    AXIAM_CHECK(st->count() == 0);
+}
+
+// ---------------------------------------------------------------------------
+// service_accounts[].roles[] -- the whole reconciliation path, end to end
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("§27.6.1 items 2+3: a NEW service account's role bindings are all "
+          "assigned on Create") {
+    auto st = std::make_shared<FakeState>();
+    std::vector<std::string> assigned;
+    st->router = [&](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) return ok_empty();
+        if (req.method == "GET" && req.url.find("/service-accounts") != std::string::npos) {
+            return ok(page_of(json::array()));
+        }
+        if (req.method == "POST" && req.url.find("/service-accounts") != std::string::npos &&
+            req.url.find("/roles/") == std::string::npos) {
+            json body = service_account_json("sa-1", "device-fleet");
+            body["client_secret"] = "secret";
+            return ok(body);
+        }
+        if (req.method == "GET" && req.url.find("/roles") != std::string::npos &&
+            req.url.find("/service-accounts") == std::string::npos) {
+            return ok(page_of(json::array({role_json(kRoleId, "editor")})));
+        }
+        if (req.method == "POST" && req.url.find("/roles/") != std::string::npos &&
+            req.url.find("/service-accounts") != std::string::npos) {
+            assigned.push_back(req.body);
+            return ok_empty();
+        }
+        return ok_empty();
+    };
+    auto client = login_client(st);
+    client.login("a", "b");
+
+    ManifestEntity sa;
+    sa.kind = ManifestKind::ServiceAccount;
+    sa.key = "device";
+    sa.name = "device-fleet";
+    sa.roles = {ManifestRoleBinding{"r", std::nullopt, std::nullopt}};
+
+    Manifest m{{role_entity("r", "editor"), sa}};
+    const auto report = client.management().manifest().apply(m);
+    AXIAM_CHECK(report.complete());
+    AXIAM_CHECK(assigned.size() == 1);
+    const auto assigned_body = json::parse(assigned[0]);
+    AXIAM_CHECK(assigned_body.at("service_account_id") == "sa-1");
+}
+
+// A service account with a description drift (an Update for a REAL reason) whose
+// EXISTING role binding already matches -- covers the description-Update branch and
+// reconcile_role_bindings' NoChange ("already satisfied") path together.
+AXIAM_TEST("§27.6.1 items 2+3: an existing service account's description-Update "
+          "leaves an already-satisfied role binding untouched") {
+    auto st = std::make_shared<FakeState>();
+    int assign_calls = 0;
+    st->router = [&](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) return ok_empty();
+        if (req.method == "GET" && req.url.find("/service-accounts") != std::string::npos &&
+            req.url.find("/roles") == std::string::npos) {
+            return ok(page_of(json::array({service_account_json("sa-1", "device-fleet")})));
+        }
+        if (req.method == "GET" && req.url.find("/service-accounts/") != std::string::npos &&
+            req.url.find("/roles") != std::string::npos) {
+            // Already bound, exactly as declared: plain, no resource.
+            return status_only(
+                200, json::array({role_assignment_json(role_json(kRoleId, "editor"),
+                                                       std::nullopt, std::nullopt)}));
+        }
+        if (req.method == "GET" && req.url.find("/roles") != std::string::npos &&
+            req.url.find("/service-accounts") == std::string::npos) {
+            return ok(page_of(json::array({role_json(kRoleId, "editor")})));
+        }
+        if (req.method == "PUT" &&
+            req.url.find("/service-accounts/") != std::string::npos) {
+            const auto body = json::parse(req.body);
+            AXIAM_REQUIRE(body.at("description") == "new description");
+            return ok(service_account_json("sa-1", "device-fleet"));
+        }
+        if (req.method == "POST" && req.url.find("/roles/") != std::string::npos &&
+            req.url.find("/service-accounts") != std::string::npos) {
+            ++assign_calls;
+            return ok_empty();
+        }
+        return ok_empty();
+    };
+    auto client = login_client(st);
+    client.login("a", "b");
+
+    ManifestEntity sa;
+    sa.kind = ManifestKind::ServiceAccount;
+    sa.key = "device";
+    sa.name = "device-fleet";
+    sa.description = "new description";  // differs from the server's (empty)
+    sa.roles = {ManifestRoleBinding{"r", std::nullopt, std::nullopt}};
+
+    Manifest m{{role_entity("r", "editor"), sa}};
+    const auto plan = client.management().manifest().plan(m);
+    AXIAM_CHECK(plan.changes.back().action == ChangeAction::Update);
+
+    const auto report = client.management().manifest().apply(m);
+    AXIAM_CHECK(report.complete());
+    AXIAM_CHECK(assign_calls == 0);  // already satisfied -- reconcile_role_bindings' NoChange
+}
+
+// A resource-scoped binding naming a resource that does NOT YET EXIST on the server
+// (this same apply is about to create it) must not be read as already-satisfied at
+// plan() time for an otherwise-existing subject.
+AXIAM_TEST("§27.6.1 item 2: an existing group's binding to a NOT-YET-CREATED resource "
+          "plans as Update") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) return ok_empty();
+        if (req.method == "GET" && req.url.find("/resources") != std::string::npos) {
+            return ok(page_of(json::array()));  // "docs" does not exist yet
+        }
+        if (req.method == "GET" && req.url.find("/roles") != std::string::npos &&
+            req.url.find("/groups") == std::string::npos) {
+            return ok(page_of(json::array({role_json(kRoleId, "editor")})));
+        }
+        if (req.method == "GET" && req.url.find("/groups") != std::string::npos &&
+            req.url.find("/roles") == std::string::npos) {
+            return ok(page_of(json::array({group_json(kGroupId, "g")})));
+        }
+        if (req.method == "GET" && req.url.find("/groups/") != std::string::npos &&
+            req.url.find("/roles") != std::string::npos) {
+            return ok(json::array());  // the group holds no bindings at all yet
+        }
+        return status_only(500, json{{"message", "unexpected write in a plan()-only test"}});
+    };
+    auto client = login_client(st);
+    client.login("a", "b");
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    group.roles = {ManifestRoleBinding{"r", std::string("docs"), false}};
+
+    Manifest m{{resource_entity("docs", "docs", std::nullopt), role_entity("r", "editor"), group}};
+    const auto plan = client.management().manifest().plan(m);
+    const auto& group_change =
+        plan.changes[plan.changes.size() - 1];  // Group sorts last among these kinds
+    AXIAM_CHECK(group_change.entity.kind == ManifestKind::Group);
+    AXIAM_CHECK(group_change.action == ChangeAction::Update);
+}
+
+// PlannedChange::describe() names every kind, ServiceAccount included.
+AXIAM_TEST("PlannedChange::describe() names a service_account entity") {
+    PlannedChange change;
+    change.entity.kind = ManifestKind::ServiceAccount;
+    change.entity.key = "device";
+    change.action = ChangeAction::Create;
+
+    AXIAM_CHECK(change.describe() == "create service_account:device");
+}
+
+// An existing GROUP's description-Update, with no role bindings at all -- the other
+// half of the Group description-vs-role-binding-only distinction the fix for the
+// description-clearing hazard introduced.
+AXIAM_TEST("§27.6.1: an existing group's description drift alone yields an Update "
+          "whose PUT body carries it") {
+    auto st = std::make_shared<FakeState>();
+    std::string captured_body;
+    st->router = [&](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) return ok_empty();
+        if (req.method == "GET" && req.url.find("/groups") != std::string::npos) {
+            return ok(page_of(json::array({group_json(kGroupId, "g")})));
+        }
+        if (req.method == "PUT" && req.url.find("/groups/") != std::string::npos) {
+            captured_body = req.body;
+            return ok(group_json(kGroupId, "g"));
+        }
+        return ok_empty();
+    };
+    auto client = login_client(st);
+    client.login("a", "b");
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    group.description = "a real new description";  // server's is "d" -- genuine drift
+
+    Manifest m{{group}};
+    const auto plan = client.management().manifest().plan(m);
+    AXIAM_CHECK(plan.changes[0].action == ChangeAction::Update);
+
+    const auto report = client.management().manifest().apply(m);
+    AXIAM_CHECK(report.complete());
+    AXIAM_CHECK(!captured_body.empty());
+    const auto body = json::parse(captured_body);
+    AXIAM_CHECK(body.at("description") == "a real new description");
+}
+
 }  // namespace

@@ -107,6 +107,7 @@ AXIAM_TEST("§27.6: apply order is derived from kind, not from declaration order
     ManifestEntity p; p.kind = ManifestKind::Permission; p.key = "p";   p.name = "docs:read";
     p.action = "docs:read";
     ManifestEntity s; s.kind = ManifestKind::Resource;   s.key = "res"; s.name = "root";
+    s.resource_type = "folder";
     manifest.entities = {g, r, p, s};
 
     const auto ordered = ManifestApi::ordered(manifest);
@@ -120,9 +121,9 @@ AXIAM_TEST("§27.6: apply order is derived from kind, not from declaration order
 AXIAM_TEST("§27.6: a parent resource is ordered before its child") {
     Manifest manifest;
     ManifestEntity child; child.kind = ManifestKind::Resource; child.key = "child";
-    child.name = "child"; child.depends_on = "parent";
+    child.name = "child"; child.depends_on = "parent"; child.resource_type = "folder";
     ManifestEntity parent; parent.kind = ManifestKind::Resource; parent.key = "parent";
-    parent.name = "parent";
+    parent.name = "parent"; parent.resource_type = "folder";
     manifest.entities = {child, parent};
 
     const auto ordered = ManifestApi::ordered(manifest);
@@ -177,9 +178,9 @@ AXIAM_TEST("§27.6: a cycle is refused before any request") {
     auto fixture = axtest::mgmt::signed_in(200, kEmptyPage);
     Manifest manifest;
     ManifestEntity a; a.kind = ManifestKind::Resource; a.key = "a"; a.name = "a";
-    a.depends_on = "b";
+    a.depends_on = "b"; a.resource_type = "folder";
     ManifestEntity b; b.kind = ManifestKind::Resource; b.key = "b"; b.name = "b";
-    b.depends_on = "a";
+    b.depends_on = "a"; b.resource_type = "folder";
     manifest.entities = {a, b};
 
     bool threw = false;
