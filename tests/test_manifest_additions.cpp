@@ -813,6 +813,34 @@ AXIAM_TEST("§27.6.1 item 2: a global role bound with inherit:false is refused, 
     AXIAM_CHECK(st->count() == 0);
 }
 
+// CONTRACT 1.52 N6.2 (C-12): "inherit without a resource is refused
+// client-side." `inherit: false` NARROWS a binding to one resource; a plain
+// (unscoped) binding names none, so the pairing has nothing to mean. Before
+// this fix, `{role, resource: nullopt, inherit: false}` validated and
+// reached the wire as `inherit: false` with no `resource` at all.
+AXIAM_TEST("§27.6.1 item 2: a plain binding with inherit:false (no resource) is "
+          "refused, zero wire calls (C-12 N6.2)") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) -> HttpResponse { return ok_empty(); };
+    auto client = login_client(st);
+
+    ManifestEntity group;
+    group.kind = ManifestKind::Group;
+    group.key = "g";
+    group.name = "g";
+    group.roles = {ManifestRoleBinding{"r", std::nullopt, false}};  // no resource
+    Manifest m{{role_entity("r", "editor"), group}};
+
+    bool threw = false;
+    try {
+        client.management().manifest().plan(m);
+    } catch (const ManifestError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+    AXIAM_CHECK(st->count() == 0);
+}
+
 // ---------------------------------------------------------------------------
 // service_accounts[].roles[] -- the whole reconciliation path, end to end
 // ---------------------------------------------------------------------------

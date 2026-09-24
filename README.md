@@ -1836,10 +1836,12 @@ Four properties, all load-bearing:
 Incoherence is refused *before the first request*: a duplicate key, a
 `depends_on` naming nothing, a dependency cycle, a stated `resource_type` left
 empty (see below), a resource-scoped role binding naming an undeclared role or
-resource, a role bound twice to one subject, or a global role bound with
-`inherit: false` all throw `ManifestError` from `validate()`, which `plan()`
-calls itself. Discovering that halfway through, with no rollback, is strictly
-worse.
+resource, a role bound twice to one subject, a global role bound with
+`inherit: false`, or a **plain** (no-`resource`) binding that states
+`inherit: false` (CONTRACT 1.52 N6.2 (C-12): `inherit: false` narrows a
+binding to a resource, and a plain binding names none) all throw
+`ManifestError` from `validate()`, which `plan()` calls itself. Discovering
+that halfway through, with no rollback, is strictly worse.
 
 **A resource's `resource_type` is stated, or the manifest is refused —
 never silently `"folder"`.** `CreateResourceRequest.resource_type` is required

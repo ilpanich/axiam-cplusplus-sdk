@@ -208,6 +208,25 @@ void ManifestApi::validate(const Manifest& manifest) {
                                     "\" with inherit: false -- a global role ignores "
                                     "resource scope (CONTRACT.md §27.6.1 item 2)");
             }
+            // CONTRACT 1.52 N6.2 (C-12): "an object binding requires resource;
+            // inherit without a resource is refused client-side." A stated
+            // `inherit: true` is its own carve-out (accepted and planned like
+            // an omitted one, on ANY binding, per the same rule's first
+            // bullet -- the test two below pins that on a plain binding).
+            // What is refused is a stated `inherit: false` with no
+            // `resource`: `false` NARROWS a binding to one resource, and a
+            // plain binding has no resource to narrow to. Before this fix,
+            // `{role, resource: nullopt, inherit: false}` validated and
+            // reached the wire as `inherit: false` with no `resource` at
+            // all -- a shape the manifest struct can express but the
+            // contract never defines the meaning of.
+            if (!b.resource && b.inherit && !*b.inherit) {
+                throw ManifestError(
+                    "\"" + e.key + "\" states inherit: false on its plain (unscoped) "
+                    "binding of role \"" + b.role + "\" -- inherit: false narrows a "
+                    "binding to a resource, and this binding names none "
+                    "(CONTRACT.md §27.6.1 item 2 / CONTRACT 1.52 N6.2 (C-12))");
+            }
         }
     }
 }

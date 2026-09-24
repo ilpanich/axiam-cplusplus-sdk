@@ -97,6 +97,16 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
 
 ### Fixed
 
+- **A manifest's plain (no-`resource`) role binding that states
+  `inherit: false` is now refused client-side** (CONTRACT.md §27.6.1 item 2,
+  CONTRACT 1.52 N6.2 (C-12)). `inherit: false` narrows a binding to one
+  resource; a plain binding names none, so the pairing has nothing to mean.
+  Before this fix, `{role, resource: std::nullopt, inherit: false}` passed
+  `validate()` and reached the wire as `inherit: false` with no `resource`
+  at all — a shape `ManifestRoleBinding` can express but the contract never
+  defines the meaning of. A stated `inherit: true` with no `resource` is
+  unaffected: item 2's first bullet accepts it on any binding, planned
+  exactly like an omitted one, matching this SDK's existing behaviour.
 - **A malformed `200` from `POST /api/v1/auth/device` is refused, not
   adopted** (CONTRACT.md §6.1 rule 6, CONTRACT 1.52 N4.2 (C-12)). Before this
   fix, an unparseable body, a non-object body, or an object with no (or an
