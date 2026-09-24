@@ -41,6 +41,10 @@ add_executable(axiam_cpp_tests
   # CONTRACT.md §27.6.1 (contract 1.51): the three manifest additions -- resource
   # metadata, the two-shape role binding, and service_accounts.
   test_manifest_additions.cpp
+  # Dogfooding plan §13 row-17: the two flat-entity-tier manifest defects this port
+  # fixes -- parent_id never sent for a nested resource, and a silent resource_type
+  # default to "folder".
+  test_manifest_nested_resources.cpp
   # The contract 1.34 §5.2.2 / 1.35 §5.2.3 rules. Uses the management rig AND the
   # OPAQUE fake: the acting-tenant/principal-tenant distinction shows up on both
   # surfaces, and splitting it in two would hide that they are one rule.

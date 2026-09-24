@@ -423,11 +423,28 @@ void perform(const ManagementApi& api, const Manifest& manifest, PlannedChange& 
 
     switch (e.kind) {
         case ManifestKind::Resource: {
+            // §13 row-17 (dogfooding plan): a nested resource's PARENT, resolved
+            // through `resolved` exactly like a role binding's role/resource keys --
+            // ordered() already guarantees the parent (a lower-depth Resource) was
+            // processed first, so it is always present here when `depends_on` names
+            // another Resource. A `depends_on` naming something else (a Role depending
+            // on a Permission, say) is a different kind entirely and irrelevant here.
+            std::optional<std::string> parent_id;
+            if (e.depends_on) {
+                const auto* parent = find_key_of_kind(manifest, *e.depends_on,
+                                                      ManifestKind::Resource);
+                if (parent) {
+                    parent_id = require_resolved(resolved, ManifestKind::Resource, *e.depends_on,
+                                                 "parent resource");
+                }
+            }
+
             std::string new_id;
             if (create) {
                 CreateResourceRequest body{};
                 body.name = e.name;
                 body.resource_type = e.resource_type.empty() ? "folder" : e.resource_type;
+                body.parent_id = parent_id;
                 // §27.6.1 item 1: sent on Create when stated; omitted (never `{}` or
                 // `null`) when the manifest says nothing about metadata (rule 3).
                 if (e.metadata_json) body.metadata = *e.metadata_json;
@@ -435,6 +452,7 @@ void perform(const ManagementApi& api, const Manifest& manifest, PlannedChange& 
             } else {
                 UpdateResourceRequest body{};
                 body.name = e.name;
+                body.parent_id = parent_id;
                 if (e.metadata_json) body.metadata = *e.metadata_json;
                 new_id = api.resources().update(id, body).id;
             }
