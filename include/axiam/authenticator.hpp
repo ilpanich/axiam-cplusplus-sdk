@@ -188,6 +188,16 @@ public:
     }
 
 private:
+    /// Shared body of authenticate() and authenticate_sender_constrained():
+    /// rules 1-8, then CONTRACT.md §10.1 rule 9 against `presented_thumbprint`
+    /// (`std::nullopt` from the no-evidence entry point). Kept as one
+    /// implementation, per the doc note on JwksVerifier::verify_certificate_binding
+    /// ("this is the shared status mapping" pattern applied to verification):
+    /// two copies of rules 1-8 is two places for a future fix to land in only
+    /// one.
+    AxiamUser authenticate_checked(const std::string& token,
+                                   const std::optional<std::string>& presented_thumbprint) const;
+
     JwksVerifier* jwks_;
     std::string tenant_id_;
     AuthenticatorOptions options_;

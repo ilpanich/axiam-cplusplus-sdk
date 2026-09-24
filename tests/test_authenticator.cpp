@@ -667,3 +667,85 @@ AXIAM_TEST("rule 9 via the authenticator: rules 1-8 are applied BEFORE the bindi
     }
     AXIAM_CHECK(saw_claim_failure);
 }
+
+// ---------------------------------------------------------------------------
+// CONTRACT.md §10.1 rule 9 (contract 1.51 fix): the DEFAULT entry point,
+// authenticate() — no transport evidence, ever — must not accept a
+// sender-constrained token as an ordinary bearer token. Before this fix
+// authenticate() never inspected `cnf` at all: every case below passed
+// silently, which is exactly the SEC-071/SEC-080 shape this section exists to
+// close, found again here for the mTLS device-token path specifically
+// (§6.1 rule 9 — a token authenticate_device() mints). No prior test in this
+// file pinned the old (wrong) behaviour, so there is nothing to invert; this
+// is the pin.
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("§10.1 rule 9: authenticate() — the default, no-evidence entry point — "
+          "REFUSES a certificate-bound token rather than accepting it as a bearer "
+          "token") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    // A device token, exactly the shape authenticate_device() mints
+    // (§6.1 rule 9): otherwise perfectly valid, signature good, right tenant,
+    // not expired -- carrying only `cnf.x5t#S256`.
+    const std::string jwt = key.make_jwt("EdDSA", bound_claims(kThumb));
+
+    bool threw = false;
+    try {
+        auth.authenticate(jwt);
+    } catch (const AuthError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+
+    // try_authenticate() and guard_authenticator() route through authenticate()
+    // internally (see authenticator.cpp / guard_authenticator()'s functor) —
+    // the non-throwing surfaces must refuse too, as nullopt rather than a
+    // caught exception.
+    AXIAM_CHECK(!auth.try_authenticate(jwt).has_value());
+}
+
+// The positive regression that matters more than the negative one: an UNBOUND
+// token — the overwhelming majority of tokens in any deployment that has not
+// turned on mTLS or DPoP — must still be accepted through authenticate(),
+// with or without a certificate ever being in the picture. Rule 9 constrains
+// tokens that CLAIM a constraint; it must not become "every token needs proof
+// of possession".
+AXIAM_TEST("§10.1 rule 9: authenticate() still accepts an UNBOUND token (no cnf at all)") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    const std::string jwt =
+        key.make_jwt("EdDSA", claims("\"exp\":" + std::to_string(kNow + 900)));
+    AxiamUser user = auth.authenticate(jwt);
+    AXIAM_CHECK(user.user_id == "user-1");
+}
+
+// The documented escape hatch works on the SAME token authenticate() refuses:
+// a resource server that has the certificate calls
+// authenticate_sender_constrained() and is accepted.
+AXIAM_TEST("§10.1 rule 9: the same bound token authenticate() refuses is accepted "
+          "through authenticate_sender_constrained() with the matching certificate") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    const std::string jwt = key.make_jwt("EdDSA", bound_claims(kThumb));
+
+    bool default_entry_threw = false;
+    try {
+        auth.authenticate(jwt);
+    } catch (const AuthError&) {
+        default_entry_threw = true;
+    }
+    AXIAM_CHECK(default_entry_threw);
+
+    AxiamUser user = auth.authenticate_sender_constrained(jwt, kThumb);
+    AXIAM_CHECK(user.user_id == "user-1");
+}
