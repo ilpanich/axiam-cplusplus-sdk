@@ -258,6 +258,13 @@ WebauthnLoginResult finish_login(Client::Impl& impl, const char* path,
     {
         std::lock_guard<std::mutex> lock(impl.state_mtx);
         impl.session = true;
+        // CONTRACT.md §5.2 rule 1 (contract 1.51): WebauthnLoginResult carries no
+        // `LoginUserInfo` -- this ceremony completes a session without one, so
+        // the acting-tenant gate resets to UNKNOWN (never to "not
+        // organization-level"). A later acting_tenant() sends the header and
+        // lets the server's 403 decide, per §5.2's "which sessions count as
+        // holding a login result" clause.
+        impl.login_user_info = std::nullopt;
     }
     return out;
 }
@@ -526,6 +533,11 @@ LoginResult Client::webauthn_setup_register_finish(const Sensitive<std::string>&
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // §5.2 rule 1 gate: reset to exactly what THIS response reported (the
+        // WebAuthn passkey/security-key setup carve-out of "which sessions
+        // count as holding a login result" -- disengaged when the server sent
+        // no `user`, never carried over from an earlier login).
+        p_->login_user_info = result.user;
         if (result.user) {
             p_->resolved_tenant_id = result.user->tenant_id;
             if (!result.user->principal_tenant_id.empty())

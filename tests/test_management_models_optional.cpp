@@ -1246,7 +1246,7 @@ AXIAM_TEST("management model RoleAssignment withholds optionals it was not given
 AXIAM_TEST("management model RoleGroupAssignment withholds optionals it was not given") {
     // Every REQUIRED property, and not one optional property.
     const auto minimal = nlohmann::json::parse(
-        R"json({"group": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}})json");
+        R"json({"group": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "inherit": true})json");
 
     const nlohmann::json encoded = minimal.get<RoleGroupAssignment>();
     // Byte-identical: an optional the server did not send must not reappear as a
@@ -1265,7 +1265,7 @@ AXIAM_TEST("management model RoleGroupAssignment withholds optionals it was not 
 AXIAM_TEST("management model RoleServiceAccountAssignment withholds optionals it was not given") {
     // Every REQUIRED property, and not one optional property.
     const auto minimal = nlohmann::json::parse(
-        R"json({"service_account": {"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}})json");
+        R"json({"service_account": {"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "inherit": true})json");
 
     const nlohmann::json encoded = minimal.get<RoleServiceAccountAssignment>();
     // Byte-identical: an optional the server did not send must not reappear as a
@@ -1284,7 +1284,7 @@ AXIAM_TEST("management model RoleServiceAccountAssignment withholds optionals it
 AXIAM_TEST("management model RoleUserAssignment withholds optionals it was not given") {
     // Every REQUIRED property, and not one optional property.
     const auto minimal = nlohmann::json::parse(
-        R"json({"user": {"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}})json");
+        R"json({"user": {"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}, "inherit": true})json");
 
     const nlohmann::json encoded = minimal.get<RoleUserAssignment>();
     // Byte-identical: an optional the server did not send must not reappear as a
@@ -1943,7 +1943,7 @@ AXIAM_TEST("management model RoleAssignment withholds an empty tenant_scope") {
 
 AXIAM_TEST("management model RoleGroupAssignment withholds an empty tenant_scope") {
     const auto wire = nlohmann::json::parse(
-        R"json({"group": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "tenant_scope": []})json");
+        R"json({"group": {"created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "name": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "inherit": false, "tenant_scope": []})json");
 
     const auto value = wire.get<RoleGroupAssignment>();
     // Decoded as present-and-empty, not as absent: the two are different requests and
@@ -1961,7 +1961,7 @@ AXIAM_TEST("management model RoleGroupAssignment withholds an empty tenant_scope
 
 AXIAM_TEST("management model RoleServiceAccountAssignment withholds an empty tenant_scope") {
     const auto wire = nlohmann::json::parse(
-        R"json({"service_account": {"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "tenant_scope": []})json");
+        R"json({"inherit": false, "service_account": {"client_id": "example", "created_at": "2026-08-26T00:00:00Z", "description": "example", "id": "11111111-1111-4111-8111-111111111111", "name": "example", "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}, "tenant_scope": []})json");
 
     const auto value = wire.get<RoleServiceAccountAssignment>();
     // Decoded as present-and-empty, not as absent: the two are different requests and
@@ -1979,7 +1979,7 @@ AXIAM_TEST("management model RoleServiceAccountAssignment withholds an empty ten
 
 AXIAM_TEST("management model RoleUserAssignment withholds an empty tenant_scope") {
     const auto wire = nlohmann::json::parse(
-        R"json({"tenant_scope": [], "user": {"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}})json");
+        R"json({"inherit": false, "tenant_scope": [], "user": {"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}})json");
 
     const auto value = wire.get<RoleUserAssignment>();
     // Decoded as present-and-empty, not as absent: the two are different requests and

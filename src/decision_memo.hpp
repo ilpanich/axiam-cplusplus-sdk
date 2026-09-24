@@ -76,13 +76,24 @@ public:
     /// with a present one; a memo that let them collide would answer a narrower
     /// question with a broader answer. U+0001 rather than U+0000 so the key stays
     /// a well-behaved std::string in every container and debugger.
+    ///
+    /// A FIFTH component, the acting tenant, is folded in even though §17.1 rule
+    /// 3 lists four: CONTRACT.md §5.2 (contract 1.51) lets one session ask the
+    /// same question of two tenants, and the server can answer differently for
+    /// each. Without this the memo would return tenant A's decision for tenant
+    /// B within the TTL — a real defect the Rust reference found and fixed
+    /// (C-1's "For C-12" question 2); every port meeting this contract version
+    /// inherits the same gap unless it does the same. Disengaged (no acting
+    /// tenant configured) is `kAbsent`, exactly as an absent `scope`/`subject_id`
+    /// already is, so a client that never sets one collides with nothing new.
     static std::string key(const std::optional<std::string>& subject_id,
                            const std::string& resource_id, const std::string& action,
-                           const std::optional<std::string>& scope) {
+                           const std::optional<std::string>& scope,
+                           const std::optional<std::string>& acting_tenant = std::nullopt) {
         static const std::string kSep = "\x1F";
         static const std::string kAbsent = "\x01";
         return (subject_id ? *subject_id : kAbsent) + kSep + resource_id + kSep + action + kSep +
-               (scope ? *scope : kAbsent);
+               (scope ? *scope : kAbsent) + kSep + (acting_tenant ? *acting_tenant : kAbsent);
     }
 
     /// A live decision for `k`, if one is memoized and unexpired.

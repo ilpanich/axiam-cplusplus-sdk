@@ -299,13 +299,31 @@ AXIAM_TEST("refresh sends org_id decoded from the access-token cookie (D-14)") {
     AXIAM_CHECK(refresh_body.find("globex") == std::string::npos);
 }
 
+// §6.1 rule 7: reachable only on a client built with a certificate identity.
+// with_client_cert() only checks for a "-----BEGIN" prefix; deliberately no
+// real (or real-looking) key material, matching test_mtls_endpoint_aliases.cpp.
+static const std::string kDeviceCertPem =
+    "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+static const std::string kDeviceKeyPem =
+    "-----BEGIN AXIAM TEST PLACEHOLDER-----\nMIIB\n-----END AXIAM TEST PLACEHOLDER-----\n";
+
+static Client make_device_client(std::shared_ptr<FakeState> st) {
+    return Client::builder()
+        .base_url("https://api.example.test")
+        .tenant_slug("acme")
+        .org_slug("globex")
+        .with_client_cert(kDeviceCertPem, kDeviceKeyPem)
+        .transport(axtest::make_fake(st))
+        .build();
+}
+
 AXIAM_TEST("authenticate_device parses response and wraps token in Sensitive") {
     auto st = std::make_shared<FakeState>();
     st->router = [](const HttpRequest&, FakeState&) {
         return json_response(200,
                              R"({"access_token":"device-token-xyz","token_type":"Bearer","expires_in":3600})");
     };
-    Client c = make_client(st);
+    Client c = make_device_client(st);
     DeviceAuth da = c.authenticate_device();
     AXIAM_CHECK(da.token_type == "Bearer");
     AXIAM_CHECK(da.expires_in == 3600);

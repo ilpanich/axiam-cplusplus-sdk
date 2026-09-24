@@ -1216,6 +1216,13 @@ SsoStartResult Client::sso_start(const std::string& federation_config_id,
 
 SsoCompleteResult Client::sso_complete(const std::string& code, const std::string& state) {
     p_->ensure_open();
+    // §5.2 rule 1 / §17.1 rule 9: this call completes a NEW session on success --
+    // a different principal may now be signed in -- so both the acting-tenant gate
+    // and the decision memo are reset on the caller's INTENT, before the wire,
+    // exactly as login() does it. Restored below only on an actual success; a
+    // refused completion (state mismatch, a 401, a malformed body) leaves
+    // whatever this client held before untouched, because nothing changed.
+    if (p_->memo) p_->memo->clear();
     json body;
     body["code"] = code;
     body["state"] = state;
@@ -1237,6 +1244,18 @@ SsoCompleteResult Client::sso_complete(const std::string& code, const std::strin
     // §12.1 note 6: no token material comes back — the session is a Set-Cookie
     // the §4 cookie jar keeps. A transport without cookie support loses it
     // silently, which is why §4 is a requirement rather than a suggestion.
+    //
+    // §5.2 rule 1: SsoLoginSuccessResponse carries no LoginUserInfo (no
+    // organization_level, no reachable_tenant_ids) -- this is one of the
+    // "which sessions count as holding a login result" carve-outs (C-1's "For
+    // C-12" question 5): SSO/federation completes a session while leaving the
+    // gate at UNKNOWN, never at "not organization-level". A later
+    // acting_tenant() call therefore sends the header and lets the server's 403
+    // decide, rather than refusing on a stale report from before this call.
+    {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        p_->login_user_info = std::nullopt;
+    }
     return r;
 }
 
@@ -1251,7 +1270,14 @@ namespace {
 /// §12.1 note 6 applies to both: the response carries NO token material — the
 /// session is the `Set-Cookie` the §4 jar keeps. Neither is retried, so note
 /// 12's terminal `401` and rule 12a's `400` each cost exactly one request.
-SsoCompleteResult parse_federation_session(const json& j, const char* context) {
+///
+/// Called only after a 2xx (both call sites raise_for_status first via
+/// execute()), so reaching here IS a successful completion — §5.2 rule 1: reset
+/// the acting-tenant gate to UNKNOWN (not to "not organization-level"), the
+/// same carve-out sso_complete() documents; SsoLoginSuccessResponse carries no
+/// LoginUserInfo either way.
+SsoCompleteResult parse_federation_session(Client::Impl& impl, const json& j,
+                                           const char* context) {
     SsoCompleteResult r;
     const auto user_id = opt_string(j, "user_id");
     const auto session_id = opt_string(j, "session_id");
@@ -1263,6 +1289,10 @@ SsoCompleteResult parse_federation_session(const json& j, const char* context) {
     r.session_id = *session_id;
     r.expires_in = opt_int(j, "expires_in").value_or(0);
     r.redirect_uri = opt_string(j, "redirect_uri");
+    {
+        std::lock_guard<std::mutex> lock(impl.state_mtx);
+        impl.login_user_info = std::nullopt;
+    }
     return r;
 }
 
@@ -1370,6 +1400,9 @@ SsoStartResult Client::sso_start_oauth2(const std::string& federation_config_id,
 
 SsoCompleteResult Client::sso_complete_oauth2(const std::string& code, const std::string& state) {
     p_->ensure_open();
+    // §17.1 rule 9: a credential change, on the caller's intent, before the
+    // wire -- same discipline sso_complete() applies.
+    if (p_->memo) p_->memo->clear();
     json body;
     body["state"] = state;
     body["code"] = code;
@@ -1377,11 +1410,14 @@ SsoCompleteResult Client::sso_complete_oauth2(const std::string& code, const std
     const HttpResponse resp =
         p_->execute("POST", "/api/v1/auth/federation/oauth2/callback", body.dump(),
                     /*allow_refresh=*/false);
-    return parse_federation_session(parse_or_object(resp.body), "sso complete oauth2");
+    return parse_federation_session(*p_, parse_or_object(resp.body), "sso complete oauth2");
 }
 
 SsoCompleteResult Client::sso_complete_handoff(const std::string& code) {
     p_->ensure_open();
+    // §17.1 rule 9: a credential change, on the caller's intent, before the
+    // wire -- same discipline sso_complete() applies.
+    if (p_->memo) p_->memo->clear();
     // The code is the whole request: no state, no workspace.
     json body;
     body["code"] = code;
@@ -1392,7 +1428,7 @@ SsoCompleteResult Client::sso_complete_handoff(const std::string& code) {
     const HttpResponse resp =
         p_->execute("POST", "/api/v1/auth/federation/handoff", body.dump(),
                     /*allow_refresh=*/false);
-    return parse_federation_session(parse_or_object(resp.body), "sso complete handoff");
+    return parse_federation_session(*p_, parse_or_object(resp.body), "sso complete handoff");
 }
 
 // ---------------------------------------------------------------------------

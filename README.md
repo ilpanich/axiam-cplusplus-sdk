@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27 and §28 (including §6.1 mTLS, §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport).**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27 and §28 at contract 1.51 (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
 Sections are named individually rather than folded into ranges: widening a
 range silently turns a statement that was true when written into a different
@@ -193,6 +193,26 @@ before any key lookup, `exp` is required (absent *and* non-numeric both
 hard-fail), `nbf` is honoured when present, and `tenant_id` is asserted — an
 empty tenant expectation is refused at construction rather than silently
 disabling the check.
+
+**Rule 9, at this default entry point (contract 1.51).** `authenticate()` has
+no transport to ask for a peer certificate, so it checks rule 9 with no
+evidence — which is not the same as skipping it. An **unbound** token (no
+`cnf` at all — the overwhelming majority of tokens in any deployment that has
+not turned on mTLS or DPoP) is unaffected and still verifies normally. A
+**bound** token — `cnf.x5t#S256`, exactly what `authenticate_device()` mints
+(§6.1 rule 9) — is refused here with `AuthError`, because this entry point can
+never prove the caller holds the matching key. **Before contract 1.51 this
+was a defect, not a design choice**: `authenticate()` never inspected `cnf` at
+all, so a device token lifted off a device (a log line, a flash dump, a
+debugger) verified as an ordinary bearer token through every guard built on
+it. Fixed as a **breaking** change — see `CHANGELOG.md` — because the fix's
+whole point is that some previously-accepted tokens are now refused. A
+resource server that legitimately needs to accept bound tokens calls
+`authenticate_sender_constrained(token, presented_thumbprint)` instead,
+passing the peer certificate's thumbprint from its own TLS layer (never from
+a caller-supplied header) — see
+[Sender-constrained tokens and DPoP](#sender-constrained-tokens-and-dpop-§101-rule-9-§2173)
+below.
 
 Optional `iss` / `aud` pinning and the clock skew live on
 `axiam::AuthenticatorOptions`; `AuthenticatorOptions::now` is the injection seam
@@ -427,6 +447,37 @@ auto client = axiam::Client::builder()
 
 auto device = client.authenticate_device();  // POST /api/v1/auth/device
 ```
+
+**`authenticate_device()` (§6.1 rules 6–10, contract 1.51).** One call, no
+body, three fields back — `DeviceAuth{ access_token, token_type, expires_in }`
+— and the token is **adopted as this client's own credential**, exactly as
+`login()` adopts a session: every request this client makes from here presents
+it as `Authorization: Bearer <token>` and withholds any cookie a prior session
+on this client left in the jar (the server reads `axiam_access` before
+`Authorization`, so a stale cookie would otherwise keep the client acting as
+the earlier principal). Reachable **only** on a client built with
+`with_client_cert()` — on any other client this throws `AuthError`
+client-side, with zero wire calls, since the server would answer `401`
+regardless. Rule 7 prefers a compile-time gate "where the type system can
+express that"; this SDK enforces it at run time instead, because a certificate
+is one option on the single `Client::Builder`, and a compile-time gate would
+mean splitting `Client` into two types, a break no other part of 1.51 asks for. There is **no refresh token** for this credential (a server
+decision, D-6 of the dogfooding remediation plan): a later `401` on it is
+surfaced as `AuthError` with **no** refresh attempt, and the caller
+re-authenticates by calling `authenticate_device()` again. A `429` (the
+per-client-IP rate limit) is `NetworkError`, not `AuthError`, and is never
+retried by this call.
+
+**The token is certificate-bound, and §10.1 rule 9 applies to it.** When
+AXIAM itself terminated the TLS handshake, `access_token` carries
+`cnf: { "x5t#S256": … }` and is usable only on a connection presenting that
+certificate. This client's own later calls qualify — the same identity is
+presented on every request — but a **resource server verifying the token
+itself** must go through `TokenAuthenticator::authenticate_sender_constrained`
+(see [Authenticating a request](#authenticating-a-request-§10) above), never
+the plain `authenticate()`, which has no certificate evidence and refuses a
+bound token outright. `token_type` stays `"Bearer"` either way and is never
+evidence of boundness.
 
 The custom CA and the client identity are passed to libcurl as **in-memory
 blobs** (`CURLOPT_CAINFO_BLOB`, `CURLOPT_SSLCERT_BLOB`, `CURLOPT_SSLKEY_BLOB`) —
@@ -1300,8 +1351,11 @@ asynchronous and can still fail at the provider.
 `UserInfo` gained `organization_level`. It is true when the account that signed
 in is an **organization-level** principal — one whose record lives in its
 organization's reserved tenant, so its global grants apply in every tenant of
-that organization and it can act on a different one by sending a different
-`X-Tenant-ID` on the next request, with no re-login.
+that organization and it can act on a different one by sending
+**`X-Axiam-Tenant`** (§5.2 rule 1 — *not* `X-Tenant-ID`, which every request
+already carries unconditionally and which the server does not read for this;
+see [Acting on another tenant](#acting-on-another-tenant-§52-rule-1-contract-151)
+below) on the next request, with no re-login.
 
 ```cpp
 const auto login = client.login(email, password);
@@ -1321,6 +1375,71 @@ login response omits it — what a server older than contract 1.31 answers — a
 `false` when the value is anything but the JSON literal `true`. Both are the safe
 direction. The member is appended last and defaulted, so every existing aggregate
 initializer of `UserInfo` still compiles.
+
+### Acting on another tenant (§5.2 rule 1, contract 1.51)
+
+```cpp
+auto client = Client::builder()
+                  .base_url("https://iam.example.com")
+                  .tenant_id(org_scope_tenant_id)
+                  .with_acting_tenant(other_tenant_id)   // sent from the first request
+                  .build();
+client.login("root@example.com", password);
+
+// Or, on an existing client, once a login has reported organization_level:
+client.acting_tenant(other_tenant_id);   // throws NetworkError if not a UUID,
+                                          // AuthzError if the gate refuses it
+client.management().groups().list();     // X-Axiam-Tenant: <other_tenant_id>
+client.clear_acting_tenant();             // back to sending no header at all
+```
+
+`with_acting_tenant()` (builder) and `acting_tenant()` / `clear_acting_tenant()`
+(on an existing client) are new in contract 1.51. `X-Axiam-Tenant` is sent on
+**every** `/api/v1` REST call this client makes from here — management,
+`check_access`/`batch_check`, `login`, `refresh`, `logout`, and every
+self-service and WebAuthn POST alike (§5.2.2 rule 4: the header is never
+withheld from those) — and on **none** of them when unset, byte-for-byte what
+every request sent before 1.51. `X-Tenant-ID` and any `{tenant_id}` path
+segment are unaffected either way (§27.4 rule 3) — the two mechanisms are
+read by different parts of the server and this SDK does not couple them.
+
+- **The value must be a UUID**, checked client-side (`NetworkError`, zero wire
+  calls) on both forms: the server silently ignores a value that does not
+  parse and acts on the caller's own tenant instead, so a helper that forwarded
+  a slug would report success about the *wrong* tenant.
+- **Gating, on the on-client form only** (the builder form precedes any login
+  and cannot gate — the server's `403` is the answer for a principal that
+  turns out not to be organization-level). Once a session-establishing call has
+  reported a `LoginUserInfo`, `acting_tenant()` refuses client-side
+  (`AuthzError`, zero wire calls) unless `organization_level` is `true`, and
+  refuses a tenant outside `reachable_tenant_ids` when that field is present
+  (§5.2.3 rule 4). A client holding **no** login result — never logged in, or
+  the most recent session-establishing call reported none — has nothing to
+  gate on, so it sends the header and lets the server's `403` decide.
+- **Which calls reset that gate to "no login result".** Every call that
+  completes a *new* session resets it to exactly what THAT response reported:
+  `login`, `login_opaque`, `verify_mfa`, `mfa_setup_confirm` and the WebAuthn
+  passkey/security-key setup completion all carry the flag when their own
+  response does. The WebAuthn *authenticate* ceremony, `authenticate_device()`,
+  and all three SSO/federation completions (`sso_complete`,
+  `sso_complete_oauth2`, `sso_complete_handoff`) carry **no** `LoginUserInfo` at
+  all and always reset to unknown — never to "not organization-level". So does
+  `logout()`. A restricted (`organization_level: false`) principal that then
+  completes one of those never stays stuck refusing on its *previous* report.
+- **Scoped across `Client::Impl`, not per call.** Every `Client` copy built
+  from the same `builder().build()` call shares one `X-Axiam-Tenant` value,
+  exactly as every copy already shares one cookie jar, one CSRF token and one
+  `X-Tenant-ID`. This is a deliberate difference from the reference Rust SDK,
+  whose `acting_tenant()` returns a *new handle* scoped independently so two
+  concurrent tasks acting on two tenants over one session cannot clobber each
+  other's header — a property this SDK's `Client` does not offer for any of
+  its other session state either. A caller running two tasks against two
+  tenants wants two `Client` values from two separate `build()` calls (or one
+  `with_acting_tenant()` each), not two copies of one fighting over this field.
+- **The §17 decision memo is keyed on the acting tenant** (a fifth, optional
+  component of the memo key): the server can answer `check_access` differently
+  per tenant, and two tenants asking the same question through one session
+  must not share a cached answer.
 
 #### Signing one in (§5.2.1)
 
@@ -1706,9 +1825,74 @@ Four properties, all load-bearing:
   so an incomplete manifest cannot become a destructive one.
 
 Incoherence is refused *before the first request*: a duplicate key, a
-`depends_on` naming nothing, or a dependency cycle throws `ManifestError` from
-`validate()`, which `plan()` calls itself. Discovering that halfway through, with
-no rollback, is strictly worse.
+`depends_on` naming nothing, a dependency cycle, a stated `resource_type` left
+empty (see below), a resource-scoped role binding naming an undeclared role or
+resource, a role bound twice to one subject, or a global role bound with
+`inherit: false` all throw `ManifestError` from `validate()`, which `plan()`
+calls itself. Discovering that halfway through, with no rollback, is strictly
+worse.
+
+**A resource's `resource_type` is stated, or the manifest is refused —
+never silently `"folder"`.** `CreateResourceRequest.resource_type` is required
+by the server's schema, so a manifest entity that leaves it empty is refused
+client-side rather than guessed on the caller's behalf.
+
+**A nested resource's `parent_id` reaches the wire.** `depends_on` on a
+`Resource` entity both orders it after its parent (as it always did) and, since
+contract 1.51's fix, resolves the parent's server id onto `parent_id` — a
+manifest describing a tree now creates one, not a flat list.
+
+**§27.6.1 (contract 1.51) — the three additions, at the tier this SDK ships:**
+
+```cpp
+ManifestEntity docs;
+docs.kind = ManifestKind::Resource;
+docs.key = "docs"; docs.name = "documents"; docs.resource_type = "folder";
+docs.metadata_json = R"({"owner":"platform-team"})";  // JSON text; whole-object drift
+
+ManifestEntity editors;
+editors.kind = ManifestKind::Group;
+editors.key = "editors"; editors.name = "editors";
+editors.roles = {
+    {"editor_role", std::nullopt, std::nullopt},              // plain: no resource
+    {"editor_role", "docs", false},                            // scoped, non-inheritable
+};
+
+ManifestEntity device;
+device.kind = ManifestKind::ServiceAccount;
+device.key = "device"; device.name = "device-fleet";
+device.roles = {{"editor_role", std::nullopt, std::nullopt}};
+```
+
+- **`resources[].metadata`** — `metadata_json`, JSON text, sent on `Create` and,
+  when stated, on `Update`; drift is whole-object JSON value equality, never a
+  key-by-key merge.
+- **The two-shape role binding**, on `Group` and `ServiceAccount` alike: a bare
+  role key, or `{role, resource, inherit}`. `inherit` defaults to `true`, and a
+  manifest MAY state it explicitly — that is a valid, inheritable binding,
+  planned exactly like one that omits the field. What never happens is putting
+  `inherit: true` on the wire: only an engaged `false` ever reaches
+  `assign_to_*`'s body, so an inheritable binding's body stays byte-for-byte
+  what it was before 1.51, whether the manifest stated `true` or said nothing.
+  Reconciled **additively**: a binding the manifest does not name is left exactly as the
+  tenant already has it. A binding it DOES name that is bound with a different
+  `resource`/`inherit` is rebound — unassign, then assign, carrying the server
+  binding's `tenant_scope` across, with the previous binding reassigned
+  (best-effort) if the new assign fails.
+- **`service_accounts`** — reconciled by `name`, which the server does not
+  enforce unique: `plan()` fails, before any write, when a stated name matches
+  more than one existing account. `Create`'s one-time `client_secret` is on
+  `PlannedChange::service_account_secret` (`Sensitive<T>`), returned even when
+  a later action of the same `apply` fails; `Update` reconciles only
+  `description`, and nothing is ever rotated to reconcile.
+
+**This SDK ships the flat-entity tier** (§27.10): no `users`, no `scopes`, and
+no role → permission grant reconciliation. `resources`, `permissions`, `roles`,
+`groups` and (since contract 1.51) `service_accounts` are covered; a manifest
+needing a user or a scope, or needing to reconcile which permissions a role
+grants, still uses the imperative surface for that piece. `webhooks` is also
+unimplemented in the manifest, per §27.6's own note that no consumer has
+asked for it.
 
 ### Worked examples
 
@@ -1952,8 +2136,14 @@ nothing about `AxiamGuard` or `require_access` changed at all.
 
 ## Deferred / follow-ups
 
-- **gRPC transport** (Tonic-parity authz checks). The §6.1 "both transports" rule
-  applies once gRPC lands; the REST client already isolates TLS material for reuse.
+- **gRPC transport** (Tonic-parity authz checks), and with it `get_user_info`
+  (§1.1), `validate_token` and `introspect_token` (§1.1.1, contract 1.51) —
+  the two token operations §10.3 obliges a gRPC-transport SDK to wrap. All
+  three are gRPC-only by §1's locked vocabulary and have **no REST
+  substitution**: this SDK does not call `POST /oauth2/introspect` in their
+  place, since that endpoint authenticates a registered OAuth2 client and is
+  outside the SDK method vocabulary. The §6.1 "both transports" rule applies
+  once gRPC lands; the REST client already isolates TLS material for reuse.
 - **§8 AMQP HMAC consumer** (not required of C++ by the contract).
 - **A bundled AMQP client**, and only that. §22.11 keeps the transport deferred:
   there is no maintained AMQP client for these targets this project is willing to

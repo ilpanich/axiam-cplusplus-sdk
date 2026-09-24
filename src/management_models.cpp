@@ -162,6 +162,7 @@ std::string to_wire(CertificateType value) {
         case CertificateType::User: return "User";
         case CertificateType::Service: return "Service";
         case CertificateType::Device: return "Device";
+        case CertificateType::Server: return "Server";
         // The empty string, which no server value is: an unrecognised value carried back into
         // an update is refused by the server rather than written as a spelling it never used.
         case CertificateType::Unknown: return "";
@@ -175,6 +176,7 @@ CertificateType certificate_type_from_wire(const std::string& value) {
     if (value == "User") return CertificateType::User;
     if (value == "Service") return CertificateType::Service;
     if (value == "Device") return CertificateType::Device;
+    if (value == "Server") return CertificateType::Server;
     // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
     // whole response the value arrived in, so one field of one record takes down the page it
     // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
@@ -813,6 +815,9 @@ void from_json(const nlohmann::json& j, ApiProviderConfig& value) {
 void to_json(nlohmann::json& j, const AssignRoleToGroupRequest& value) {
     j = nlohmann::json::object();
     j["group_id"] = value.group_id;
+    if (value.inherit) {
+        j["inherit"] = *value.inherit;
+    }
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -823,6 +828,9 @@ void to_json(nlohmann::json& j, const AssignRoleToGroupRequest& value) {
 
 void from_json(const nlohmann::json& j, AssignRoleToGroupRequest& value) {
     value.group_id = j.at("group_id").get<std::string>();
+    if (auto it = j.find("inherit"); it != j.end() && !it->is_null()) {
+        value.inherit = it->get<bool>();
+    }
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
     }
@@ -833,6 +841,9 @@ void from_json(const nlohmann::json& j, AssignRoleToGroupRequest& value) {
 
 void to_json(nlohmann::json& j, const AssignRoleToServiceAccountRequest& value) {
     j = nlohmann::json::object();
+    if (value.inherit) {
+        j["inherit"] = *value.inherit;
+    }
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -843,6 +854,9 @@ void to_json(nlohmann::json& j, const AssignRoleToServiceAccountRequest& value) 
 }
 
 void from_json(const nlohmann::json& j, AssignRoleToServiceAccountRequest& value) {
+    if (auto it = j.find("inherit"); it != j.end() && !it->is_null()) {
+        value.inherit = it->get<bool>();
+    }
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
     }
@@ -854,6 +868,9 @@ void from_json(const nlohmann::json& j, AssignRoleToServiceAccountRequest& value
 
 void to_json(nlohmann::json& j, const AssignRoleToUserRequest& value) {
     j = nlohmann::json::object();
+    if (value.inherit) {
+        j["inherit"] = *value.inherit;
+    }
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -864,6 +881,9 @@ void to_json(nlohmann::json& j, const AssignRoleToUserRequest& value) {
 }
 
 void from_json(const nlohmann::json& j, AssignRoleToUserRequest& value) {
+    if (auto it = j.find("inherit"); it != j.end() && !it->is_null()) {
+        value.inherit = it->get<bool>();
+    }
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
     }
@@ -1023,11 +1043,17 @@ void to_json(nlohmann::json& j, const CertificatePolicy& value) {
     j = nlohmann::json::object();
     j["default_cert_validity_days"] = value.default_cert_validity_days;
     j["max_cert_validity_days"] = value.max_cert_validity_days;
+    if (value.server_cert_allowed_names) {
+        j["server_cert_allowed_names"] = *value.server_cert_allowed_names;
+    }
 }
 
 void from_json(const nlohmann::json& j, CertificatePolicy& value) {
     value.default_cert_validity_days = j.at("default_cert_validity_days").get<std::int64_t>();
     value.max_cert_validity_days = j.at("max_cert_validity_days").get<std::int64_t>();
+    if (auto it = j.find("server_cert_allowed_names"); it != j.end() && !it->is_null()) {
+        value.server_cert_allowed_names = it->get<std::vector<std::string>>();
+    }
 }
 
 void to_json(nlohmann::json& j, const CimdPolicy& value) {
@@ -1170,6 +1196,25 @@ void from_json(const nlohmann::json& j, CreateCaCertificateRequest& value) {
     value.validity_days = j.at("validity_days").get<std::int64_t>();
 }
 
+void to_json(nlohmann::json& j, const SubjectAltName& value) {
+    j = nlohmann::json::object();
+    if (value.dns) {
+        j["dns"] = *value.dns;
+    }
+    if (value.ip) {
+        j["ip"] = *value.ip;
+    }
+}
+
+void from_json(const nlohmann::json& j, SubjectAltName& value) {
+    if (auto it = j.find("dns"); it != j.end() && !it->is_null()) {
+        value.dns = it->get<std::string>();
+    }
+    if (auto it = j.find("ip"); it != j.end() && !it->is_null()) {
+        value.ip = it->get<std::string>();
+    }
+}
+
 void to_json(nlohmann::json& j, const CreateCertificateRequest& value) {
     j = nlohmann::json::object();
     j["cert_type"] = to_wire(value.cert_type);
@@ -1180,6 +1225,9 @@ void to_json(nlohmann::json& j, const CreateCertificateRequest& value) {
         if (!parsed.is_discarded()) j["metadata"] = parsed;
     }
     j["subject"] = value.subject;
+    if (value.subject_alt_names) {
+        j["subject_alt_names"] = *value.subject_alt_names;
+    }
     j["validity_days"] = value.validity_days;
 }
 
@@ -1191,6 +1239,9 @@ void from_json(const nlohmann::json& j, CreateCertificateRequest& value) {
         value.metadata = it->dump();
     }
     value.subject = j.at("subject").get<std::string>();
+    if (auto it = j.find("subject_alt_names"); it != j.end() && !it->is_null()) {
+        value.subject_alt_names = it->get<std::vector<SubjectAltName>>();
+    }
     value.validity_days = j.at("validity_days").get<std::int64_t>();
 }
 
@@ -3029,6 +3080,9 @@ void from_json(const nlohmann::json& j, Role& value) {
 
 void to_json(nlohmann::json& j, const RoleAssignment& value) {
     j = nlohmann::json::object();
+    if (value.inherit) {
+        j["inherit"] = *value.inherit;
+    }
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -3039,6 +3093,9 @@ void to_json(nlohmann::json& j, const RoleAssignment& value) {
 }
 
 void from_json(const nlohmann::json& j, RoleAssignment& value) {
+    if (auto it = j.find("inherit"); it != j.end() && !it->is_null()) {
+        value.inherit = it->get<bool>();
+    }
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
     }
@@ -3051,6 +3108,7 @@ void from_json(const nlohmann::json& j, RoleAssignment& value) {
 void to_json(nlohmann::json& j, const RoleGroupAssignment& value) {
     j = nlohmann::json::object();
     j["group"] = value.group;
+    j["inherit"] = value.inherit;
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -3061,6 +3119,7 @@ void to_json(nlohmann::json& j, const RoleGroupAssignment& value) {
 
 void from_json(const nlohmann::json& j, RoleGroupAssignment& value) {
     value.group = j.at("group").get<Group>();
+    value.inherit = j.at("inherit").get<bool>();
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
     }
@@ -3098,6 +3157,7 @@ void from_json(const nlohmann::json& j, ServiceAccountResponse& value) {
 
 void to_json(nlohmann::json& j, const RoleServiceAccountAssignment& value) {
     j = nlohmann::json::object();
+    j["inherit"] = value.inherit;
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -3108,6 +3168,7 @@ void to_json(nlohmann::json& j, const RoleServiceAccountAssignment& value) {
 }
 
 void from_json(const nlohmann::json& j, RoleServiceAccountAssignment& value) {
+    value.inherit = j.at("inherit").get<bool>();
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
     }
@@ -3156,6 +3217,7 @@ void from_json(const nlohmann::json& j, UserResponse& value) {
 
 void to_json(nlohmann::json& j, const RoleUserAssignment& value) {
     j = nlohmann::json::object();
+    j["inherit"] = value.inherit;
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -3166,6 +3228,7 @@ void to_json(nlohmann::json& j, const RoleUserAssignment& value) {
 }
 
 void from_json(const nlohmann::json& j, RoleUserAssignment& value) {
+    value.inherit = j.at("inherit").get<bool>();
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
     }
@@ -3460,6 +3523,9 @@ void to_json(nlohmann::json& j, const SetOrgSettings& value) {
     if (value.sensitive_scopes_enabled) {
         j["sensitive_scopes_enabled"] = *value.sensitive_scopes_enabled;
     }
+    if (value.server_cert_allowed_names) {
+        j["server_cert_allowed_names"] = *value.server_cert_allowed_names;
+    }
     if (value.webauthn_user_verification) {
         j["webauthn_user_verification"] = *value.webauthn_user_verification;
     }
@@ -3525,6 +3591,9 @@ void from_json(const nlohmann::json& j, SetOrgSettings& value) {
     if (auto it = j.find("sensitive_scopes_enabled"); it != j.end() && !it->is_null()) {
         value.sensitive_scopes_enabled = it->get<bool>();
     }
+    if (auto it = j.find("server_cert_allowed_names"); it != j.end() && !it->is_null()) {
+        value.server_cert_allowed_names = it->get<std::vector<std::string>>();
+    }
     if (auto it = j.find("webauthn_user_verification"); it != j.end() && !it->is_null()) {
         value.webauthn_user_verification = it->get<std::string>();
     }
@@ -3548,6 +3617,9 @@ void to_json(nlohmann::json& j, const SignCertificateCsrRequest& value) {
         auto parsed = nlohmann::json::parse(*value.metadata, nullptr, false);
         if (!parsed.is_discarded()) j["metadata"] = parsed;
     }
+    if (value.subject_alt_names) {
+        j["subject_alt_names"] = *value.subject_alt_names;
+    }
     j["validity_days"] = value.validity_days;
 }
 
@@ -3557,6 +3629,9 @@ void from_json(const nlohmann::json& j, SignCertificateCsrRequest& value) {
     value.issuer_ca_id = j.at("issuer_ca_id").get<std::string>();
     if (auto it = j.find("metadata"); it != j.end() && !it->is_null()) {
         value.metadata = it->dump();
+    }
+    if (auto it = j.find("subject_alt_names"); it != j.end() && !it->is_null()) {
+        value.subject_alt_names = it->get<std::vector<SubjectAltName>>();
     }
     value.validity_days = j.at("validity_days").get<std::int64_t>();
 }
@@ -3738,6 +3813,9 @@ void to_json(nlohmann::json& j, const TenantSettingsOverride& value) {
     if (value.sensitive_scopes_enabled) {
         j["sensitive_scopes_enabled"] = *value.sensitive_scopes_enabled;
     }
+    if (value.server_cert_allowed_names) {
+        j["server_cert_allowed_names"] = *value.server_cert_allowed_names;
+    }
     if (value.webauthn_user_verification) {
         j["webauthn_user_verification"] = *value.webauthn_user_verification;
     }
@@ -3842,6 +3920,9 @@ void from_json(const nlohmann::json& j, TenantSettingsOverride& value) {
     }
     if (auto it = j.find("sensitive_scopes_enabled"); it != j.end() && !it->is_null()) {
         value.sensitive_scopes_enabled = it->get<bool>();
+    }
+    if (auto it = j.find("server_cert_allowed_names"); it != j.end() && !it->is_null()) {
+        value.server_cert_allowed_names = it->get<std::vector<std::string>>();
     }
     if (auto it = j.find("webauthn_user_verification"); it != j.end() && !it->is_null()) {
         value.webauthn_user_verification = it->get<std::string>();

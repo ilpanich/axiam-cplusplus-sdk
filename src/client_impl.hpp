@@ -66,6 +66,49 @@ struct Client::Impl {
     std::optional<std::string> resolved_tenant_id;  // captured from login user info
     std::optional<std::string> resolved_org_id;     // decoded from the access-token org_id claim (D-14)
 
+    // CONTRACT.md §5.2 rule 1 (contract 1.51). Sent as X-Axiam-Tenant on every
+    // request build_request() constructs -- which is every /api/v1 REST call
+    // this client makes (management, check_access/batch_check, refresh, logout,
+    // self-service, WebAuthn). Disengaged means "send nothing", byte-for-byte
+    // what every request sent before 1.51. Guarded by state_mtx because
+    // Client::acting_tenant()/clear_acting_tenant() can be called concurrently
+    // with a request in flight on another Client copy of this same Impl -- see
+    // the header comment on Client::acting_tenant() for why this field is
+    // SHARED across every Client copy of one build() call, unlike the Rust
+    // reference's per-handle scoping.
+    std::optional<std::string> acting_tenant_id;
+
+    // The most recent session-establishing response's LoginUserInfo, or
+    // disengaged when this client holds none -- either because it has never
+    // logged in, or because the last call that completed a session (OPAQUE,
+    // WebAuthn, the MFA setup, authenticate_device()) reported none (C-12
+    // question 5 / the C-5 lesson: RESET to unknown, never assumed false).
+    // Gates Client::acting_tenant(): present and organization_level == false,
+    // or present and reachable_tenant_ids excludes the requested tenant, both
+    // refuse client-side with zero wire calls (§5.2 rule 1 / §5.2.3 rule 4);
+    // disengaged sends the header and lets the server's 403 decide. Guarded by
+    // state_mtx.
+    std::optional<UserInfo> login_user_info;
+
+    // CONTRACT.md §6.1 rule 6 (contract 1.51): authenticate_device() ADOPTS its
+    // token as this client's credential, the same way login() adopts a session
+    // cookie. Empty means "not adopted" (Sensitive<std::string>::empty()).
+    // Guarded by state_mtx. Presented as `Authorization: Bearer <token>` on
+    // every request build_request() builds from here on, and pairs with
+    // `device_session` below to withhold the §9 refresh guard: there is no
+    // refresh token for this credential (D-6), so a later 401 on it must not
+    // spend a wire call trying to refresh a cookie session that may not even
+    // exist.
+    Sensitive<std::string> device_access_token;
+
+    // Set alongside `device_access_token`, and checked instead of `session` at
+    // both §9 refresh-trigger sites (execute() and execute_retrying()): a
+    // device token has no refresh token to spend, so `session && !device_session`
+    // is what gates a refresh attempt. `has_session()` still reports true for
+    // either, because both mean "this client holds a usable credential" from a
+    // caller's point of view.
+    bool device_session = false;
+
     // CONTRACT.md §5.2.2 — the tenant the signed-in principal's record LIVES in, as
     // reported by the login response. Distinct from `tenant_id`/`tenant_slug`, which
     // name the tenant being ACTED ON: the two diverge for an organization-level
@@ -191,10 +234,33 @@ struct Client::Impl {
         req.headers["Accept"] = "application/json";
         if (!body.empty()) req.headers["Content-Type"] = "application/json";
         req.body = body;
-        // §3: echo captured CSRF token on state-changing requests.
-        if (is_state_changing(method)) {
+        {
             std::lock_guard<std::mutex> lock(state_mtx);
-            if (!csrf.empty()) req.headers["X-CSRF-Token"] = csrf;
+            // §3: echo captured CSRF token on state-changing requests.
+            if (is_state_changing(method) && !csrf.empty()) req.headers["X-CSRF-Token"] = csrf;
+            // §5.2 rule 1 (contract 1.51): sent ONLY when set -- a client that
+            // never called acting_tenant()/with_acting_tenant() sends no
+            // X-Axiam-Tenant at all, byte-for-byte what it sent before 1.51.
+            // This is every /api/v1 call build_request() builds: management
+            // (management_transport.cpp), check_access/batch_check, login,
+            // refresh, logout, and every self-service/WebAuthn POST
+            // (account.cpp, webauthn.cpp) that goes through build_request()
+            // rather than a hand-rolled request. Coupled to NOTHING else on
+            // this request -- X-Tenant-ID above and any {tenant_id} path
+            // segment are read by different server mechanisms (§27.4 rule 3).
+            if (acting_tenant_id) req.headers[kActingTenantHeader] = *acting_tenant_id;
+            // CONTRACT.md §6.1 rule 6 (contract 1.51): a device token this
+            // client adopted (authenticate_device()) is presented as a bearer
+            // credential, and the request withholds any cookie a PRIOR session
+            // on this same client left in the jar. The server reads the
+            // axiam_access cookie BEFORE the Authorization header, so a client
+            // that adopted the device token while still replaying a stale
+            // session cookie would run as the previous session's principal
+            // instead of the device's.
+            if (!device_access_token.empty()) {
+                req.headers["Authorization"] = "Bearer " + detail::reveal(device_access_token);
+                req.no_stored_cookies = true;
+            }
         }
         return req;
     }
@@ -375,7 +441,10 @@ struct Client::Impl {
                 bool have_session;
                 {
                     std::lock_guard<std::mutex> lock(state_mtx);
-                    have_session = session;
+                    // §6.1 rule 6: a device token has no refresh token to spend
+                    // (D-6), so device_session excludes it from the refresh
+                    // attempt even though `session` may also be true.
+                    have_session = session && !device_session;
                 }
                 if (have_session) {
                     do_single_flight_refresh();  // throws AuthError on failure
@@ -405,7 +474,8 @@ struct Client::Impl {
             bool have_session;
             {
                 std::lock_guard<std::mutex> lock(state_mtx);
-                have_session = session;
+                // §6.1 rule 6: same exclusion as execute_retrying() above.
+                have_session = session && !device_session;
             }
             if (have_session) {
                 try {

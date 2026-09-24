@@ -170,7 +170,7 @@ AXIAM_TEST("§27.4 rule 4: paging reaches the query string") {
 // A bare-array endpoint returns a vector, never a Page. The type system carries the
 // distinction here: there is no `total` to misread.
 AXIAM_TEST("§27.4 rule 4: a bare array is a vector, not a Page") {
-    auto fixture = axtest::mgmt::signed_in(200, R"json([{"resource_id": "11111111-1111-4111-8111-111111111111", "user": {"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}}])json");
+    auto fixture = axtest::mgmt::signed_in(200, R"json([{"inherit": true, "resource_id": "11111111-1111-4111-8111-111111111111", "user": {"created_at": "2026-08-26T00:00:00Z", "email": "example", "email_verified": true, "failed_login_attempts": 1, "id": "11111111-1111-4111-8111-111111111111", "is_locked": true, "locked_until": "2026-08-26T00:00:00Z", "metadata": {}, "mfa_enabled": true, "status": "Active", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "username": "example"}}])json");
 
     const auto users = fixture.client.management().roles().list_users(kUuid);
 

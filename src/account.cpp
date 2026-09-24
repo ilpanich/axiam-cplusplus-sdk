@@ -155,6 +155,11 @@ LoginResult Client::mfa_setup_confirm(const Sensitive<std::string>& setup_token,
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // §5.2 rule 1 gate: reset to exactly what THIS response reported --
+        // mfa_setup_confirm is the MFA-setup carve-out of "which sessions count
+        // as holding a login result" (C-1's "For C-12" question 5), never
+        // carried over from an earlier login.
+        p_->login_user_info = result.user;
         if (result.user) {
             p_->resolved_tenant_id = result.user->tenant_id;
             // §5.2.2 rule 2, as in the login path: mfa_setup_confirm completes a login.

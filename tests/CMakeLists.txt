@@ -25,6 +25,26 @@ add_executable(axiam_cpp_tests
   # does not parse are never exercised. Hand-written, not a generator output.
   test_management_models_optional.cpp
   test_management_semantics.cpp
+  # CONTRACT.md §27.13 (contract 1.51): the model-level pins C-1's EXECUTED block
+  # calls out by name -- SubjectAltName's externally-tagged shape, a subject-side
+  # inherit's open-default decode, and CertificateType's open-enum successor value.
+  test_contract_151_models.cpp
+  # CONTRACT.md §5.2 rule 1 (contract 1.51): the acting-tenant helper -- sent when
+  # set, absent when not, gated on a held login result, and part of the §17 memo key.
+  test_acting_tenant.cpp
+  # CONTRACT.md §6.1 rules 6-10 (contract 1.51): authenticate_device()'s reachability
+  # gate, token adoption, stale-cookie withholding, and no-refresh-on-401.
+  test_device_auth.cpp
+  # CONTRACT.md §5.2 rule 1 (contract 1.51): the acting-tenant gate reset on every
+  # SSO/federation session completion, with each completion's refused-completion twin.
+  test_sso_gate_reset.cpp
+  # CONTRACT.md §27.6.1 (contract 1.51): the three manifest additions -- resource
+  # metadata, the two-shape role binding, and service_accounts.
+  test_manifest_additions.cpp
+  # Dogfooding plan §13 row-17: the two flat-entity-tier manifest defects this port
+  # fixes -- parent_id never sent for a nested resource, and a silent resource_type
+  # default to "folder".
+  test_manifest_nested_resources.cpp
   # The contract 1.34 §5.2.2 / 1.35 §5.2.3 rules. Uses the management rig AND the
   # OPAQUE fake: the acting-tenant/principal-tenant distinction shows up on both
   # surfaces, and splitting it in two would hide that they are one rule.

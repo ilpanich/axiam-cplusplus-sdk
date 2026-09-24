@@ -87,23 +87,43 @@ TokenAuthenticator::TokenAuthenticator(JwksVerifier& jwks, std::string expected_
 AxiamUser TokenAuthenticator::authenticate_sender_constrained(
     const std::string& token,
     const std::optional<std::string>& presented_thumbprint) const {
-    // Rules 1-8 first: rule 9 reports a fact about the token's binding, and
-    // reporting that before the token is known to be valid at all would answer
-    // a question the caller has not earned.
-    AxiamUser user = authenticate(token);
-
-    // Rule 9. `authenticate()` deliberately does not apply it — it has no
-    // transport to ask for a peer certificate — so a resource server that
-    // accepts certificate-bound tokens must come through here instead.
-    const auto verified = jwks_->verify_signature_only_unchecked(token);
-    if (!verified.has_value() ||
-        !verify_certificate_binding(verified->payload_json, presented_thumbprint)) {
-        throw AuthError("token sender constraint not satisfied");
-    }
-    return user;
+    return authenticate_checked(token, presented_thumbprint);
 }
 
 AxiamUser TokenAuthenticator::authenticate(const std::string& token) const {
+    // CONTRACT.md §10.1 rule 9 (contract 1.51 fix — SEC-071/SEC-080's shape,
+    // found again here): this is the DEFAULT, no-evidence entry point — the one
+    // AxiamUser, the §11 macros and the §28 guard all reach, the one
+    // guard_authenticator() wires into AxiamGuard, and the one this SDK's own
+    // README and examples call "the" verifier. Passing `std::nullopt` as the
+    // presented thumbprint is not "skip rule 9" — verify_certificate_binding()
+    // still runs, and an ABSENT `cnf` still passes (an unbound token is a
+    // bearer token, accepted with or without a certificate, per the rule's own
+    // first row). What `nullopt` closes is the PRESENT-`cnf` rows: no thumbprint
+    // can equal a `cnf.x5t#S256` this call was never given, so a token that
+    // claims a sender constraint is refused here rather than silently honoured
+    // as an ordinary bearer token.
+    //
+    // Before this fix `authenticate()` never looked at `cnf` at all: a device
+    // token minted by authenticate_device() (§6.1 rule 9) — or any other
+    // certificate-bound or DPoP-bound token — verified as a plain bearer
+    // token through this entry point. A caller who lifted such a token off a
+    // device (from a log line, a flash dump, a debugger) and replayed it
+    // through any guard built on the plain authenticate() was admitted with no
+    // proof of possession, exactly the bypass rule 9 exists to close. This is
+    // a BREAKING change for a deployment that was relying on that gap,
+    // recorded as such in CHANGELOG.md — the fix is the intended behaviour,
+    // not a regression.
+    //
+    // A resource server that DOES want to accept bound tokens calls
+    // authenticate_sender_constrained() with the peer certificate's thumbprint
+    // instead — the documented, correctly-named escape hatch, never this one.
+    return authenticate_checked(token, std::nullopt);
+}
+
+AxiamUser TokenAuthenticator::authenticate_checked(
+    const std::string& token,
+    const std::optional<std::string>& presented_thumbprint) const {
     if (token.empty()) {
         throw AuthError("authentication_failed: no token presented");
     }
@@ -187,6 +207,27 @@ AxiamUser TokenAuthenticator::authenticate(const std::string& token) const {
         if (options_.revocation_feed->is_revoked(sid)) {
             throw AuthError("authentication_failed: the session behind this token has been revoked");
         }
+    }
+
+    // (9) CONTRACT.md §10.1 rule 9 — sender constraint. Checked LAST, after
+    // every other rule has already decided the token would otherwise be
+    // accepted: reporting a binding failure on a token that was going to be
+    // rejected anyway (expired, wrong tenant, …) would tell the caller the
+    // wrong thing about why. `presented_thumbprint` is `std::nullopt` from
+    // authenticate() — the default entry point has no transport evidence — and
+    // the peer certificate's thumbprint from authenticate_sender_constrained().
+    // verify_certificate_binding() implements the full table: an ABSENT `cnf`
+    // passes regardless of evidence (an unbound token is a bearer token); a
+    // PRESENT `cnf` needs a thumbprint that matches it exactly, so `nullopt`
+    // here refuses every bound token rather than silently downgrading it to a
+    // bearer token.
+    if (!verify_certificate_binding(verified->payload_json, presented_thumbprint)) {
+        throw AuthError("authentication_failed: token sender constraint (cnf) not satisfied — "
+                        "this is a certificate- or DPoP-bound token and was not accepted "
+                        "as a bearer token (CONTRACT.md §10.1 rule 9); a resource server "
+                        "that intends to accept it must call "
+                        "authenticate_sender_constrained() with the peer certificate's "
+                        "thumbprint");
     }
 
     AxiamUser user;

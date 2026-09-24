@@ -60,6 +60,10 @@ class PlatformApi;
 
 namespace axiam {
 
+/// The CONTRACT.md §5.2 rule 1 (contract 1.51) acting-tenant header name.
+/// Distinct from `X-Tenant-ID` (§5 rule 2) — see \ref Client::acting_tenant.
+inline constexpr const char* kActingTenantHeader = "X-Axiam-Tenant";
+
 class Client {
 public:
     class Builder {
@@ -80,6 +84,33 @@ public:
         /// §6.1: present a client identity certificate (PEM chain + PEM key) for
         /// mutual TLS. Strict server verification is unchanged.
         Builder& with_client_cert(std::string cert_pem, std::string key_pem);
+
+        /// CONTRACT.md §5.2 rule 1 (contract 1.51): the ACTING tenant, sent as
+        /// `X-Axiam-Tenant` on every `/api/v1` REST request this client makes.
+        /// Meaningful only for an ORGANIZATION-LEVEL principal (§5.2) — such a
+        /// principal's global grants apply in every tenant of its organization,
+        /// and this is how it selects which one a request acts on. For an
+        /// ordinary tenant principal the same header produces a `403`.
+        ///
+        /// Distinct from `tenant_id()`/`tenant_slug()`, which name the tenant
+        /// this client LOGS IN AGAINST and which populate `X-Tenant-ID` (§5 rule
+        /// 2) on every request regardless — the two headers are read by
+        /// different server mechanisms and this SDK never couples them.
+        ///
+        /// `tenant_id` MUST be a UUID: the server parses `X-Axiam-Tenant` as one
+        /// and silently ignores a value that does not parse, acting on the
+        /// caller's own tenant instead — a slug here would report success about
+        /// the wrong tenant. Refused client-side, with no wire call, when it is
+        /// not (§27.4 rule 2's client-side error).
+        ///
+        /// The BUILDER form cannot gate on `organization_level` or
+        /// `reachable_tenant_ids` (§5.2.3 rule 4) the way the on-client
+        /// \ref Client::acting_tenant "acting_tenant()" does: it runs before any
+        /// login has reported either. It sends the header as configured from
+        /// the client's first request, and the server's `403` is the answer for
+        /// a principal that turns out not to be organization-level.
+        /// @throws std::invalid_argument if `tenant_id` is not a UUID.
+        Builder& with_acting_tenant(std::string tenant_id);
 
         Builder& connect_timeout(std::chrono::milliseconds ms);
         Builder& request_timeout(std::chrono::milliseconds ms);
@@ -180,6 +211,7 @@ public:
         std::string custom_ca_pem_;
         std::string client_cert_pem_;
         std::string client_key_pem_;
+        std::optional<std::string> acting_tenant_id_;  // §5.2 rule 1
         std::chrono::milliseconds connect_timeout_{10000};
         std::chrono::milliseconds request_timeout_{30000};
         Transport transport_;  // empty => default libcurl
@@ -343,6 +375,61 @@ public:
 
     TokenPair refresh();
     void logout();
+
+    // ---- §5.2 rule 1: the acting tenant, on an existing client ----
+
+    /// Select the tenant this client ACTS ON from now on (CONTRACT.md §5.2 rule
+    /// 1, contract 1.51). Sends `X-Axiam-Tenant: tenant_id` on every `/api/v1`
+    /// REST request this client makes from here — management, `check_access` /
+    /// `batch_check`, `refresh`, `logout`, and every self-service and WebAuthn
+    /// POST alike (§5.2.2 rule 4: the header is never withheld from those). A
+    /// client that never calls this, or that calls \ref clear_acting_tenant,
+    /// sends no `X-Axiam-Tenant` at all — byte-for-byte what it sent before
+    /// 1.51.
+    ///
+    /// Mutates THIS client's shared session state and returns `*this` for
+    /// chaining; every `Client` copy built from the same \ref builder "build()"
+    /// call shares one `X-Axiam-Tenant` value, exactly as every copy already
+    /// shares one cookie jar, one CSRF token and one tenant header — this is
+    /// not a new kind of sharing, it is the existing one applied to a new
+    /// field. A caller running two tasks against two tenants over one session
+    /// wants two `Client` VALUES from two \ref builder "build()" calls (or one
+    /// `with_acting_tenant` each), not two copies of one that would fight over
+    /// this field.
+    ///
+    /// Gated on what THIS client currently knows (§5.2 rule 1's "gate it on
+    /// what the SDK knows" clause):
+    /// - **Holding a login result** (the most recent session-establishing
+    ///   response reported a `LoginUserInfo` — §5.2.3's OPAQUE/SSO/WebAuthn/MFA-
+    ///   setup carve-out resets this to "unknown" rather than to `false`; see
+    ///   the README): refused client-side, with **zero wire calls**, as
+    ///   `AuthzError`, unless `organization_level` is `true`; and refused the
+    ///   same way when `reachable_tenant_ids` is present and does not name
+    ///   `tenant_id` (§5.2.3 rule 4).
+    /// - **Holding no login result** — a device token (\ref authenticate_device),
+    ///   an organization-level service account, or a client with an injected
+    ///   token: nothing to gate on, so the header is sent as asked and the
+    ///   server's `403` is the answer.
+    ///
+    /// `tenant_id` MUST be a UUID (refused client-side, zero wire calls,
+    /// otherwise — the server silently ignores a slug and acts on the caller's
+    /// own tenant, reporting success about the wrong one).
+    ///
+    /// Documented as meaningful only for an organization-level principal, never
+    /// as a general "switch tenant" capability (§5.2 rule 1).
+    /// @throws NetworkError if `tenant_id` is not a UUID.
+    /// @throws AuthzError if a held login result says the server would refuse it.
+    Client& acting_tenant(const std::string& tenant_id);
+
+    /// Stop sending `X-Axiam-Tenant`. Idempotent; harmless on a client that
+    /// never set one.
+    Client& clear_acting_tenant();
+
+    /// The value \ref acting_tenant "acting_tenant()" last set, or
+    /// `std::nullopt` when none is configured (construction, or after \ref
+    /// clear_acting_tenant). Test/introspection helper.
+    std::optional<std::string> acting_tenant_id() const;
+
     AccessDecision check_access(const std::string& action, const std::string& resource_id,
                                 std::optional<std::string> scope = std::nullopt,
                                 std::optional<std::string> subject_id = std::nullopt);
@@ -351,8 +438,65 @@ public:
                        std::optional<std::string> subject_id = std::nullopt);
     std::vector<AccessDecision> batch_check(const std::vector<AccessCheck>& checks);
 
-    /// §6.1 device / service-account authentication via the configured mTLS
-    /// client certificate (POST /api/v1/auth/device).
+    /// `POST /api/v1/auth/device` — device / service-account authentication via
+    /// the configured mTLS client certificate (CONTRACT.md §6.1 rules 6–10,
+    /// contract 1.51).
+    ///
+    /// **One call, no body, three fields back** (rule 6): `{ access_token,
+    /// token_type, expires_in }`, exactly \ref DeviceAuth. `token_type` is
+    /// `"Bearer"`. There is **no refresh token** — a server decision (D-6 of the
+    /// dogfooding remediation plan) — so this client's §9 single-flight refresh
+    /// guard has nothing to spend on this credential: a later `401` on it,
+    /// including from THIS call itself, is surfaced as `AuthError` with **no**
+    /// refresh attempt. Re-authenticate by calling this again, which costs one
+    /// TLS handshake.
+    ///
+    /// **Reachable only on a client built with \ref Builder::with_client_cert**
+    /// (rule 7). On a client without one, this throws `AuthError` **client-side,
+    /// with zero wire calls** — the server would answer `401` regardless, so
+    /// going to the wire would turn a configuration mistake into an
+    /// authentication failure for no reason.
+    ///
+    /// **Adopted as this client's credential** (rule 6's "exactly as it adopts a
+    /// login result"), the same way `login()` is: subsequent calls on this
+    /// client (`check_access`, `management()`, …) present `access_token` as
+    /// `Authorization: Bearer <token>`. This request, and every one after it,
+    /// withholds any cookie a PRIOR session on this client left in the jar
+    /// (`Client::Impl::no_stored_cookies`) — the server reads the `axiam_access`
+    /// cookie before the `Authorization` header, so a client that adopted a
+    /// device token while still replaying a stale cookie would run as the
+    /// previous session's principal instead.
+    ///
+    /// **Every refusal is a `401`** (rule 8, server T22.4): an unknown,
+    /// untrusted, expired, revoked or unbound certificate, and a `Server`-type
+    /// certificate (§27.13 S-7), all map to `AuthError`. This call does not
+    /// enter the §9 refresh guard for it: this IS the login. A `429` (the
+    /// per-client-IP rate limit) follows §16 and is not an authentication
+    /// failure — surfaced as `NetworkError`, never retried by this call (a POST
+    /// is not §16-retry-eligible).
+    ///
+    /// **The token is certificate-bound, and CONTRACT.md §10.1 rule 9 applies to
+    /// it** (rule 9, server T22.3): when AXIAM itself terminated the TLS
+    /// handshake, `access_token` carries `cnf: { "x5t#S256": <thumbprint> }` and
+    /// is usable only on a connection presenting that certificate — this
+    /// client's own subsequent calls qualify because \ref Builder::with_client_cert
+    /// configures the SAME identity on every request. A resource server
+    /// verifying this token itself MUST go through
+    /// `TokenAuthenticator::authenticate_sender_constrained`, never the plain
+    /// `authenticate()`, which has no certificate evidence to check `cnf`
+    /// against and refuses a bound token outright (see `authenticator.hpp`).
+    /// `token_type` stays `"Bearer"` either way and MUST NOT be read as
+    /// evidence of boundness.
+    ///
+    /// **What the token can do** (rule 10): a service-account token
+    /// (`aud: axiam:m2m`), accepted by `check_access`/`batch_check` and by the
+    /// §27 management operations §27.13's S-9 note lists, on exactly the terms
+    /// a user's token would be.
+    ///
+    /// @throws AuthError when this client was not built with a client
+    ///         certificate (client-side, zero wire calls) or on any server
+    ///         refusal (401).
+    /// @throws NetworkError on a 429 or a transport failure.
     DeviceAuth authenticate_device();
 
     // ---- §20 UMA 2.0 — Protection API and ticket grant ----
