@@ -134,6 +134,11 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   the imperative surface for that piece.
 - **`webhooks`** in the manifest — unimplemented, per §27.6's own note that
   no consumer has asked for it; unchanged.
+- **§6.1 rule 7 as a compile-time gate.** `authenticate_device()` on a client
+  built without `with_client_cert()` is refused at run time (`AuthError`,
+  zero wire calls), the rule's fallback form. A compile-time gate would
+  mean splitting `Client` into two types, because the certificate is one
+  option on the single `Client::Builder`.
 
 ## [1.0.0-beta16] - 2026-09-19
 

@@ -458,7 +458,10 @@ on this client left in the jar (the server reads `axiam_access` before
 the earlier principal). Reachable **only** on a client built with
 `with_client_cert()` — on any other client this throws `AuthError`
 client-side, with zero wire calls, since the server would answer `401`
-regardless. There is **no refresh token** for this credential (a server
+regardless. Rule 7 prefers a compile-time gate "where the type system can
+express that"; this SDK enforces it at run time instead, because a certificate
+is one option on the single `Client::Builder`, and a compile-time gate would
+mean splitting `Client` into two types, a break no other part of 1.51 asks for. There is **no refresh token** for this credential (a server
 decision, D-6 of the dogfooding remediation plan): a later `401` on it is
 surfaced as `AuthError` with **no** refresh attempt, and the caller
 re-authenticates by calling `authenticate_device()` again. A `429` (the
