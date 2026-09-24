@@ -183,6 +183,7 @@ enum class CertificateType {
     User,  ///< Wire value `User`.
     Service,  ///< Wire value `Service`.
     Device,  ///< Wire value `Device`.
+    Server,  ///< Wire value `Server`.
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
@@ -920,6 +921,7 @@ struct SignCertificateCsrRequest;
 struct SignIntermediateCsrRequest;
 struct SignedAuditBatch;
 struct SmtpConfig;
+struct SubjectAltName;
 struct Tenant;
 struct TenantSettingsOverride;
 struct TokenExchangeTrustRequest;
@@ -971,6 +973,14 @@ struct ApiProviderConfig {
 struct AssignRoleToGroupRequest {
     /// The server's `group_id` field.
     std::string group_id;
+    /// Whether the assignment also reaches the descendants of `resource_id`. Omitted — the
+    /// default — or `true` is today's behaviour: a resource-scoped assignment applies at its
+    /// resource and everywhere below it. `false` applies it at `resource_id` only, "here and no
+    /// further", for allow and deny grants alike. Refused with 400 when `false` is sent with no
+    /// `resource_id` (a tenant-wide assignment has no node to stop at) or for a role with
+    /// `is_global: true` (a global role applies everywhere by definition). The flag is part of
+    /// the assignment: to change it, unassign and assign again. Optional.
+    std::optional<bool> inherit = std::nullopt;
     /// The server's `resource_id` field. Optional.
     std::optional<std::string> resource_id = std::nullopt;
     /// The tenants this assignment reaches. Only meaningful for an assignment made in an
@@ -980,10 +990,23 @@ struct AssignRoleToGroupRequest {
     /// does. Refused with 400 outside an organization scope, when empty, and when it names a
     /// tenant of another organization or the organization's own scope tenant. Optional.
     std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
+
+    /// Whether this assignment inherits (CONTRACT.md §27.13 S-10 rule 3). `inherit` above is
+    /// `std::nullopt` both when the server omitted the field and when it explicitly sent
+    /// `true`; EITHER WAY that means inherits. Read this, never `inherit.value_or(false)`.
+    bool inherits() const noexcept { return inherit.value_or(true); }
 };
 
 /// The `AssignRoleToServiceAccountRequest` schema from the server's OpenAPI document.
 struct AssignRoleToServiceAccountRequest {
+    /// Whether the assignment also reaches the descendants of `resource_id`. Omitted — the
+    /// default — or `true` is today's behaviour: a resource-scoped assignment applies at its
+    /// resource and everywhere below it. `false` applies it at `resource_id` only, "here and no
+    /// further", for allow and deny grants alike. Refused with 400 when `false` is sent with no
+    /// `resource_id` (a tenant-wide assignment has no node to stop at) or for a role with
+    /// `is_global: true` (a global role applies everywhere by definition). The flag is part of
+    /// the assignment: to change it, unassign and assign again. Optional.
+    std::optional<bool> inherit = std::nullopt;
     /// The server's `resource_id` field. Optional.
     std::optional<std::string> resource_id = std::nullopt;
     /// The server's `service_account_id` field.
@@ -995,10 +1018,23 @@ struct AssignRoleToServiceAccountRequest {
     /// does. Refused with 400 outside an organization scope, when empty, and when it names a
     /// tenant of another organization or the organization's own scope tenant. Optional.
     std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
+
+    /// Whether this assignment inherits (CONTRACT.md §27.13 S-10 rule 3). `inherit` above is
+    /// `std::nullopt` both when the server omitted the field and when it explicitly sent
+    /// `true`; EITHER WAY that means inherits. Read this, never `inherit.value_or(false)`.
+    bool inherits() const noexcept { return inherit.value_or(true); }
 };
 
 /// The `AssignRoleToUserRequest` schema from the server's OpenAPI document.
 struct AssignRoleToUserRequest {
+    /// Whether the assignment also reaches the descendants of `resource_id`. Omitted — the
+    /// default — or `true` is today's behaviour: a resource-scoped assignment applies at its
+    /// resource and everywhere below it. `false` applies it at `resource_id` only, "here and no
+    /// further", for allow and deny grants alike. Refused with 400 when `false` is sent with no
+    /// `resource_id` (a tenant-wide assignment has no node to stop at) or for a role with
+    /// `is_global: true` (a global role applies everywhere by definition). The flag is part of
+    /// the assignment: to change it, unassign and assign again. Optional.
+    std::optional<bool> inherit = std::nullopt;
     /// The server's `resource_id` field. Optional.
     std::optional<std::string> resource_id = std::nullopt;
     /// The tenants this assignment reaches. Only meaningful for an assignment made in an
@@ -1010,6 +1046,11 @@ struct AssignRoleToUserRequest {
     std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
     /// The server's `user_id` field.
     std::string user_id;
+
+    /// Whether this assignment inherits (CONTRACT.md §27.13 S-10 rule 3). `inherit` above is
+    /// `std::nullopt` both when the server omitted the field and when it explicitly sent
+    /// `true`; EITHER WAY that means inherits. Read this, never `inherit.value_or(false)`.
+    bool inherits() const noexcept { return inherit.value_or(true); }
 };
 
 /// The `AuditLogEntry` schema from the server's OpenAPI document.
@@ -1101,7 +1142,9 @@ struct CaCertificate {
     std::string public_cert_pem;
     /// The server's `status` field.
     CertificateStatus status;
-    /// The certificate subject (e.g., `CN=ACME Corp Root CA`).
+    /// The CA's common name, e.g. `ACME Corp Root CA`. The normalised value: a `CN=` prefix in
+    /// the request is understood and stripped, so this always says what the certificate's
+    /// subject DN says (DF-023).
     std::string subject;
     /// The tenant this CA signs for, when it is a tenant signing CA. `None` for an
     /// organization-level CA — the trust anchor, and the only kind that existed before tenant
@@ -1137,7 +1180,9 @@ struct Certificate {
     std::string public_cert_pem;
     /// The server's `status` field.
     CertificateStatus status;
-    /// The certificate subject (e.g., `CN=device-001`).
+    /// The certificate's common name, e.g. `device-001`. The normalised value: a `CN=` prefix
+    /// in the request is understood and stripped, so this always says what the certificate's
+    /// subject DN says (DF-023).
     std::string subject;
     /// The tenant this certificate belongs to.
     std::string tenant_id;
@@ -1154,6 +1199,15 @@ struct CertificatePolicy {
     std::int64_t default_cert_validity_days;
     /// The server's `max_cert_validity_days` field.
     std::int64_t max_cert_validity_days;
+    /// The names a `Server` certificate may be issued for (S-7, DF-001): DNS suffixes
+    /// (`.lakeside.internal`, strictly below), exact hosts (`lakeside.internal`) and IP
+    /// prefixes (`10.0.0.0/8`, `fd00::/8`). See [`crate::models::server_names`] for the
+    /// matching rules. **Empty by default, and empty refuses every `Server` request** (I1). A
+    /// certificate for a name, signed under the organization root, is trusted by every relying
+    /// party that trusts that root, so the list is written where the root is owned. A tenant
+    /// override may only remove an entry or narrow one; when the baseline later shrinks, the
+    /// tenant's effective list is the intersection of the two. Optional.
+    std::optional<std::vector<std::string>> server_cert_allowed_names = std::nullopt;
 };
 
 /// Whether, and on what terms, a `client_id` that is a URL is resolved by fetching the document
@@ -1289,10 +1343,26 @@ struct CreateCaCertificateRequest {
     std::optional<bool> issue_from_root = std::nullopt;
     /// The server's `key_algorithm` field.
     KeyAlgorithm key_algorithm;
-    /// The server's `subject` field.
+    /// The CA's common name, e.g. `ACME Corp Root CA`. A **common name**, not a distinguished
+    /// name. A single `CN=` prefix is accepted and stripped; anything else containing `=` —
+    /// `O=Acme, CN=ACME Corp Root CA` — is refused with `400`.
     std::string subject;
     /// Validity duration in days.
     std::int64_t validity_days;
+};
+
+/// A name to put in a `Server` certificate's `subjectAltName`. Stated explicitly in the
+/// request, never read from a CSR: a CSR asking for a `subjectAltName` extension is still
+/// refused. URI and e-mail names are not offered — nothing in AXIAM consumes them yet.
+///
+/// Every member is optional, so this is a SPARSE body: an engaged `std::optional` is sent and a
+/// disengaged one is OMITTED from the request entirely, rather than sent as null (§27.4 rule
+/// 5). On a sparse update those say opposite things, and only omission means "leave it alone".
+struct SubjectAltName {
+    /// A DNS name, e.g. `api.lakeside.internal` or `*.lakeside.internal`. Optional.
+    std::optional<std::string> dns = std::nullopt;
+    /// An IPv4 or IPv6 address, e.g. `10.0.0.5`. Optional.
+    std::optional<std::string> ip = std::nullopt;
 };
 
 /// The `CreateCertificateRequest` schema from the server's OpenAPI document.
@@ -1307,6 +1377,12 @@ struct CreateCertificateRequest {
     std::optional<std::string> metadata = std::nullopt;
     /// The server's `subject` field.
     std::string subject;
+    /// The names a `Server` certificate is issued for, as `[{"dns": "api.lakeside.internal"},
+    /// {"ip": "10.0.0.5"}]`. Required for `cert_type: Server` and refused for every other type.
+    /// Each name, and the common name, must be admitted by the tenant's effective
+    /// `server_cert_allowed_names`, which is empty — refusing every `Server` request — until an
+    /// organization administrator lists names. Optional.
+    std::optional<std::vector<SubjectAltName>> subject_alt_names = std::nullopt;
     /// Validity duration in days.
     std::int64_t validity_days;
 };
@@ -1415,7 +1491,9 @@ struct CreateIntermediateCaRequest {
     KeyAlgorithm key_algorithm;
     /// The organization CA that signs it.
     std::string parent_ca_id;
-    /// Subject for the signing CA, e.g. `CN=ACME R&D Signing CA`.
+    /// The signing CA's common name, e.g. `ACME R&D Signing CA`. A **common name**, not a
+    /// distinguished name. A single `CN=` prefix is accepted and stripped; anything else
+    /// containing `=` is refused with `400`.
     std::string subject;
     /// Validity duration in days, capped to the parent's own expiry.
     std::int64_t validity_days;
@@ -1993,7 +2071,9 @@ struct GeneratedCaCertificate {
     std::string public_cert_pem;
     /// The server's `status` field.
     CertificateStatus status;
-    /// The certificate subject (e.g., `CN=ACME Corp Root CA`).
+    /// The CA's common name, e.g. `ACME Corp Root CA`. The normalised value: a `CN=` prefix in
+    /// the request is understood and stripped, so this always says what the certificate's
+    /// subject DN says (DF-023).
     std::string subject;
     /// The tenant this CA signs for, when it is a tenant signing CA. `None` for an
     /// organization-level CA — the trust anchor, and the only kind that existed before tenant
@@ -2034,7 +2114,9 @@ struct GeneratedCertificate {
     std::string public_cert_pem;
     /// The server's `status` field.
     CertificateStatus status;
-    /// The certificate subject (e.g., `CN=device-001`).
+    /// The certificate's common name, e.g. `device-001`. The normalised value: a `CN=` prefix
+    /// in the request is understood and stripped, so this always says what the certificate's
+    /// subject DN says (DF-023).
     std::string subject;
     /// The tenant this certificate belongs to.
     std::string tenant_id;
@@ -2776,18 +2858,30 @@ struct Role {
 
 /// A role together with its assignment context (the resource it is scoped to).
 struct RoleAssignment {
+    /// Whether the assignment reaches the descendants of `resource_id` as well as the resource
+    /// itself (`true`, the default, and the value of every assignment written before the field
+    /// existed) or applies at that resource only (`false`). Optional.
+    std::optional<bool> inherit = std::nullopt;
     /// `None` means the role was assigned globally (no resource scope). Optional.
     std::optional<std::string> resource_id = std::nullopt;
     /// The server's `role` field.
     Role role;
     /// The tenants this assignment reaches. See [`TenantScope`]. Optional.
     std::optional<std::vector<std::string>> tenant_scope = std::nullopt;
+
+    /// Whether this assignment inherits (CONTRACT.md §27.13 S-10 rule 3). `inherit` above is
+    /// `std::nullopt` both when the server omitted the field and when it explicitly sent
+    /// `true`; EITHER WAY that means inherits. Read this, never `inherit.value_or(false)`.
+    bool inherits() const noexcept { return inherit.value_or(true); }
 };
 
 /// A group together with the resource scope of its assignment of this role.
 struct RoleGroupAssignment {
     /// The assigned group.
     Group group;
+    /// Whether the assignment also reaches the descendants of `resource_id` (`true`, the
+    /// default) or applies at that resource only (`false`).
+    bool inherit;
     /// `None` means the role was assigned globally (no resource scope). Optional.
     std::optional<std::string> resource_id = std::nullopt;
     /// The tenants this assignment reaches, or omitted for "wherever the role does". Shown next
@@ -2818,6 +2912,9 @@ struct ServiceAccountResponse {
 
 /// A service account together with the resource scope of its assignment.
 struct RoleServiceAccountAssignment {
+    /// Whether the assignment also reaches the descendants of `resource_id` (`true`, the
+    /// default) or applies at that resource only (`false`).
+    bool inherit;
     /// `None` means the role was assigned globally (no resource scope). Optional.
     std::optional<std::string> resource_id = std::nullopt;
     /// The assigned service account. Carries no secret — the client secret is returned once, at
@@ -2862,6 +2959,9 @@ struct UserResponse {
 
 /// A user together with the resource scope of their assignment of this role.
 struct RoleUserAssignment {
+    /// Whether the assignment also reaches the descendants of `resource_id` (`true`, the
+    /// default) or applies at that resource only (`false`).
+    bool inherit;
     /// `None` means the role was assigned globally (no resource scope). Optional.
     std::optional<std::string> resource_id = std::nullopt;
     /// The tenants this assignment reaches, or omitted for "wherever the role does". Shown next
@@ -3122,6 +3222,9 @@ struct SetOrgSettings {
     bool require_uppercase;
     /// The server's `sensitive_scopes_enabled` field. Optional.
     std::optional<bool> sensitive_scopes_enabled = std::nullopt;
+    /// S-7 — defaulted to empty, so an API client written before the field lands on "no
+    /// `Server` certificate is issued" (I1). Optional.
+    std::optional<std::vector<std::string>> server_cert_allowed_names = std::nullopt;
     /// The server's `webauthn_user_verification` field. Optional.
     std::optional<std::string> webauthn_user_verification = std::nullopt;
 };
@@ -3146,6 +3249,11 @@ struct SignCertificateCsrRequest {
     std::string issuer_ca_id;
     /// The server's `metadata` field. Optional.
     std::optional<std::string> metadata = std::nullopt;
+    /// See [`CreateCertificateRequest::subject_alt_names`]. Stated here and never in the CSR,
+    /// which is still refused if it requests a `subjectAltName`. Under a CA whose key is held
+    /// by `vault_pki` a `Server` request on this path is refused; use `POST
+    /// /api/v1/certificates`. Optional.
+    std::optional<std::vector<SubjectAltName>> subject_alt_names = std::nullopt;
     /// Validity duration in days.
     std::int64_t validity_days;
 };
@@ -3294,6 +3402,10 @@ struct TenantSettingsOverride {
     std::optional<bool> require_uppercase = std::nullopt;
     /// The server's `sensitive_scopes_enabled` field. Optional.
     std::optional<bool> sensitive_scopes_enabled = std::nullopt;
+    /// S-7 — tighten-only: every entry must be covered by an organization entry. An empty list
+    /// means this tenant issues no `Server` certificate at all, which is different from an
+    /// absent field (inherit the organization's list). Optional.
+    std::optional<std::vector<std::string>> server_cert_allowed_names = std::nullopt;
     /// The server's `webauthn_user_verification` field. Optional.
     std::optional<std::string> webauthn_user_verification = std::nullopt;
 };

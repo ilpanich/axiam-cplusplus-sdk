@@ -25,6 +25,10 @@ add_executable(axiam_cpp_tests
   # does not parse are never exercised. Hand-written, not a generator output.
   test_management_models_optional.cpp
   test_management_semantics.cpp
+  # CONTRACT.md §27.13 (contract 1.51): the model-level pins C-1's EXECUTED block
+  # calls out by name -- SubjectAltName's externally-tagged shape, a subject-side
+  # inherit's open-default decode, and CertificateType's open-enum successor value.
+  test_contract_151_models.cpp
   # The contract 1.34 §5.2.2 / 1.35 §5.2.3 rules. Uses the management rig AND the
   # OPAQUE fake: the acting-tenant/principal-tenant distinction shows up on both
   # surfaces, and splitting it in two would hide that they are one rule.

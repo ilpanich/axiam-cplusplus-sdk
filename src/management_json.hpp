@@ -96,6 +96,8 @@ void to_json(nlohmann::json& j, const ConsentView& value);
 void from_json(const nlohmann::json& j, ConsentView& value);
 void to_json(nlohmann::json& j, const CreateCaCertificateRequest& value);
 void from_json(const nlohmann::json& j, CreateCaCertificateRequest& value);
+void to_json(nlohmann::json& j, const SubjectAltName& value);
+void from_json(const nlohmann::json& j, SubjectAltName& value);
 void to_json(nlohmann::json& j, const CreateCertificateRequest& value);
 void from_json(const nlohmann::json& j, CreateCertificateRequest& value);
 void to_json(nlohmann::json& j, const TokenExchangeTrustRequest& value);

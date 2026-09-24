@@ -208,6 +208,43 @@ def discriminated(schema: Any) -> tuple[str, list[tuple[str, Any]]] | None:
     return (tag or "", arms)
 
 
+def externally_tagged(schema: Any) -> list[tuple[str, Any]] | None:
+    """Detect ``{oneOf: [{type: object, required: [k], properties: {k: T}}, ...]}`` --
+    an EXTERNALLY TAGGED union with no shared discriminator field. Each variant's own
+    (single) PROPERTY NAME is the tag, e.g. ``{"dns": "..."}`` / ``{"ip": "..."}`` for
+    ``SubjectAltName`` (contract 1.51, S-7). Distinct from ``discriminated()``, which
+    looks for a shared field carrying a single-value enum -- that shape has no such
+    field at all, so ``discriminated()`` returns ``None`` for it and, left unhandled,
+    ``flatten()`` finds no top-level ``properties`` on a bare ``oneOf`` and reports
+    zero fields. ``modelled()`` then skips the schema as if it had none, so nothing
+    named ``SubjectAltName`` is ever DEFINED even though ``CreateCertificateRequest``
+    references it in a `std::vector<SubjectAltName>` member -- an incomplete-type
+    compile failure, not merely a wrong-shaped one. (Every generator that has ported
+    this contract version got this pair wrong once; this is the C++ fix.)
+
+    Returns ``[(key, property_schema), ...]``, one entry per variant in spec order, or
+    ``None`` when the schema is not this exact shape.
+    """
+    variants = schema.get("oneOf") if isinstance(schema, dict) else None
+    if not isinstance(variants, list) or len(variants) < 2:
+        return None
+    arms: list[tuple[str, Any]] = []
+    seen: set[str] = set()
+    for variant in variants:
+        if not isinstance(variant, dict) or variant.get("type") != "object":
+            return None
+        required = variant.get("required") or []
+        props = variant.get("properties") or {}
+        if len(required) != 1 or set(props) != set(required):
+            return None
+        key = required[0]
+        if key in seen:
+            return None
+        seen.add(key)
+        arms.append((key, props[key]))
+    return arms
+
+
 def sensitive_map() -> dict[str, set[str]]:
     """Which fields of which schemas carry a secret, per the registry."""
     out: dict[str, set[str]] = {}
@@ -465,6 +502,24 @@ def fields_of(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]]
     """
     schema = SCHEMAS.get(schema_name) or {}
     union = discriminated(schema)
+    tagged = None if union else externally_tagged(schema)
+    if tagged:
+        # Each variant becomes an independently OPTIONAL member, wire-keyed by its own
+        # tag. The existing sparse-field serializer already omits a disengaged
+        # optional and never emits `null` for one (`emit_to_json_member` /
+        # `emit_from_json_member`, unmodified) -- exactly `{"dns": "..."}` XOR
+        # `{"ip": "..."}`, never `{}` and never both. No dedicated union machinery is
+        # needed; a member per tag IS the externally-tagged shape.
+        out: list[dict[str, Any]] = []
+        for key, prop_schema in tagged:
+            info = cpp_field(prop_schema)
+            out.append({
+                "wire": key, "name": member(key), "decl": info["decl"], "kind": info["kind"],
+                "ref": info["ref"], "required": False, "schema": prop_schema, "secret": False,
+                "description": prop_schema.get("description")
+                if isinstance(prop_schema, dict) else None,
+            })
+        return out, schema.get("description")
     if union:
         tag, _arms = union
         return ([
@@ -700,6 +755,25 @@ def emit_models_header() -> str:
             out.extend(doc(field_doc(f) + ("" if f["required"] else " Optional."), "    "))
             default = "" if f["required"] else " = std::nullopt"
             out.append(f"    {declared(f)} {f['name']}{default};")
+        # CONTRACT.md §27.13 S-10 rule 3: on a SUBJECT-side role listing, `inherit` is
+        # optional and absence means the assignment INHERITS -- true for a server that
+        # sends the field and stayed silent, and equally true for one that predates the
+        # field entirely. `inherit.value_or(false)` would read every pre-1.51 (and every
+        # server-omitted) assignment as non-inheritable, which is backwards; this is the
+        # one correct reading, given a name so every caller reaches for it instead of
+        # `.value_or(false)`. Emitted for any optional boolean member the spec names
+        # `inherit` -- today that is exactly RoleAssignment, generically rather than by
+        # a hardcoded struct name, so a future subject-side listing with the same shape
+        # gets it automatically.
+        if any(f["wire"] == "inherit" and f["kind"] == "bool" and not f["required"]
+               for f in fields):
+            out.append("")
+            out.extend(doc(
+                "Whether this assignment inherits (CONTRACT.md §27.13 S-10 rule 3). "
+                "`inherit` above is `std::nullopt` both when the server omitted the field "
+                "and when it explicitly sent `true`; EITHER WAY that means inherits. Read "
+                "this, never `inherit.value_or(false)`.", "    "))
+            out.append("    bool inherits() const noexcept { return inherit.value_or(true); }")
         out.append("};")
         out.append("")
 
