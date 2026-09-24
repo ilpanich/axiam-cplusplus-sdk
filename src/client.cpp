@@ -1022,8 +1022,11 @@ DeviceAuth Client::authenticate_device() {
     req.url = p_->base_url + "/api/v1/auth/device";
     req.headers["X-Tenant-ID"] = p_->tenant_header;  // §5: every request
     req.headers["Accept"] = "application/json";
-    req.headers["Content-Type"] = "application/json";
-    req.body = "{}";
+    // §6.1 rule 6: "issues POST /api/v1/auth/device with no request body" -- so
+    // neither a body nor a Content-Type describing one. req.body stays default-
+    // constructed (empty); http_curl.cpp's transfer() suppresses libcurl's own
+    // default Content-Type for a body-less non-GET request that, like this one,
+    // states none of its own.
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         if (p_->acting_tenant_id) req.headers[kActingTenantHeader] = *p_->acting_tenant_id;

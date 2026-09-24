@@ -365,6 +365,19 @@ HttpResponse CurlTransport::transfer(void* curl_handle, const HttpRequest& req) 
     // payload crosses even 1 MiB. Suppressing it is free: the body is fully in
     // memory, so sending it optimistically always wins over a round trip.
     header_list = curl_slist_append(header_list, "Expect:");
+    // CONTRACT.md §6.1 rule 6: `authenticate_device()` (and anything else that builds
+    // a body-less non-GET request) sends NO Content-Type. Setting CURLOPT_POSTFIELDS
+    // -- even to an empty string, which the POSTFIELDSIZE=0 branch above always does
+    // for a non-GET -- makes libcurl default CONTENT-TYPE to
+    // `application/x-www-form-urlencoded` on its own unless told otherwise (verified
+    // against libcurl 8.5: an empty POSTFIELDS buffer still triggers the default). A
+    // caller that wants a real Content-Type sends one in `req.headers`, which is
+    // already in `header_list` above and so is untouched by this; this only fires
+    // when NEITHER the caller declared one NOR there is a body to describe.
+    if (req.method != "GET" && req.body.empty() &&
+        req.headers.find("Content-Type") == req.headers.end()) {
+        header_list = curl_slist_append(header_list, "Content-Type:");
+    }
     curl_easy_setopt(h, CURLOPT_HTTPHEADER, header_list);
 
     // Response capture.

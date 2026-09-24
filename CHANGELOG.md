@@ -34,6 +34,11 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   fix below — a `roles.list_users` / `_groups` / `_service_accounts` decode
   that tolerates an absent `inherit` has nowhere to put "absent" in a plain
   `bool`.
+- **`authenticate_device()` sends no `Content-Type` on the wire, in addition
+  to no body** (CONTRACT.md §6.1 rule 6). Previously sent
+  `Content-Type: application/json` with a body of `{}`. A caller's own test
+  double for `POST /api/v1/auth/device` that asserted on either is now
+  asserting on bytes this SDK no longer sends.
 
 ### Added
 
@@ -148,6 +153,16 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   `failed_binding` — additive fields, defaulted to
   `false`/`false`/disengaged/disengaged, so a caller compiled against the
   pre-fix report still reads `failed`/`failure` exactly as before.
+- **`authenticate_device()` sends no request body** (CONTRACT.md §6.1 rule
+  6: "issues `POST /api/v1/auth/device` with no request body"). Previously
+  sent `Content-Type: application/json` with a body of `{}`. Two independent
+  causes, both fixed: `client.cpp` stated the header and body explicitly, and
+  (found while fixing the first, and verified against a real loopback TLS
+  server rather than the fake transport, which cannot see it) libcurl
+  defaults an unstated `Content-Type` to `application/x-www-form-urlencoded`
+  on its own whenever `CURLOPT_POSTFIELDS` is set, even to an empty buffer —
+  `http_curl.cpp` now suppresses it for any body-less non-`GET` request that
+  states no `Content-Type` of its own.
 
 ### Declined
 
