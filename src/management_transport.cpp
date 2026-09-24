@@ -135,9 +135,19 @@ nlohmann::json Transport::send(const std::string& operation,
     // Rule 1: no session, no wire call. Checked before the request is built rather than
     // left to the server's 401 -- it costs the caller nothing, cannot be counted against
     // a rate limit, and the message names the operation.
+    //
+    // CONTRACT 1.52 N4.7 (C-12): "§27.4 rule 1's session check accepts a bearer
+    // credential. An SDK MUST NOT refuse a management call client-side for lack of
+    // a cookie session while it holds a device ... credential." Before this fix,
+    // this checked ONLY `session` (the cookie-session flag) -- a client that had
+    // called authenticate_device() and adopted a device credential, with no cookie
+    // session at all, was refused every management call client-side even though
+    // build_request() (client_impl.hpp) presents that credential as
+    // `Authorization: Bearer` on exactly this request. Same condition
+    // Client::has_session() already uses.
     {
         std::lock_guard<std::mutex> lock(impl_->state_mtx);
-        if (!impl_->session) {
+        if (!impl_->session && !impl_->device_session) {
             throw AuthError(operation +
                             ": no active session -- management operations require an "
                             "authenticated caller (CONTRACT.md §27.4 rule 1)");

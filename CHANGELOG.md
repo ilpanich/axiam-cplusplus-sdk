@@ -97,6 +97,17 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
 
 ### Fixed
 
+- **A management call now reaches the wire after `authenticate_device()`,
+  with no cookie session at all** (CONTRACT.md §27.4 rule 1, CONTRACT 1.52
+  N4.7 (C-12) — found in this SDK while addressing the same rule for the
+  Python SDK's `c12-findings.md` entry; not itself listed there for C++).
+  `Transport::send()`'s rule-1 session check tested only `session` (the
+  cookie-session flag), so a client that had called `authenticate_device()`
+  and held only a device credential — no cookie session at all — was
+  refused every management call client-side with `AuthError`, even though
+  `build_request()` already presents that credential as `Authorization:
+  Bearer` on exactly this request. The check now accepts either credential,
+  the same condition `Client::has_session()` already used.
 - **`acting_tenant()`'s `reachable_tenant_ids` check now compares tenant ids
   as UUIDs, not as case-sensitive strings** (CONTRACT.md §5.2.3 rule 4,
   CONTRACT 1.52 N5.6 (C-12)). Before this fix, the reach check was a plain

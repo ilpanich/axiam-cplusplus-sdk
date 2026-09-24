@@ -11,9 +11,11 @@
 #include "assert.hpp"
 #include "axiam/client.hpp"
 #include "axiam/errors.hpp"
+#include "axiam/management.hpp"
 #include "fake_transport.hpp"
 
 using namespace axiam;
+using namespace axiam::management;
 using axtest::FakeState;
 using axtest::json_response;
 
@@ -465,6 +467,52 @@ AXIAM_TEST("C-12 N4.4 (I4): a second authenticate_device() call still replaces t
     auto it = req.headers.find("Authorization");
     AXIAM_CHECK(it != req.headers.end());
     AXIAM_CHECK(it->second == "Bearer device-token-2");
+}
+
+// ---------------------------------------------------------------------------
+// C-12 N4.7: "§27.4 rule 1's session check accepts a bearer credential. An
+// SDK MUST NOT refuse a management call client-side for lack of a cookie
+// session while it holds a device ... credential."
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("C-12 N4.7: a management call reaches the wire after "
+          "authenticate_device(), with no cookie session at all") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(200, kDeviceOk);
+        }
+        return json_response(
+            200, R"({"created_at":"2026-08-26T00:00:00Z","description":"d",)"
+                 R"("id":"11111111-1111-4111-8111-111111111111","is_global":false,)"
+                 R"("name":"auditor","tenant_id":"11111111-1111-4111-8111-111111111111",)"
+                 R"("updated_at":"2026-08-26T00:00:00Z"})");
+    };
+    auto client = Client::builder()
+                      .base_url("https://iam.example.com")
+                      .tenant_id("11111111-1111-4111-8111-111111111111")
+                      .with_client_cert(kCertPem, kKeyPem)
+                      .transport(axtest::make_fake(st))
+                      .build();
+    client.authenticate_device();
+    AXIAM_REQUIRE(client.has_session());
+
+    // Before the fix: management_transport.cpp checked ONLY `session` (the
+    // cookie flag), so this threw AuthError "no active session" even though
+    // build_request() presents the device token as `Authorization: Bearer`
+    // on exactly this request.
+    bool threw = false;
+    try {
+        client.management().roles().get("11111111-1111-4111-8111-111111111111");
+    } catch (const AuthError&) {
+        threw = true;
+    }
+    AXIAM_CHECK_FALSE(threw);
+
+    const auto req = st->last();
+    auto it = req.headers.find("Authorization");
+    AXIAM_CHECK(it != req.headers.end());
+    AXIAM_CHECK(it->second == "Bearer device-token-xyz");
 }
 
 }  // namespace
