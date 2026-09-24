@@ -29,6 +29,9 @@ add_executable(axiam_cpp_tests
   # calls out by name -- SubjectAltName's externally-tagged shape, a subject-side
   # inherit's open-default decode, and CertificateType's open-enum successor value.
   test_contract_151_models.cpp
+  # CONTRACT.md §5.2 rule 1 (contract 1.51): the acting-tenant helper -- sent when
+  # set, absent when not, gated on a held login result, and part of the §17 memo key.
+  test_acting_tenant.cpp
   # The contract 1.34 §5.2.2 / 1.35 §5.2.3 rules. Uses the management rig AND the
   # OPAQUE fake: the acting-tenant/principal-tenant distinction shows up on both
   # surfaces, and splitting it in two would hide that they are one rule.

@@ -66,6 +66,30 @@ struct Client::Impl {
     std::optional<std::string> resolved_tenant_id;  // captured from login user info
     std::optional<std::string> resolved_org_id;     // decoded from the access-token org_id claim (D-14)
 
+    // CONTRACT.md §5.2 rule 1 (contract 1.51). Sent as X-Axiam-Tenant on every
+    // request build_request() constructs -- which is every /api/v1 REST call
+    // this client makes (management, check_access/batch_check, refresh, logout,
+    // self-service, WebAuthn). Disengaged means "send nothing", byte-for-byte
+    // what every request sent before 1.51. Guarded by state_mtx because
+    // Client::acting_tenant()/clear_acting_tenant() can be called concurrently
+    // with a request in flight on another Client copy of this same Impl -- see
+    // the header comment on Client::acting_tenant() for why this field is
+    // SHARED across every Client copy of one build() call, unlike the Rust
+    // reference's per-handle scoping.
+    std::optional<std::string> acting_tenant_id;
+
+    // The most recent session-establishing response's LoginUserInfo, or
+    // disengaged when this client holds none -- either because it has never
+    // logged in, or because the last call that completed a session (OPAQUE,
+    // WebAuthn, the MFA setup, authenticate_device()) reported none (C-12
+    // question 5 / the C-5 lesson: RESET to unknown, never assumed false).
+    // Gates Client::acting_tenant(): present and organization_level == false,
+    // or present and reachable_tenant_ids excludes the requested tenant, both
+    // refuse client-side with zero wire calls (§5.2 rule 1 / §5.2.3 rule 4);
+    // disengaged sends the header and lets the server's 403 decide. Guarded by
+    // state_mtx.
+    std::optional<UserInfo> login_user_info;
+
     // CONTRACT.md §5.2.2 — the tenant the signed-in principal's record LIVES in, as
     // reported by the login response. Distinct from `tenant_id`/`tenant_slug`, which
     // name the tenant being ACTED ON: the two diverge for an organization-level
@@ -191,10 +215,21 @@ struct Client::Impl {
         req.headers["Accept"] = "application/json";
         if (!body.empty()) req.headers["Content-Type"] = "application/json";
         req.body = body;
-        // §3: echo captured CSRF token on state-changing requests.
-        if (is_state_changing(method)) {
+        {
             std::lock_guard<std::mutex> lock(state_mtx);
-            if (!csrf.empty()) req.headers["X-CSRF-Token"] = csrf;
+            // §3: echo captured CSRF token on state-changing requests.
+            if (is_state_changing(method) && !csrf.empty()) req.headers["X-CSRF-Token"] = csrf;
+            // §5.2 rule 1 (contract 1.51): sent ONLY when set -- a client that
+            // never called acting_tenant()/with_acting_tenant() sends no
+            // X-Axiam-Tenant at all, byte-for-byte what it sent before 1.51.
+            // This is every /api/v1 call build_request() builds: management
+            // (management_transport.cpp), check_access/batch_check, login,
+            // refresh, logout, and every self-service/WebAuthn POST
+            // (account.cpp, webauthn.cpp) that goes through build_request()
+            // rather than a hand-rolled request. Coupled to NOTHING else on
+            // this request -- X-Tenant-ID above and any {tenant_id} path
+            // segment are read by different server mechanisms (§27.4 rule 3).
+            if (acting_tenant_id) req.headers[kActingTenantHeader] = *acting_tenant_id;
         }
         return req;
     }

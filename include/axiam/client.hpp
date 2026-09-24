@@ -60,6 +60,10 @@ class PlatformApi;
 
 namespace axiam {
 
+/// The CONTRACT.md §5.2 rule 1 (contract 1.51) acting-tenant header name.
+/// Distinct from `X-Tenant-ID` (§5 rule 2) — see \ref Client::acting_tenant.
+inline constexpr const char* kActingTenantHeader = "X-Axiam-Tenant";
+
 class Client {
 public:
     class Builder {
@@ -80,6 +84,33 @@ public:
         /// §6.1: present a client identity certificate (PEM chain + PEM key) for
         /// mutual TLS. Strict server verification is unchanged.
         Builder& with_client_cert(std::string cert_pem, std::string key_pem);
+
+        /// CONTRACT.md §5.2 rule 1 (contract 1.51): the ACTING tenant, sent as
+        /// `X-Axiam-Tenant` on every `/api/v1` REST request this client makes.
+        /// Meaningful only for an ORGANIZATION-LEVEL principal (§5.2) — such a
+        /// principal's global grants apply in every tenant of its organization,
+        /// and this is how it selects which one a request acts on. For an
+        /// ordinary tenant principal the same header produces a `403`.
+        ///
+        /// Distinct from `tenant_id()`/`tenant_slug()`, which name the tenant
+        /// this client LOGS IN AGAINST and which populate `X-Tenant-ID` (§5 rule
+        /// 2) on every request regardless — the two headers are read by
+        /// different server mechanisms and this SDK never couples them.
+        ///
+        /// `tenant_id` MUST be a UUID: the server parses `X-Axiam-Tenant` as one
+        /// and silently ignores a value that does not parse, acting on the
+        /// caller's own tenant instead — a slug here would report success about
+        /// the wrong tenant. Refused client-side, with no wire call, when it is
+        /// not (§27.4 rule 2's client-side error).
+        ///
+        /// The BUILDER form cannot gate on `organization_level` or
+        /// `reachable_tenant_ids` (§5.2.3 rule 4) the way the on-client
+        /// \ref Client::acting_tenant "acting_tenant()" does: it runs before any
+        /// login has reported either. It sends the header as configured from
+        /// the client's first request, and the server's `403` is the answer for
+        /// a principal that turns out not to be organization-level.
+        /// @throws std::invalid_argument if `tenant_id` is not a UUID.
+        Builder& with_acting_tenant(std::string tenant_id);
 
         Builder& connect_timeout(std::chrono::milliseconds ms);
         Builder& request_timeout(std::chrono::milliseconds ms);
@@ -180,6 +211,7 @@ public:
         std::string custom_ca_pem_;
         std::string client_cert_pem_;
         std::string client_key_pem_;
+        std::optional<std::string> acting_tenant_id_;  // §5.2 rule 1
         std::chrono::milliseconds connect_timeout_{10000};
         std::chrono::milliseconds request_timeout_{30000};
         Transport transport_;  // empty => default libcurl
@@ -343,6 +375,61 @@ public:
 
     TokenPair refresh();
     void logout();
+
+    // ---- §5.2 rule 1: the acting tenant, on an existing client ----
+
+    /// Select the tenant this client ACTS ON from now on (CONTRACT.md §5.2 rule
+    /// 1, contract 1.51). Sends `X-Axiam-Tenant: tenant_id` on every `/api/v1`
+    /// REST request this client makes from here — management, `check_access` /
+    /// `batch_check`, `refresh`, `logout`, and every self-service and WebAuthn
+    /// POST alike (§5.2.2 rule 4: the header is never withheld from those). A
+    /// client that never calls this, or that calls \ref clear_acting_tenant,
+    /// sends no `X-Axiam-Tenant` at all — byte-for-byte what it sent before
+    /// 1.51.
+    ///
+    /// Mutates THIS client's shared session state and returns `*this` for
+    /// chaining; every `Client` copy built from the same \ref builder "build()"
+    /// call shares one `X-Axiam-Tenant` value, exactly as every copy already
+    /// shares one cookie jar, one CSRF token and one tenant header — this is
+    /// not a new kind of sharing, it is the existing one applied to a new
+    /// field. A caller running two tasks against two tenants over one session
+    /// wants two `Client` VALUES from two \ref builder "build()" calls (or one
+    /// `with_acting_tenant` each), not two copies of one that would fight over
+    /// this field.
+    ///
+    /// Gated on what THIS client currently knows (§5.2 rule 1's "gate it on
+    /// what the SDK knows" clause):
+    /// - **Holding a login result** (the most recent session-establishing
+    ///   response reported a `LoginUserInfo` — §5.2.3's OPAQUE/SSO/WebAuthn/MFA-
+    ///   setup carve-out resets this to "unknown" rather than to `false`; see
+    ///   the README): refused client-side, with **zero wire calls**, as
+    ///   `AuthzError`, unless `organization_level` is `true`; and refused the
+    ///   same way when `reachable_tenant_ids` is present and does not name
+    ///   `tenant_id` (§5.2.3 rule 4).
+    /// - **Holding no login result** — a device token (\ref authenticate_device),
+    ///   an organization-level service account, or a client with an injected
+    ///   token: nothing to gate on, so the header is sent as asked and the
+    ///   server's `403` is the answer.
+    ///
+    /// `tenant_id` MUST be a UUID (refused client-side, zero wire calls,
+    /// otherwise — the server silently ignores a slug and acts on the caller's
+    /// own tenant, reporting success about the wrong one).
+    ///
+    /// Documented as meaningful only for an organization-level principal, never
+    /// as a general "switch tenant" capability (§5.2 rule 1).
+    /// @throws NetworkError if `tenant_id` is not a UUID.
+    /// @throws AuthzError if a held login result says the server would refuse it.
+    Client& acting_tenant(const std::string& tenant_id);
+
+    /// Stop sending `X-Axiam-Tenant`. Idempotent; harmless on a client that
+    /// never set one.
+    Client& clear_acting_tenant();
+
+    /// The value \ref acting_tenant "acting_tenant()" last set, or
+    /// `std::nullopt` when none is configured (construction, or after \ref
+    /// clear_acting_tenant). Test/introspection helper.
+    std::optional<std::string> acting_tenant_id() const;
+
     AccessDecision check_access(const std::string& action, const std::string& resource_id,
                                 std::optional<std::string> scope = std::nullopt,
                                 std::optional<std::string> subject_id = std::nullopt);

@@ -26,6 +26,11 @@ using json = nlohmann::json;
 
 namespace {
 
+/// Looks like a UUID: 8-4-4-4-12 hex. Defined further down (§12.3 rule 4's
+/// original use); forward-declared here so Builder::with_acting_tenant() and
+/// Client::acting_tenant() can validate before build() constructs anything.
+bool looks_like_uuid(const std::string& s);
+
 /// Extract a cookie's value from a `Set-Cookie` header value list (each entry
 /// is "name=value; attr; attr"). Returns nullopt if the cookie is absent.
 std::optional<std::string> cookie_value(const std::vector<std::string>& set_cookies,
@@ -190,6 +195,21 @@ Client::Builder& Client::Builder::with_client_cert(std::string cert_pem, std::st
     client_key_pem_ = std::move(key_pem);
     return *this;
 }
+Client::Builder& Client::Builder::with_acting_tenant(std::string tenant_id) {
+    // §5.2 rule 1: the server parses X-Axiam-Tenant as a UUID and silently
+    // ignores a value that does not, acting on the caller's own tenant instead
+    // -- a slug here would report success about the wrong tenant. Refused here
+    // rather than deferred to build(), so the mistake surfaces at the call
+    // site that made it.
+    if (!looks_like_uuid(tenant_id)) {
+        throw std::invalid_argument(
+            "with_acting_tenant: \"" + tenant_id +
+            "\" is not a UUID (CONTRACT.md §5.2 rule 1) — the server silently ignores a "
+            "value that does not parse and acts on the caller's own tenant instead");
+    }
+    acting_tenant_id_ = std::move(tenant_id);
+    return *this;
+}
 Client::Builder& Client::Builder::connect_timeout(std::chrono::milliseconds ms) {
     connect_timeout_ = ms;
     return *this;
@@ -260,6 +280,7 @@ Client Client::Builder::build() {
     impl->org_slug = org_slug_;
     impl->org_id = org_id_;
     impl->tenant_header = tenant_id_.value_or(tenant_slug_.value_or(""));
+    impl->acting_tenant_id = acting_tenant_id_;  // §5.2 rule 1, already UUID-validated
 
     if (transport_) {
         impl->transport = transport_;
@@ -453,6 +474,12 @@ LoginResult Client::login(const std::string& username_or_email, const std::strin
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // §5.2 rule 1 gate: this call just completed a session, so the acting-
+        // tenant gate is reset to exactly what THIS response reported -- never
+        // carried over from an earlier login (the C-5 lesson: axiam-csharp-sdk
+        // was sent back for keeping a stale login result across a later session
+        // that reported none).
+        p_->login_user_info = result.user;
         if (result.user) {
             p_->resolved_tenant_id = result.user->tenant_id;
             // §5.2.2 rule 2: remembered so a later opaque_enrollment_for_self() can
@@ -680,6 +707,12 @@ LoginResult Client::login_opaque(const std::string& username_or_email,
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // §5.2 rule 1 gate: this call just completed a session, so the acting-
+        // tenant gate is reset to exactly what THIS response reported -- never
+        // carried over from an earlier login (the C-5 lesson: axiam-csharp-sdk
+        // was sent back for keeping a stale login result across a later session
+        // that reported none).
+        p_->login_user_info = result.user;
         if (result.user) {
             p_->resolved_tenant_id = result.user->tenant_id;
             // §5.2.2 rule 2: remembered so a later opaque_enrollment_for_self() can
@@ -777,6 +810,12 @@ LoginResult Client::verify_mfa(const std::string& challenge_token, const std::st
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // §5.2 rule 1 gate: this call just completed a session, so the acting-
+        // tenant gate is reset to exactly what THIS response reported -- never
+        // carried over from an earlier login (the C-5 lesson: axiam-csharp-sdk
+        // was sent back for keeping a stale login result across a later session
+        // that reported none).
+        p_->login_user_info = result.user;
         if (result.user) {
             p_->resolved_tenant_id = result.user->tenant_id;
             // §5.2.2 rule 2: remembered so a later opaque_enrollment_for_self() can
@@ -808,6 +847,62 @@ void Client::logout() {
     std::lock_guard<std::mutex> lock(p_->state_mtx);
     p_->session = false;
     p_->csrf.clear();
+    // §5.2 rule 1: this client no longer holds a login result to gate
+    // acting_tenant() on -- reset to "unknown", not to "not organization-level".
+    // A later acting_tenant() call sends the header and lets the server decide,
+    // same as a client that never logged in at all.
+    p_->login_user_info = std::nullopt;
+}
+
+Client& Client::acting_tenant(const std::string& tenant_id) {
+    p_->ensure_open();
+    if (!looks_like_uuid(tenant_id)) {
+        throw NetworkError(
+            "acting_tenant: \"" + tenant_id +
+            "\" is not a UUID (CONTRACT.md §5.2 rule 1) — the server silently ignores a "
+            "value that does not parse and acts on the caller's own tenant instead",
+            "sdk_programming_error");
+    }
+    {
+        std::lock_guard<std::mutex> lock(p_->state_mtx);
+        // Gate on what THIS client currently knows (§5.2 rule 1's "gate it on
+        // what the SDK knows" clause). Disengaged login_user_info -- never
+        // logged in, or the last session-establishing call reported none
+        // (OPAQUE/SSO/WebAuthn/the MFA setup, or authenticate_device(), or
+        // logout()) -- has nothing to gate on: send the header and let the
+        // server's 403 answer.
+        if (p_->login_user_info) {
+            if (!p_->login_user_info->organization_level) {
+                throw AuthzError(
+                    "acting_tenant: this client's principal is not organization-level "
+                    "(CONTRACT.md §5.2 rule 1) — only an organization-level principal can "
+                    "act on a tenant other than its own");
+            }
+            if (p_->login_user_info->reachable_tenant_ids) {
+                const auto& reach = *p_->login_user_info->reachable_tenant_ids;
+                if (std::find(reach.begin(), reach.end(), tenant_id) == reach.end()) {
+                    throw AuthzError(
+                        "acting_tenant: \"" + tenant_id +
+                        "\" is outside this principal's reachable_tenant_ids "
+                        "(CONTRACT.md §5.2.3 rule 4)");
+                }
+            }
+        }
+        p_->acting_tenant_id = tenant_id;
+    }
+    return *this;
+}
+
+Client& Client::clear_acting_tenant() {
+    p_->ensure_open();
+    std::lock_guard<std::mutex> lock(p_->state_mtx);
+    p_->acting_tenant_id = std::nullopt;
+    return *this;
+}
+
+std::optional<std::string> Client::acting_tenant_id() const {
+    std::lock_guard<std::mutex> lock(p_->state_mtx);
+    return p_->acting_tenant_id;
 }
 
 void Client::close() {
@@ -845,7 +940,12 @@ AccessDecision Client::check_access(const std::string& action, const std::string
     std::string key;
     const bool use_memo = p_->memo && p_->memo->enabled();
     if (use_memo) {
-        key = detail::DecisionMemo::key(subject_id, resource_id, action, scope);
+        std::optional<std::string> acting;
+        {
+            std::lock_guard<std::mutex> lock(p_->state_mtx);
+            acting = p_->acting_tenant_id;
+        }
+        key = detail::DecisionMemo::key(subject_id, resource_id, action, scope, acting);
         if (auto cached = p_->memo->get(key)) return *cached;
     }
 
