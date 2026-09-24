@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -30,6 +31,12 @@ namespace {
 /// original use); forward-declared here so Builder::with_acting_tenant() and
 /// Client::acting_tenant() can validate before build() constructs anything.
 bool looks_like_uuid(const std::string& s);
+
+/// Case-insensitive UUID equality (CONTRACT 1.52 N5.6 (C-12)). Defined further
+/// down, next to looks_like_uuid(); forward-declared for the same reason --
+/// Client::acting_tenant() (above the definition) compares a caller's tenant id
+/// against reachable_tenant_ids with this, not a bare string ==.
+bool same_uuid(const std::string& a, const std::string& b);
 
 /// Extract a cookie's value from a `Set-Cookie` header value list (each entry
 /// is "name=value; attr; attr"). Returns nullopt if the cookie is absent.
@@ -903,7 +910,14 @@ Client& Client::acting_tenant(const std::string& tenant_id) {
             }
             if (p_->login_user_info->reachable_tenant_ids) {
                 const auto& reach = *p_->login_user_info->reachable_tenant_ids;
-                if (std::find(reach.begin(), reach.end(), tenant_id) == reach.end()) {
+                // C-12 N5.6: compared as UUIDs, not as strings -- same_uuid()
+                // case-folds, so an upper-case tenant_id matches the server's
+                // (lower-case) spelling in reach.
+                const bool found =
+                    std::find_if(reach.begin(), reach.end(), [&tenant_id](const std::string& r) {
+                        return same_uuid(r, tenant_id);
+                    }) != reach.end();
+                if (!found) {
                     throw AuthzError(
                         "acting_tenant: \"" + tenant_id +
                         "\" is outside this principal's reachable_tenant_ids "
@@ -1281,6 +1295,26 @@ bool looks_like_uuid(const std::string& s) {
         }
     }
     return at == s.size();
+}
+
+/// Case-insensitive UUID equality (CONTRACT 1.52 N5.6 (C-12): "tenant ids compare
+/// as UUIDs, never as strings. Case and formatting MUST NOT decide reach.").
+///
+/// Both callers of this function already ran their operands through
+/// `looks_like_uuid()`, which fixes the 8-4-4-4-12 hex-and-dash SHAPE on both
+/// sides -- the only thing left that can differ is hex-digit case (the server's
+/// own ids are lower-case; a caller's own -- from a config file, a copy-paste, an
+/// upstream API -- may not be). A case-folded byte compare is therefore a correct
+/// UUID compare here, not a general one.
+bool same_uuid(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i]))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace

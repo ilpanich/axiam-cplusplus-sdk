@@ -97,6 +97,18 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
 
 ### Fixed
 
+- **`acting_tenant()`'s `reachable_tenant_ids` check now compares tenant ids
+  as UUIDs, not as case-sensitive strings** (CONTRACT.md §5.2.3 rule 4,
+  CONTRACT 1.52 N5.6 (C-12)). Before this fix, the reach check was a plain
+  `std::find()` over `reachable_tenant_ids`, an exact byte compare — a
+  caller passing a tenant id spelled in a different hex case than the
+  server's own (lower-case) spelling was refused with `AuthzError` for a
+  tenant the principal could genuinely reach. Missed by the existing test
+  suite because every `reachable_tenant_ids` fixture used all-digit UUIDs
+  (no `a`-`f`), on which a case-sensitive and a case-insensitive compare
+  agree. `acting_tenant()` still sends the header exactly as the caller
+  spelled it — only the reach *check* is case-insensitive now, not what
+  reaches the wire.
 - **`SubjectAltName` refuses a value that holds neither or both of `dns`/
   `ip`, client-side, before any request** (CONTRACT.md §27.13, CONTRACT
   1.52 N3 (C-12)). `SubjectAltName` is an externally-tagged union — sent as

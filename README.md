@@ -1422,9 +1422,15 @@ read by different parts of the server and this SDK does not couple them.
   reported a `LoginUserInfo`, `acting_tenant()` refuses client-side
   (`AuthzError`, zero wire calls) unless `organization_level` is `true`, and
   refuses a tenant outside `reachable_tenant_ids` when that field is present
-  (§5.2.3 rule 4). A client holding **no** login result — never logged in, or
-  the most recent session-establishing call reported none — has nothing to
-  gate on, so it sends the header and lets the server's `403` decide.
+  (§5.2.3 rule 4), **comparing as UUIDs, never as case-sensitive strings**
+  (CONTRACT 1.52 N5.6 (C-12)): a `reachable_tenant_ids` entry and an
+  `acting_tenant()` argument that spell the same tenant in different hex
+  case are still the same tenant. What reaches the wire is the caller's own
+  spelling, unchanged — the case-insensitive comparison decides only
+  whether the gate refuses, never what the header carries. A client holding
+  **no** login result — never logged in, or the most recent
+  session-establishing call reported none — has nothing to gate on, so it
+  sends the header and lets the server's `403` decide.
 - **Which calls reset that gate to "no login result".** Every call that
   completes a *new* session resets it to exactly what THAT response reported:
   `login`, `login_opaque`, `verify_mfa`, `mfa_setup_confirm` and the WebAuthn

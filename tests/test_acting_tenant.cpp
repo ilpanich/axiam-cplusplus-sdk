@@ -256,6 +256,58 @@ AXIAM_TEST("§5.2.3 rule 4: acting_tenant() refuses a tenant outside reachable_t
     AXIAM_CHECK(acting_header_of(st->last()) == std::optional<std::string>(kReachableOnly));
 }
 
+// CONTRACT 1.52 N5.6 (C-12): "tenant ids compare as UUIDs, never as strings. Case
+// and formatting MUST NOT decide reach." The reachable_tenant_ids fixtures above
+// (kReachableOnly, kThirdTenant, ...) are all-DIGIT UUIDs -- no hex letters at
+// all -- so a case-sensitive string compare and a case-insensitive UUID compare
+// agree on every one of them, which is exactly how this defect hides. These two
+// use a UUID with actual hex letters (a-f).
+constexpr const char* kHexLetterTenantLower = "aabbccdd-eeff-4aab-8ccd-eeffaabbccdd";
+constexpr const char* kHexLetterTenantUpper = "AABBCCDD-EEFF-4AAB-8CCD-EEFFAABBCCDD";
+
+AXIAM_TEST("§5.2.3 rule 4 / C-12 N5.6: reachable_tenant_ids compares as UUIDs, "
+          "not case-sensitive strings") {
+    // The server reports the id lower-case (as AXIAM's own ids are); the caller
+    // spells it upper-case -- a config file, a copy-paste, or an upstream API
+    // that renders UUIDs upper-case would hand this SDK exactly that. Byte-for-
+    // byte the SAME tenant.
+    auto st = router_for(true, {kHexLetterTenantLower});
+    auto client = make_client(st);
+    client.login("root@example.com", "pw");
+
+    // Must NOT throw: this is the SAME tenant as kHexLetterTenantLower, spelled
+    // upper-case. A plain std::find() string compare refuses it.
+    bool threw = false;
+    try {
+        client.acting_tenant(kHexLetterTenantUpper);
+    } catch (const AuthzError&) {
+        threw = true;
+    }
+    AXIAM_CHECK_FALSE(threw);
+
+    client.management().groups().list();
+    // §5.2 rule 1: the header carries what the CALLER passed, unchanged -- case
+    // normalisation is only for the reach CHECK, never for what reaches the wire.
+    AXIAM_CHECK(acting_header_of(st->last()) ==
+               std::optional<std::string>(kHexLetterTenantUpper));
+}
+
+// The same-case twin (I4): pins that an exact-case match still works after the fix.
+AXIAM_TEST("§5.2.3 rule 4 (I4): a same-case reachable tenant (with hex letters) is "
+          "still accepted") {
+    auto st = router_for(true, {kHexLetterTenantLower});
+    auto client = make_client(st);
+    client.login("root@example.com", "pw");
+
+    bool threw = false;
+    try {
+        client.acting_tenant(kHexLetterTenantLower);
+    } catch (const AuthzError&) {
+        threw = true;
+    }
+    AXIAM_CHECK_FALSE(threw);
+}
+
 // A client holding NO login result — here, one that has never logged in at all — has
 // nothing to gate on: the header is sent as asked and the server's 403 is the answer.
 AXIAM_TEST("§5.2 rule 1: a client holding no login result sends the header regardless") {
