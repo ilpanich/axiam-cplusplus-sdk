@@ -97,6 +97,34 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
 
 ### Fixed
 
+- **`SubjectAltName` refuses a value that holds neither or both of `dns`/
+  `ip`, client-side, before any request** (CONTRACT.md §27.13, CONTRACT
+  1.52 N3 (C-12)). `SubjectAltName` is an externally-tagged union — sent as
+  exactly one of `{"dns": …}` / `{"ip": …}` — modelled as two independent
+  `std::optional` members. Before this fix, `to_json()` silently emitted
+  `{}` for a value with neither engaged (a shape the server's tagged
+  decoder has no arm for) and `{"dns": …, "ip": …}` for a value with both.
+  `to_json()` now throws `NetworkError` for either, and a malformed element
+  inside a `std::vector<SubjectAltName>` (e.g.
+  `CreateCertificateRequest.subject_alt_names`) now refuses the WHOLE
+  request rather than reaching the wire with a bad element folded in.
+  Generated code: `scripts/gen_management.py` emits this check for any
+  schema its `externally_tagged()` detector recognises, not only
+  `SubjectAltName` by name, and its round-trip test fixtures for such a
+  type now build a well-formed one-tag-engaged example instead of `{}`.
+- **An engaged-but-empty `subject_alt_names` no longer reaches the wire as
+  `"subject_alt_names":[]`** (CONTRACT.md §27.13, CONTRACT 1.52 N3 (C-12)).
+  `CreateCertificateRequest.subject_alt_names` /
+  `SignCertificateCsrRequest.subject_alt_names` used the ordinary
+  `if (value.field)` optional guard, which an ENGAGED optional holding an
+  empty vector passes — built from a filtered collection with nothing left
+  in it, say. The key is now omitted whenever the vector is empty, engaged
+  or not, the same discipline `tenant_scope` already had (§5.2.3 rule 1).
+- **The `SubjectAltName` header doc no longer calls it a "SPARSE body."**
+  That description says every member may be independently sent or omitted;
+  `SubjectAltName` is the one struct here where that is false — exactly one
+  member is ever engaged. The generator now gives an externally-tagged
+  struct its own doc text instead of the generic sparse-body one.
 - **A manifest's plain (no-`resource`) role binding that states
   `inherit: false` is now refused client-side** (CONTRACT.md §27.6.1 item 2,
   CONTRACT 1.52 N6.2 (C-12)). `inherit: false` narrows a binding to one

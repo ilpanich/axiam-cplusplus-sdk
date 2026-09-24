@@ -285,6 +285,39 @@ AXIAM_TEST("§27.13 S-7 rule 1: SubjectAltName encodes as {\"dns\": ...} XOR {\"
     AXIAM_CHECK(ip_json != nlohmann::json::object());
 }
 
+// CONTRACT 1.52 N3 (C-12): "An SDK whose type can hold neither or both branches MUST
+// refuse such a value client-side, before any request, with §27.4 rule 2's error."
+// `SubjectAltName` is exactly that type -- two independent `std::optional` members --
+// and before this fix `to_json()` silently emitted `{}` for neither and
+// `{"dns":..., "ip":...}` for both, instead of refusing either.
+AXIAM_TEST("§27.13 / C-12 N3: SubjectAltName with NEITHER dns nor ip is refused "
+          "client-side, not serialized as {}") {
+    SubjectAltName neither{};
+    bool threw = false;
+    try {
+        const nlohmann::json j = neither;
+        (void)j;
+    } catch (const NetworkError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+}
+
+AXIAM_TEST("§27.13 / C-12 N3: SubjectAltName with BOTH dns and ip is refused "
+          "client-side, not serialized with both keys") {
+    SubjectAltName both{};
+    both.dns = "api.lakeside.internal";
+    both.ip = "10.0.0.5";
+    bool threw = false;
+    try {
+        const nlohmann::json j = both;
+        (void)j;
+    } catch (const NetworkError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+}
+
 // Round-trips through the request the field actually lives on, exercising the real
 // `std::vector<SubjectAltName>` path rather than the bare type alone.
 std::string generated_certificate_of_type(const std::string& cert_type) {
@@ -297,6 +330,33 @@ std::string generated_certificate_of_type(const std::string& cert_type) {
            R"json("public_cert_pem":"pem",)json" +
            R"json("status":"Active","subject":"device-001","tenant_id":")json" + kUuid +
            R"json("})json";
+}
+
+// The N3 refusal reached through the real vector<SubjectAltName> path a caller
+// actually uses -- a malformed element must not be silently dropped from the list
+// (C-12 N3's other clause) or let the request out with a bad element inside it.
+AXIAM_TEST("§27.13 / C-12 N3: a malformed SubjectAltName inside "
+          "subject_alt_names[] refuses the WHOLE request, zero wire calls") {
+    auto fixture = axtest::mgmt::signed_in(200, generated_certificate_of_type("Server"));
+    CreateCertificateRequest body{};
+    body.cert_type = CertificateType::Server;
+    body.issuer_ca_id = kUuid;
+    body.key_algorithm = KeyAlgorithm::Ed25519;
+    body.subject = "CN=api";
+    SubjectAltName good{};
+    good.dns = "api.lakeside.internal";
+    SubjectAltName bad{};  // neither dns nor ip
+    body.subject_alt_names = std::vector<SubjectAltName>{good, bad};
+
+    const auto before = fixture.state->count();
+    bool threw = false;
+    try {
+        fixture.client.management().certificates().generate(body);
+    } catch (const NetworkError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+    AXIAM_CHECK(fixture.state->count() == before);  // never reached the wire
 }
 
 AXIAM_TEST("§27.13 S-7 rule 1: CreateCertificateRequest.subject_alt_names reaches the wire "
@@ -331,6 +391,25 @@ AXIAM_TEST("§27.13 S-7 rule 1: CreateCertificateRequest.subject_alt_names reach
         body.issuer_ca_id = kUuid;
         body.key_algorithm = KeyAlgorithm::Ed25519;
         body.subject = "CN=device-1";
+        fixture.client.management().certificates().generate(body);
+
+        const auto sent = nlohmann::json::parse(fixture.state->last().body);
+        AXIAM_CHECK(!sent.contains("subject_alt_names"));
+    }
+    // C-12 N3: an ENGAGED but EMPTY vector -- built from a filtered collection with
+    // nothing left in it, say -- is not "no SANs stated"; it is "state a zero-element
+    // SAN list", which §27.13 defines no server meaning for. Before this fix, the
+    // ordinary `if (value.subject_alt_names)` optional guard let an engaged empty
+    // vector reach the wire as `"subject_alt_names":[]`.
+    {
+        auto fixture = axtest::mgmt::signed_in(
+            200, generated_certificate_of_type("Device"));
+        CreateCertificateRequest body{};
+        body.cert_type = CertificateType::Device;
+        body.issuer_ca_id = kUuid;
+        body.key_algorithm = KeyAlgorithm::Ed25519;
+        body.subject = "CN=device-2";
+        body.subject_alt_names = std::vector<SubjectAltName>{};  // engaged, empty
         fixture.client.management().certificates().generate(body);
 
         const auto sent = nlohmann::json::parse(fixture.state->last().body);

@@ -247,9 +247,24 @@ AXIAM_TEST("management model CreateCaCertificateRequest round-trips without losi
     AXIAM_CHECK(again == encoded);
 }
 
+AXIAM_TEST("management model SubjectAltName round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"dns": "example"})json");
+
+    const auto value = wire.get<SubjectAltName>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<SubjectAltName>();
+    AXIAM_CHECK(again == encoded);
+}
+
 AXIAM_TEST("management model CreateCertificateRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"cert_type": "User", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "subject": "example", "subject_alt_names": [{}], "validity_days": 1})json");
+        R"json({"cert_type": "User", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "subject": "example", "subject_alt_names": [{"dns": "example"}], "validity_days": 1})json");
 
     const auto value = wire.get<CreateCertificateRequest>();
     const nlohmann::json encoded = value;
@@ -1599,7 +1614,7 @@ AXIAM_TEST("management model SignAuditBatchRequest round-trips without losing a 
 
 AXIAM_TEST("management model SignCertificateCsrRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"cert_type": "User", "csr_pem": "example", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "subject_alt_names": [{}], "validity_days": 1})json");
+        R"json({"cert_type": "User", "csr_pem": "example", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "subject_alt_names": [{"dns": "example"}], "validity_days": 1})json");
 
     const auto value = wire.get<SignCertificateCsrRequest>();
     const nlohmann::json encoded = value;
@@ -3518,7 +3533,7 @@ AXIAM_TEST("management platform: client.platform() and management().platform() a
     AXIAM_CHECK(direct_path == "/health");
 }
 
-// §27.9: 127 models, 25 enums and 24 namespaces are covered above. Counted from the test
+// §27.9: 128 models, 25 enums and 24 namespaces are covered above. Counted from the test
 // registry rather than restated as a literal on both sides -- a case dropped by a bad
 // regeneration would still satisfy a tautology, and fails this instead.
 AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
@@ -3537,7 +3552,7 @@ AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
             ++equivalents;
         }
     }
-    AXIAM_CHECK(round_trips == 127);
+    AXIAM_CHECK(round_trips == 128);
     AXIAM_CHECK(enum_maps == 25);
     AXIAM_CHECK(rescopes == 24);
     AXIAM_CHECK(equivalents == 24);

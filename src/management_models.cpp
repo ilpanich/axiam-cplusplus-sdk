@@ -5,6 +5,7 @@
 
 #include <stdexcept>
 
+#include "axiam/errors.hpp"
 #include "management_json.hpp"
 
 namespace axiam::management {
@@ -1197,6 +1198,9 @@ void from_json(const nlohmann::json& j, CreateCaCertificateRequest& value) {
 }
 
 void to_json(nlohmann::json& j, const SubjectAltName& value) {
+    if (((value.dns ? 1 : 0) + (value.ip ? 1 : 0)) != 1) {
+        throw NetworkError("SubjectAltName must set exactly one of `dns`, `ip`, never neither and never both (CONTRACT.md §27.13 / CONTRACT 1.52 N3 (C-12))", "sdk_programming_error");
+    }
     j = nlohmann::json::object();
     if (value.dns) {
         j["dns"] = *value.dns;
@@ -1225,7 +1229,7 @@ void to_json(nlohmann::json& j, const CreateCertificateRequest& value) {
         if (!parsed.is_discarded()) j["metadata"] = parsed;
     }
     j["subject"] = value.subject;
-    if (value.subject_alt_names) {
+    if (value.subject_alt_names && !value.subject_alt_names->empty()) {
         j["subject_alt_names"] = *value.subject_alt_names;
     }
     j["validity_days"] = value.validity_days;
@@ -3629,7 +3633,7 @@ void to_json(nlohmann::json& j, const SignCertificateCsrRequest& value) {
         auto parsed = nlohmann::json::parse(*value.metadata, nullptr, false);
         if (!parsed.is_discarded()) j["metadata"] = parsed;
     }
-    if (value.subject_alt_names) {
+    if (value.subject_alt_names && !value.subject_alt_names->empty()) {
         j["subject_alt_names"] = *value.subject_alt_names;
     }
     j["validity_days"] = value.validity_days;
