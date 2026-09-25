@@ -6,49 +6,15 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
-### Changed
-
-- **CONTRACT.md re-vendored at contract 1.52.** Copied byte for byte from axiam `80bc7aa`
-  (sha256 `c7954eec…`), the merge of the C-12 cross-SDK conformance review
-  (ilpanich/axiam#500). 1.52 changes no wire behaviour: it writes rules N1–N6, which
-  this SDK's C-12 fixes (#68) already implement. The README's conformance line
-  moves to 1.52.
-
-Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
-(sha256 `0ac7fd75f83c…`), `openapi.json` and `management-registry.json` from
-`axiam@56fbe44`; this SDK vendors no `proto/`, having no gRPC transport.
-
-### Breaking
-
-- **`TokenAuthenticator::authenticate()` now enforces CONTRACT.md §10.1 rule
-  9.** This is the default, no-evidence entry point — the one `AxiamUser`,
-  the §11 declarative-helper macros, `guard_authenticator()` and every
-  `AxiamGuard` built from it reach. It previously never inspected a token's
-  `cnf` claim at all, so a certificate-bound token (exactly what
-  `authenticate_device()` mints, §6.1 rule 9) or a DPoP-bound one verified as
-  an ordinary bearer token through every guard built on it — the
-  SEC-071/SEC-080 shape §10.1 exists to close. An **unbound** token (no
-  `cnf`, the overwhelming majority of any deployment that has not turned on
-  mTLS or DPoP) is unaffected. A resource server that intends to accept
-  bound tokens now calls `authenticate_sender_constrained(token,
-  presented_thumbprint)` instead, passing the peer certificate's thumbprint
-  from its own TLS layer.
-- **`RoleGroupAssignment::inherit`, `RoleServiceAccountAssignment::inherit`
-  and `RoleUserAssignment::inherit` widen from `bool` to
-  `std::optional<bool>`**, each gaining an `inherits()` accessor (CONTRACT.md
-  §27.13 S-10 rule 3) — the same shape `RoleAssignment::inherit` already had.
-  Source-breaking for any caller reading `.inherit` directly as a `bool`:
-  read `.inherits()` instead, never `.inherit.value_or(false)`. Forced by the
-  fix below — a `roles.list_users` / `_groups` / `_service_accounts` decode
-  that tolerates an absent `inherit` has nowhere to put "absent" in a plain
-  `bool`.
-- **`authenticate_device()` sends no `Content-Type` on the wire, in addition
-  to no body** (CONTRACT.md §6.1 rule 6). Previously sent
-  `Content-Type: application/json` with a body of `{}`. A caller's own test
-  double for `POST /api/v1/auth/device` that asserted on either is now
-  asserting on bytes this SDK no longer sends.
+## [1.0.0-beta17] - 2026-09-25
 
 ### Added
+
+- Group role bindings, metadata, service_accounts (CONTRACT §27.6.1)
+
+- Align authenticate_device() with CONTRACT §6.1 rules 6-10
+
+- Acting tenant, X-Axiam-Tenant (CONTRACT §5.2 rule 1, contract 1.51)
 
 - **`Client::Builder::with_acting_tenant(std::string)` and, on an existing
   client, `Client::acting_tenant(const std::string&)` /
@@ -74,6 +40,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   call, like every other piece of session state this SDK already shares —
   see the README for why this differs from the Rust reference's per-handle
   scoping.
+
 - **`authenticate_device()` now behaves per CONTRACT.md §6.1 rules 6–10.**
   The return type (`DeviceAuth { access_token, token_type, expires_in }`)
   was already correct. Reachable only on a client built with
@@ -87,6 +54,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   holds a cookie session. A `429` is `NetworkError`, not `AuthError`, and is
   not retried. Resets the §5.2 acting-tenant gate to unknown (no
   `LoginUserInfo`) and clears the §17 decision memo (a credential change).
+
 - **CONTRACT.md §27.6.1 manifest additions**, at this SDK's flat-entity
   tier: `resources[].metadata` (`ManifestEntity::metadata_json`, whole-object
   JSON-value drift); the two-shape role binding on `Group` and the new
@@ -100,10 +68,63 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   whose `Create` outcome carries the one-time `client_secret`
   (`PlannedChange::service_account_secret`, `Sensitive<T>`) even when a
   later action of the same `apply` fails.
+
 - **`PlannedChange::service_account_secret`** (new field, `std::optional<
   Sensitive<std::string>>`) — see above.
 
+### Changed
+
+- Re-vendor CONTRACT.md at contract 1.52
+
+- State acting_tenant()'s in-place form and that logout() does not clear it
+
+- §6.1 rule 7 is a runtime gate here, and say why
+
+- Fix stranded resource_type fixtures, cover remaining §27.6.1 paths
+
+- Use a non-key PEM placeholder in device-cert fixtures
+
+- README conformance at contract 1.51, CHANGELOG
+
+- Re-vendor contract 1.51 and regenerate the §27 surface
+
+- **CONTRACT.md re-vendored at contract 1.52.** Copied byte for byte from axiam `80bc7aa`
+  (sha256 `c7954eec…`), the merge of the C-12 cross-SDK conformance review
+  (ilpanich/axiam#500). 1.52 changes no wire behaviour: it writes rules N1–N6, which
+  this SDK's C-12 fixes (#68) already implement. The README's conformance line
+  moves to 1.52.
+
+Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
+(sha256 `0ac7fd75f83c…`), `openapi.json` and `management-registry.json` from
+`axiam@56fbe44`; this SDK vendors no `proto/`, having no gRPC transport.
+
 ### Fixed
+
+- Accept a device credential for the management session check
+
+- Compare reachable_tenant_ids as UUIDs, not case-sensitive strings
+
+- Refuse a SubjectAltName holding neither or both of dns/ip
+
+- Refuse a plain (no-resource) manifest binding that states inherit: false
+
+- Refuse a malformed 200 from the device login, adopt nothing
+
+- Release an adopted device credential when any other call completes a session
+
+- Authenticate_device() sends no request body or Content-Type
+
+- Report the restore's own outcome after a failed manifest rebind
+
+- Decode absent inherit as true on role-side assignment listings
+
+- Accept a stated inherit:true, cover plain-over-scoped and full convergence
+
+- Resource_type is stated or refused, never defaulted to "folder" (dogfooding plan §13 row 17)
+
+- Send a nested resource's parent_id (dogfooding plan §13 row 17)
+
+- TokenAuthenticator::authenticate() enforces §10.1 rule 9 (contract 1.51)
 
 - **A management call now reaches the wire after `authenticate_device()`,
   with no cookie session at all** (CONTRACT.md §27.4 rule 1, CONTRACT 1.52
@@ -116,6 +137,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   `build_request()` already presents that credential as `Authorization:
   Bearer` on exactly this request. The check now accepts either credential,
   the same condition `Client::has_session()` already used.
+
 - **`acting_tenant()`'s `reachable_tenant_ids` check now compares tenant ids
   as UUIDs, not as case-sensitive strings** (CONTRACT.md §5.2.3 rule 4,
   CONTRACT 1.52 N5.6 (C-12)). Before this fix, the reach check was a plain
@@ -128,6 +150,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   agree. `acting_tenant()` still sends the header exactly as the caller
   spelled it — only the reach *check* is case-insensitive now, not what
   reaches the wire.
+
 - **`SubjectAltName` refuses a value that holds neither or both of `dns`/
   `ip`, client-side, before any request** (CONTRACT.md §27.13, CONTRACT
   1.52 N3 (C-12)). `SubjectAltName` is an externally-tagged union — sent as
@@ -143,6 +166,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   schema its `externally_tagged()` detector recognises, not only
   `SubjectAltName` by name, and its round-trip test fixtures for such a
   type now build a well-formed one-tag-engaged example instead of `{}`.
+
 - **An engaged-but-empty `subject_alt_names` no longer reaches the wire as
   `"subject_alt_names":[]`** (CONTRACT.md §27.13, CONTRACT 1.52 N3 (C-12)).
   `CreateCertificateRequest.subject_alt_names` /
@@ -151,11 +175,13 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   empty vector passes — built from a filtered collection with nothing left
   in it, say. The key is now omitted whenever the vector is empty, engaged
   or not, the same discipline `tenant_scope` already had (§5.2.3 rule 1).
+
 - **The `SubjectAltName` header doc no longer calls it a "SPARSE body."**
   That description says every member may be independently sent or omitted;
   `SubjectAltName` is the one struct here where that is false — exactly one
   member is ever engaged. The generator now gives an externally-tagged
   struct its own doc text instead of the generic sparse-body one.
+
 - **A manifest's plain (no-`resource`) role binding that states
   `inherit: false` is now refused client-side** (CONTRACT.md §27.6.1 item 2,
   CONTRACT 1.52 N6.2 (C-12)). `inherit: false` narrows a binding to one
@@ -166,6 +192,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   defines the meaning of. A stated `inherit: true` with no `resource` is
   unaffected: item 2's first bullet accepts it on any binding, planned
   exactly like an omitted one, matching this SDK's existing behaviour.
+
 - **A malformed `200` from `POST /api/v1/auth/device` is refused, not
   adopted** (CONTRACT.md §6.1 rule 6, CONTRACT 1.52 N4.2 (C-12)). Before this
   fix, an unparseable body, a non-object body, or an object with no (or an
@@ -179,6 +206,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   and changes no client state at all — the previous credential (if any), the
   cookie jar and the acting-tenant gate are left exactly as they were,
   matching the existing behaviour for a refused (non-2xx) device login.
+
 - **An adopted device credential is now released the instant any other call
   completes a session** (CONTRACT.md §6.1 rule 6, CONTRACT 1.52 N4.4 (C-12)).
   Before this fix, `authenticate_device()`'s `device_access_token` /
@@ -194,22 +222,26 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   released device bearer kept riding on every request after logout.
   `authenticate_device()` called again (device re-authentication, rule 6) is
   unaffected — it already overwrote both fields with its own new values.
+
 - **The manifest now sends group → role bindings at all.** Before this, a
   `Group`'s `depends_on` only ordered it after the roles it named; nothing
   ever called `roles().assign_to_group()`. Bindings are now reconciled
   additively — a binding the manifest does not name is left untouched,
   whichever subjects hold it.
+
 - **A nested resource's `parent_id` now reaches the wire** (dogfooding plan
   §13 row 17). `ManifestEntity::depends_on` on a `Resource` already ordered
   a child after its parent; `perform()` never read it when building the
   `Create`/`Update` request, so a manifest describing a tree created it
   flat. Resolved through the same id map §27.6.1's role bindings resolve
   `role`/`resource` keys through.
+
 - **`resource_type` is stated, or the manifest is refused — never silently
   `"folder"`** (dogfooding plan §13 row 17). `CreateResourceRequest.resource_type`
   is required by the server's schema; a `Resource` manifest entity that
   leaves it empty is now refused by `validate()` before any request, rather
   than defaulting to a value the contract never states.
+
 - Group's and ServiceAccount's own `Update` no longer sends `description`
   unconditionally. Before the two additions above, `Update` was reachable
   only via a real description difference; now a role-binding difference
@@ -217,6 +249,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   would have cleared the server's real description. Both branches send or
   skip the field based on whether the manifest states one, and skip the
   PUT/PATCH entirely — never an empty no-op — when it does not.
+
 - **A manifest that states `inherit: true` explicitly is no longer refused.**
   §27.6.1 item 2 says `inherit` "default[s] to `true`" and forbids only
   *sending* `inherit: true` on the wire ("so that an inheritable binding's
@@ -227,6 +260,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   a stated `true` is now accepted and planned identically to an omitted
   field, and still never reaches `assign_to_*`'s body — only an engaged
   `false` does.
+
 - **A role-side role listing no longer throws on a server that predates
   `inherit`** (CONTRACT.md §27.13 S-10 rule 3). `roles().list_groups()`,
   `list_users()` and `list_service_accounts()` decoded `inherit` with
@@ -239,6 +273,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   generated exactly like the subject-side `RoleAssignment` already was, with
   the absent-means-inherits `inherits()` accessor this same rule requires.
   See the Breaking entry above for the type change this forces.
+
 - **A manifest's failed rebind now reports the restore's own outcome**
   (CONTRACT.md §27.6.1: "If the assign fails, the SDK MUST attempt to assign
   the previous binding again … and report both outcomes"). The restore was
@@ -250,6 +285,7 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   `failed_binding` — additive fields, defaulted to
   `false`/`false`/disengaged/disengaged, so a caller compiled against the
   pre-fix report still reads `failed`/`failure` exactly as before.
+
 - **`authenticate_device()` sends no request body** (CONTRACT.md §6.1 rule
   6: "issues `POST /api/v1/auth/device` with no request body"). Previously
   sent `Content-Type: application/json` with a body of `{}`. Two independent
@@ -261,6 +297,38 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   `http_curl.cpp` now suppresses it for any body-less non-`GET` request that
   states no `Content-Type` of its own.
 
+### Breaking
+
+- **`TokenAuthenticator::authenticate()` now enforces CONTRACT.md §10.1 rule
+  9.** This is the default, no-evidence entry point — the one `AxiamUser`,
+  the §11 declarative-helper macros, `guard_authenticator()` and every
+  `AxiamGuard` built from it reach. It previously never inspected a token's
+  `cnf` claim at all, so a certificate-bound token (exactly what
+  `authenticate_device()` mints, §6.1 rule 9) or a DPoP-bound one verified as
+  an ordinary bearer token through every guard built on it — the
+  SEC-071/SEC-080 shape §10.1 exists to close. An **unbound** token (no
+  `cnf`, the overwhelming majority of any deployment that has not turned on
+  mTLS or DPoP) is unaffected. A resource server that intends to accept
+  bound tokens now calls `authenticate_sender_constrained(token,
+  presented_thumbprint)` instead, passing the peer certificate's thumbprint
+  from its own TLS layer.
+
+- **`RoleGroupAssignment::inherit`, `RoleServiceAccountAssignment::inherit`
+  and `RoleUserAssignment::inherit` widen from `bool` to
+  `std::optional<bool>`**, each gaining an `inherits()` accessor (CONTRACT.md
+  §27.13 S-10 rule 3) — the same shape `RoleAssignment::inherit` already had.
+  Source-breaking for any caller reading `.inherit` directly as a `bool`:
+  read `.inherits()` instead, never `.inherit.value_or(false)`. Forced by the
+  fix below — a `roles.list_users` / `_groups` / `_service_accounts` decode
+  that tolerates an absent `inherit` has nowhere to put "absent" in a plain
+  `bool`.
+
+- **`authenticate_device()` sends no `Content-Type` on the wire, in addition
+  to no body** (CONTRACT.md §6.1 rule 6). Previously sent
+  `Content-Type: application/json` with a body of `{}`. A caller's own test
+  double for `POST /api/v1/auth/device` that asserted on either is now
+  asserting on bytes this SDK no longer sends.
+
 ### Declined
 
 - **`validate_token` / `introspect_token`** (CONTRACT.md §1.1.1, contract
@@ -270,14 +338,17 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
   7 / §1.1 rule 6 — never a REST substitution (`POST /oauth2/introspect`
   authenticates a registered OAuth2 client and is outside the SDK
   vocabulary in any case).
+
 - **`role → permission` grant reconciliation** in the manifest, and the
   **`users`/`scopes`** manifest namespaces — the pre-existing flat-entity
   tier gap (§27.10), unchanged by this contract version. The three §27.6.1
   additions this release ships (`metadata`, the two-shape binding,
   `service_accounts`) do not close it; a consumer needing either still uses
   the imperative surface for that piece.
+
 - **`webhooks`** in the manifest — unimplemented, per §27.6's own note that
   no consumer has asked for it; unchanged.
+
 - **§6.1 rule 7 as a compile-time gate.** `authenticate_device()` on a client
   built without `with_client_cert()` is refused at run time (`AuthError`,
   zero wire calls), the rule's fallback form. A compile-time gate would
