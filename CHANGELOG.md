@@ -6,6 +6,14 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Changed
+
+- **CONTRACT.md re-vendored at contract 1.52.** Copied byte for byte from axiam `80bc7aa`
+  (sha256 `c7954eec…`), the merge of the C-12 cross-SDK conformance review
+  (ilpanich/axiam#500). 1.52 changes no wire behaviour: it writes rules N1–N6, which
+  this SDK's C-12 fixes (#68) already implement. The README's conformance line
+  moves to 1.52.
+
 Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
 (sha256 `0ac7fd75f83c…`), `openapi.json` and `management-registry.json` from
 `axiam@56fbe44`; this SDK vendors no `proto/`, having no gRPC transport.
