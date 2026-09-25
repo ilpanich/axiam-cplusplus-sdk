@@ -468,6 +468,15 @@ re-authenticates by calling `authenticate_device()` again. A `429` (the
 per-client-IP rate limit) is `NetworkError`, not `AuthError`, and is never
 retried by this call.
 
+**Held until replaced, on the caller's INTENT (CONTRACT 1.52 N4.4 (C-12)).**
+The device credential is not permanent: it is replaced the instant any other
+call completes a session on this client — `login()`, `login_opaque()`,
+`verify_mfa()`, `mfa_setup_confirm()`, a WebAuthn ceremony, an SSO completion,
+or `authenticate_device()` itself (a device re-authentication). `logout()`
+clears it outright, and `has_session()` reports `false` afterwards.
+`refresh()` never touches it, per rule 6's "there is no refresh token"
+above.
+
 **The token is certificate-bound, and §10.1 rule 9 applies to it.** When
 AXIAM itself terminated the TLS handshake, `access_token` carries
 `cnf: { "x5t#S256": … }` and is usable only on a connection presenting that
@@ -1394,7 +1403,20 @@ client.clear_acting_tenant();             // back to sending no header at all
 ```
 
 `with_acting_tenant()` (builder) and `acting_tenant()` / `clear_acting_tenant()`
-(on an existing client) are new in contract 1.51. `X-Axiam-Tenant` is sent on
+(on an existing client) are new in contract 1.51.
+
+**Form (CONTRACT 1.52 N5.2 (C-12)).** The on-client form changes the client
+**in place** — it returns `Client&` (a reference to `*this`), not a new
+handle — and every other `Client` value sharing the same underlying session
+(for instance one obtained from `login_async()`'s internal re-wrap, or any
+handle constructed over the same session) sees the change too: the acting
+tenant, like the rest of a client's session state, lives on the session
+itself, not on the individual `Client` object. `logout()` does **not**
+clear it — an acting tenant set before `logout()` is still set, and still
+sent, after a later `login()` on the same client, until `clear_acting_tenant()`
+or another `acting_tenant()` call changes it.
+
+`X-Axiam-Tenant` is sent on
 **every** `/api/v1` REST call this client makes from here — management,
 `check_access`/`batch_check`, `login`, `refresh`, `logout`, and every
 self-service and WebAuthn POST alike (§5.2.2 rule 4: the header is never
@@ -1413,9 +1435,15 @@ read by different parts of the server and this SDK does not couple them.
   reported a `LoginUserInfo`, `acting_tenant()` refuses client-side
   (`AuthzError`, zero wire calls) unless `organization_level` is `true`, and
   refuses a tenant outside `reachable_tenant_ids` when that field is present
-  (§5.2.3 rule 4). A client holding **no** login result — never logged in, or
-  the most recent session-establishing call reported none — has nothing to
-  gate on, so it sends the header and lets the server's `403` decide.
+  (§5.2.3 rule 4), **comparing as UUIDs, never as case-sensitive strings**
+  (CONTRACT 1.52 N5.6 (C-12)): a `reachable_tenant_ids` entry and an
+  `acting_tenant()` argument that spell the same tenant in different hex
+  case are still the same tenant. What reaches the wire is the caller's own
+  spelling, unchanged — the case-insensitive comparison decides only
+  whether the gate refuses, never what the header carries. A client holding
+  **no** login result — never logged in, or the most recent
+  session-establishing call reported none — has nothing to gate on, so it
+  sends the header and lets the server's `403` decide.
 - **Which calls reset that gate to "no login result".** Every call that
   completes a *new* session resets it to exactly what THAT response reported:
   `login`, `login_opaque`, `verify_mfa`, `mfa_setup_confirm` and the WebAuthn
@@ -1827,10 +1855,12 @@ Four properties, all load-bearing:
 Incoherence is refused *before the first request*: a duplicate key, a
 `depends_on` naming nothing, a dependency cycle, a stated `resource_type` left
 empty (see below), a resource-scoped role binding naming an undeclared role or
-resource, a role bound twice to one subject, or a global role bound with
-`inherit: false` all throw `ManifestError` from `validate()`, which `plan()`
-calls itself. Discovering that halfway through, with no rollback, is strictly
-worse.
+resource, a role bound twice to one subject, a global role bound with
+`inherit: false`, or a **plain** (no-`resource`) binding that states
+`inherit: false` (CONTRACT 1.52 N6.2 (C-12): `inherit: false` narrows a
+binding to a resource, and a plain binding names none) all throw
+`ManifestError` from `validate()`, which `plan()` calls itself. Discovering
+that halfway through, with no rollback, is strictly worse.
 
 **A resource's `resource_type` is stated, or the manifest is refused —
 never silently `"folder"`.** `CreateResourceRequest.resource_type` is required

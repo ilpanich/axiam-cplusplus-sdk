@@ -1254,6 +1254,9 @@ SsoCompleteResult Client::sso_complete(const std::string& code, const std::strin
     // decide, rather than refusing on a stale report from before this call.
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
+        // C-12 N4.4: an SSO completion completes a session, so it replaces any
+        // device credential this client had previously adopted.
+        p_->release_device_credential_locked();
         p_->login_user_info = std::nullopt;
     }
     return r;
@@ -1291,6 +1294,9 @@ SsoCompleteResult parse_federation_session(Client::Impl& impl, const json& j,
     r.redirect_uri = opt_string(j, "redirect_uri");
     {
         std::lock_guard<std::mutex> lock(impl.state_mtx);
+        // C-12 N4.4: an SSO completion completes a session, so it replaces any
+        // device credential this client had previously adopted.
+        impl.release_device_credential_locked();
         impl.login_user_info = std::nullopt;
     }
     return r;

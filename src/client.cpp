@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -30,6 +31,12 @@ namespace {
 /// original use); forward-declared here so Builder::with_acting_tenant() and
 /// Client::acting_tenant() can validate before build() constructs anything.
 bool looks_like_uuid(const std::string& s);
+
+/// Case-insensitive UUID equality (CONTRACT 1.52 N5.6 (C-12)). Defined further
+/// down, next to looks_like_uuid(); forward-declared for the same reason --
+/// Client::acting_tenant() (above the definition) compares a caller's tenant id
+/// against reachable_tenant_ids with this, not a bare string ==.
+bool same_uuid(const std::string& a, const std::string& b);
 
 /// Extract a cookie's value from a `Set-Cookie` header value list (each entry
 /// is "name=value; attr; attr"). Returns nullopt if the cookie is absent.
@@ -474,6 +481,12 @@ LoginResult Client::login(const std::string& username_or_email, const std::strin
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // C-12 N4.4: this call completes a session, so any device credential
+        // this client had previously adopted (authenticate_device()) is
+        // replaced -- otherwise build_request()'s `!device_access_token.empty()`
+        // branch would keep attaching the STALE device bearer, and withholding
+        // the cookie THIS response just set, to every request from here on.
+        p_->release_device_credential_locked();
         // §5.2 rule 1 gate: this call just completed a session, so the acting-
         // tenant gate is reset to exactly what THIS response reported -- never
         // carried over from an earlier login (the C-5 lesson: axiam-csharp-sdk
@@ -707,6 +720,12 @@ LoginResult Client::login_opaque(const std::string& username_or_email,
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // C-12 N4.4: this call completes a session, so any device credential
+        // this client had previously adopted (authenticate_device()) is
+        // replaced -- otherwise build_request()'s `!device_access_token.empty()`
+        // branch would keep attaching the STALE device bearer, and withholding
+        // the cookie THIS response just set, to every request from here on.
+        p_->release_device_credential_locked();
         // §5.2 rule 1 gate: this call just completed a session, so the acting-
         // tenant gate is reset to exactly what THIS response reported -- never
         // carried over from an earlier login (the C-5 lesson: axiam-csharp-sdk
@@ -810,6 +829,12 @@ LoginResult Client::verify_mfa(const std::string& challenge_token, const std::st
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         p_->session = true;
+        // C-12 N4.4: this call completes a session, so any device credential
+        // this client had previously adopted (authenticate_device()) is
+        // replaced -- otherwise build_request()'s `!device_access_token.empty()`
+        // branch would keep attaching the STALE device bearer, and withholding
+        // the cookie THIS response just set, to every request from here on.
+        p_->release_device_credential_locked();
         // §5.2 rule 1 gate: this call just completed a session, so the acting-
         // tenant gate is reset to exactly what THIS response reported -- never
         // carried over from an earlier login (the C-5 lesson: axiam-csharp-sdk
@@ -846,6 +871,11 @@ void Client::logout() {
     }
     std::lock_guard<std::mutex> lock(p_->state_mtx);
     p_->session = false;
+    // C-12 N4.4: "logout clears it" — before this fix, logout() cleared only
+    // `session`, leaving an adopted device credential (`device_access_token`/
+    // `device_session`) in place, so has_session() stayed true and the
+    // released device bearer kept riding on every request made after logout.
+    p_->release_device_credential_locked();
     p_->csrf.clear();
     // §5.2 rule 1: this client no longer holds a login result to gate
     // acting_tenant() on -- reset to "unknown", not to "not organization-level".
@@ -880,7 +910,14 @@ Client& Client::acting_tenant(const std::string& tenant_id) {
             }
             if (p_->login_user_info->reachable_tenant_ids) {
                 const auto& reach = *p_->login_user_info->reachable_tenant_ids;
-                if (std::find(reach.begin(), reach.end(), tenant_id) == reach.end()) {
+                // C-12 N5.6: compared as UUIDs, not as strings -- same_uuid()
+                // case-folds, so an upper-case tenant_id matches the server's
+                // (lower-case) spelling in reach.
+                const bool found =
+                    std::find_if(reach.begin(), reach.end(), [&tenant_id](const std::string& r) {
+                        return same_uuid(r, tenant_id);
+                    }) != reach.end();
+                if (!found) {
                     throw AuthzError(
                         "acting_tenant: \"" + tenant_id +
                         "\" is outside this principal's reachable_tenant_ids "
@@ -1051,12 +1088,30 @@ DeviceAuth Client::authenticate_device() {
     }
 
     auto j = json::parse(resp.body, nullptr, false);
-    DeviceAuth da;
-    if (!j.is_discarded()) {
-        da.access_token = Sensitive<std::string>(j.value("access_token", ""));
-        da.token_type = j.value("token_type", "");
-        da.expires_in = j.value("expires_in", static_cast<std::int64_t>(0));
+    // C-12 N4.2: "a refused OR MALFORMED device login changes no client
+    // state" -- the previous credential, the cookie jar and the
+    // acting-tenant gate are left exactly as they were. Before this fix, a
+    // 200 with an unparseable or object-less body, or an object with no
+    // (or an empty) `access_token`, still ADOPTED: it overwrote
+    // device_access_token with an EMPTY Sensitive, set device_session =
+    // true anyway, and reset login_user_info to unknown -- a caller then
+    // held has_session() == true and a credential that could never
+    // authenticate anything. Checked BEFORE the state_mtx block below, so
+    // a refusal here touches nothing that block would otherwise write.
+    const bool well_formed =
+        !j.is_discarded() && j.is_object() && j.contains("access_token") &&
+        j["access_token"].is_string() && !j["access_token"].get<std::string>().empty();
+    if (!well_formed) {
+        throw NetworkError(
+            "authenticate_device: the server's 200 body is not a well-formed "
+            "DeviceAuth (CONTRACT.md §6.1 rule 6 / CONTRACT 1.52 N4.2 (C-12)) -- "
+            "no access_token, or an empty one; this client's state is unchanged",
+            "malformed_body");
     }
+    DeviceAuth da;
+    da.access_token = Sensitive<std::string>(j.value("access_token", ""));
+    da.token_type = j.value("token_type", "");
+    da.expires_in = j.value("expires_in", static_cast<std::int64_t>(0));
     {
         std::lock_guard<std::mutex> lock(p_->state_mtx);
         // Rule 6: adopted as this client's credential, exactly as login() adopts
@@ -1240,6 +1295,26 @@ bool looks_like_uuid(const std::string& s) {
         }
     }
     return at == s.size();
+}
+
+/// Case-insensitive UUID equality (CONTRACT 1.52 N5.6 (C-12): "tenant ids compare
+/// as UUIDs, never as strings. Case and formatting MUST NOT decide reach.").
+///
+/// Both callers of this function already ran their operands through
+/// `looks_like_uuid()`, which fixes the 8-4-4-4-12 hex-and-dash SHAPE on both
+/// sides -- the only thing left that can differ is hex-digit case (the server's
+/// own ids are lower-case; a caller's own -- from a config file, a copy-paste, an
+/// upstream API -- may not be). A case-folded byte compare is therefore a correct
+/// UUID compare here, not a general one.
+bool same_uuid(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i]))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace

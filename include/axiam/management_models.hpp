@@ -1355,9 +1355,10 @@ struct CreateCaCertificateRequest {
 /// request, never read from a CSR: a CSR asking for a `subjectAltName` extension is still
 /// refused. URI and e-mail names are not offered — nothing in AXIAM consumes them yet.
 ///
-/// Every member is optional, so this is a SPARSE body: an engaged `std::optional` is sent and a
-/// disengaged one is OMITTED from the request entirely, rather than sent as null (§27.4 rule
-/// 5). On a sparse update those say opposite things, and only omission means "leave it alone".
+/// An EXTERNALLY TAGGED union (CONTRACT.md §27.13): sent as exactly ONE of `dns`, `ip`, never
+/// neither and never both. `to_json()` refuses (`NetworkError`, before any request) a value
+/// that holds neither or both -- it does not silently drop one, and it does not send `{}` or
+/// both keys.
 struct SubjectAltName {
     /// A DNS name, e.g. `api.lakeside.internal` or `*.lakeside.internal`. Optional.
     std::optional<std::string> dns = std::nullopt;

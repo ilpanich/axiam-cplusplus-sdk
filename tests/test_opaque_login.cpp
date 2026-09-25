@@ -145,6 +145,13 @@ void install_router(std::shared_ptr<FakeState> st, Script script) {
             return json_response(200, body);
         }
 
+        // C-12 N4.4: authenticate_device(), so a test can adopt a device
+        // credential before exercising login_opaque()'s replacement of it.
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(
+                200, R"({"access_token":"device-tok","token_type":"Bearer","expires_in":900})");
+        }
+
         // The plaintext endpoint §23.4 rule 7's `optional` clause falls back to.
         // Its user id differs from the OPAQUE one on purpose: that is how a test
         // sees WHICH path produced the result rather than only that one did.
@@ -306,6 +313,46 @@ AXIAM_TEST("login_opaque: a success returns what login returns") {
     AXIAM_CHECK(st->count_path("/auth/opaque/login/start") == 1);
     AXIAM_CHECK(st->count_path("/auth/opaque/login/finish") == 1);
     AXIAM_CHECK_FALSE(fake.leaked());
+}
+
+// CONTRACT.md §6.1 rule 6 (contract 1.51) / C-12 N4.4: "any later
+// session-establishing call replaces" an adopted device credential.
+// login_opaque() is one such call; before the fix it left
+// device_access_token/device_session untouched, so build_request() kept
+// attaching the STALE device bearer (and withholding the fresh cookie
+// session) to every request made after login_opaque() succeeded.
+AXIAM_TEST("login_opaque: replaces an adopted device credential (C-12 N4.4)") {
+    FakeNative fake;
+    ScopedFakeNative native(fake);
+    auto st = std::make_shared<FakeState>();
+    install_router(st, Script{});
+
+    const std::string cert =
+        "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+    const std::string key =
+        "-----BEGIN AXIAM TEST PLACEHOLDER-----\nMIIB\n-----END AXIAM TEST PLACEHOLDER-----\n";
+    Client c = Client::builder()
+                   .base_url("https://api.example.test")
+                   .tenant_slug("acme")
+                   .org_slug("globex")
+                   .with_client_cert(cert, key)
+                   .transport(axtest::make_fake(st))
+                   .build();
+
+    c.authenticate_device();  // adopts device_access_token/device_session
+
+    (void)c.login_opaque(kUser, mint_password());
+    AXIAM_CHECK(c.has_session());
+
+    // The NEXT request must carry no Authorization header at all -- the
+    // fresh cookie session is the credential now, not the stale device
+    // bearer build_request() would otherwise still attach.
+    st->router = [](const HttpRequest&, FakeState&) {
+        return json_response(200, R"({"allowed":true})");
+    };
+    c.check_access("read", "r-1");
+    const auto req = st->last();
+    AXIAM_CHECK(req.headers.find("Authorization") == req.headers.end());
 }
 
 AXIAM_TEST("login_opaque: the MFA-required branch survives the OPAQUE path") {

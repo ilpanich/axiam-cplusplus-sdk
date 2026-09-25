@@ -11,9 +11,11 @@
 #include "assert.hpp"
 #include "axiam/client.hpp"
 #include "axiam/errors.hpp"
+#include "axiam/management.hpp"
 #include "fake_transport.hpp"
 
 using namespace axiam;
+using namespace axiam::management;
 using axtest::FakeState;
 using axtest::json_response;
 
@@ -281,6 +283,236 @@ AXIAM_TEST("§5.2 rule 1: authenticate_device() resets the acting-tenant gate to
     // Must not throw: a device credential has no login result to gate on.
     client.acting_tenant("22222222-2222-4222-8222-222222222222");
     AXIAM_CHECK(client.acting_tenant_id().has_value());
+}
+
+// ---------------------------------------------------------------------------
+// C-12 N4.2: a refused or MALFORMED device login changes no client state
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("C-12 N4.2: a 200 with an unparseable body is refused, not adopted") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) { return json_response(200, "not json at all"); };
+    auto client = device_client(st);
+
+    bool threw = false;
+    try {
+        client.authenticate_device();
+    } catch (const NetworkError&) {
+        threw = true;
+    }
+    AXIAM_CHECK(threw);
+    // Before the fix: an empty Sensitive<std::string> was still ADOPTED
+    // (device_session = true), so has_session() reported true for a
+    // credential that could never authenticate anything.
+    AXIAM_CHECK_FALSE(client.has_session());
+}
+
+AXIAM_TEST("C-12 N4.2: a 200 with no access_token field is refused, not adopted") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) {
+        return json_response(200, R"({"token_type":"Bearer","expires_in":900})");
+    };
+    auto client = device_client(st);
+
+    AXIAM_REQUIRE_THROWS_AS(client.authenticate_device(), NetworkError);
+    AXIAM_CHECK_FALSE(client.has_session());
+}
+
+AXIAM_TEST("C-12 N4.2: a 200 with an empty access_token is refused, not adopted") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) {
+        return json_response(200, R"({"access_token":"","token_type":"Bearer","expires_in":900})");
+    };
+    auto client = device_client(st);
+
+    AXIAM_REQUIRE_THROWS_AS(client.authenticate_device(), NetworkError);
+    AXIAM_CHECK_FALSE(client.has_session());
+}
+
+AXIAM_TEST("C-12 N4.2: a malformed RE-authentication leaves the previous device "
+          "credential exactly as it was") {
+    auto st = std::make_shared<FakeState>();
+    int device_calls = 0;
+    st->router = [&device_calls](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            ++device_calls;
+            if (device_calls == 1) return json_response(200, kDeviceOk);
+            return json_response(200, "not json at all");  // the re-auth attempt
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_client(st);
+    client.authenticate_device();  // adopts "device-token-xyz"
+
+    AXIAM_REQUIRE_THROWS_AS(client.authenticate_device(), NetworkError);
+
+    // The ORIGINAL device credential is still the one presented -- unchanged
+    // by the refused re-authentication attempt.
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    auto it = req.headers.find("Authorization");
+    AXIAM_CHECK(it != req.headers.end());
+    AXIAM_CHECK(it->second == "Bearer device-token-xyz");
+}
+
+// ---------------------------------------------------------------------------
+// C-12 N4.4: "any later session-establishing call replaces" the device
+// credential, and logout() clears it. Before this fix, ONLY close() touched
+// device_access_token/device_session at all — a device credential, once
+// adopted, was permanent for the client's whole lifetime.
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("C-12 N4.4: logout() releases an adopted device credential") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(200, kDeviceOk);
+        }
+        if (req.url.find("/auth/logout") != std::string::npos) {
+            return json_response(200, "{}");
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_client(st);
+    client.authenticate_device();
+    AXIAM_REQUIRE(client.has_session());
+
+    client.logout();
+
+    // Before the fix: logout() cleared only `session`, leaving `device_session`
+    // set, so has_session() (session || device_session) stayed true and the
+    // released device bearer kept riding on every later request.
+    AXIAM_CHECK_FALSE(client.has_session());
+}
+
+AXIAM_TEST("C-12 N4.4: login() replaces an adopted device credential") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(200, kDeviceOk);
+        }
+        if (req.url.find("/auth/login") != std::string::npos) {
+            HttpResponse resp = json_response(
+                200, R"({"session_id":"sess-1","expires_in":900,)"
+                     R"("user":{"id":"u1","username":"root","email":"root@example.com",)"
+                     R"("tenant_id":"11111111-1111-4111-8111-111111111111"}})");
+            resp.set_cookies.push_back("axiam_access=fresh-cookie; HttpOnly; Path=/");
+            return resp;
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_client(st);
+    client.authenticate_device();  // adopts device_access_token/device_session
+
+    client.login("root@example.com", "pw");
+
+    // Before the fix: build_request()'s `!device_access_token.empty()` branch
+    // kept firing after login() too, so this request still carried
+    // `Authorization: Bearer device-token-xyz` and withheld login()'s own
+    // fresh cookie — the new session was unreachable.
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    AXIAM_CHECK(req.headers.find("Authorization") == req.headers.end());
+}
+
+AXIAM_TEST("C-12 N4.4: verify_mfa() replaces an adopted device credential") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(200, kDeviceOk);
+        }
+        if (req.url.find("/auth/mfa/verify") != std::string::npos) {
+            return json_response(
+                200, R"({"session_id":"sess-1","expires_in":900,)"
+                     R"("user":{"id":"u1","username":"root","email":"root@example.com",)"
+                     R"("tenant_id":"11111111-1111-4111-8111-111111111111"}})");
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_client(st);
+    client.authenticate_device();
+
+    client.verify_mfa("challenge-tok", "123456");
+
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    AXIAM_CHECK(req.headers.find("Authorization") == req.headers.end());
+}
+
+// The I4 twin: re-authenticating as the device (calling authenticate_device()
+// again) is "the device re-authenticates" (rule 6), not one of the calls this
+// fix touches — it must keep working exactly as before, overwriting the old
+// device credential with the new one.
+AXIAM_TEST("C-12 N4.4 (I4): a second authenticate_device() call still replaces the "
+          "device credential with the new one") {
+    auto st = std::make_shared<FakeState>();
+    int device_calls = 0;
+    st->router = [&device_calls](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            ++device_calls;
+            const char* body = device_calls == 1
+                                    ? kDeviceOk
+                                    : R"({"access_token":"device-token-2","token_type":)"
+                                      R"("Bearer","expires_in":900})";
+            return json_response(200, body);
+        }
+        return json_response(200, R"({"allowed":true})");
+    };
+    auto client = device_client(st);
+    client.authenticate_device();
+    client.authenticate_device();  // re-authenticates, per rule 6
+
+    client.check_access("read", "r-1");
+    const auto req = st->last();
+    auto it = req.headers.find("Authorization");
+    AXIAM_CHECK(it != req.headers.end());
+    AXIAM_CHECK(it->second == "Bearer device-token-2");
+}
+
+// ---------------------------------------------------------------------------
+// C-12 N4.7: "§27.4 rule 1's session check accepts a bearer credential. An
+// SDK MUST NOT refuse a management call client-side for lack of a cookie
+// session while it holds a device ... credential."
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("C-12 N4.7: a management call reaches the wire after "
+          "authenticate_device(), with no cookie session at all") {
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/device") != std::string::npos) {
+            return json_response(200, kDeviceOk);
+        }
+        return json_response(
+            200, R"({"created_at":"2026-08-26T00:00:00Z","description":"d",)"
+                 R"("id":"11111111-1111-4111-8111-111111111111","is_global":false,)"
+                 R"("name":"auditor","tenant_id":"11111111-1111-4111-8111-111111111111",)"
+                 R"("updated_at":"2026-08-26T00:00:00Z"})");
+    };
+    auto client = Client::builder()
+                      .base_url("https://iam.example.com")
+                      .tenant_id("11111111-1111-4111-8111-111111111111")
+                      .with_client_cert(kCertPem, kKeyPem)
+                      .transport(axtest::make_fake(st))
+                      .build();
+    client.authenticate_device();
+    AXIAM_REQUIRE(client.has_session());
+
+    // Before the fix: management_transport.cpp checked ONLY `session` (the
+    // cookie flag), so this threw AuthError "no active session" even though
+    // build_request() presents the device token as `Authorization: Bearer`
+    // on exactly this request.
+    bool threw = false;
+    try {
+        client.management().roles().get("11111111-1111-4111-8111-111111111111");
+    } catch (const AuthError&) {
+        threw = true;
+    }
+    AXIAM_CHECK_FALSE(threw);
+
+    const auto req = st->last();
+    auto it = req.headers.find("Authorization");
+    AXIAM_CHECK(it != req.headers.end());
+    AXIAM_CHECK(it->second == "Bearer device-token-xyz");
 }
 
 }  // namespace

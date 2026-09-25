@@ -97,6 +97,95 @@ Contract 1.51 — the dogfooding remediation. Re-vendored `CONTRACT.md`
 
 ### Fixed
 
+- **A management call now reaches the wire after `authenticate_device()`,
+  with no cookie session at all** (CONTRACT.md §27.4 rule 1, CONTRACT 1.52
+  N4.7 (C-12) — found in this SDK while addressing the same rule for the
+  Python SDK's `c12-findings.md` entry; not itself listed there for C++).
+  `Transport::send()`'s rule-1 session check tested only `session` (the
+  cookie-session flag), so a client that had called `authenticate_device()`
+  and held only a device credential — no cookie session at all — was
+  refused every management call client-side with `AuthError`, even though
+  `build_request()` already presents that credential as `Authorization:
+  Bearer` on exactly this request. The check now accepts either credential,
+  the same condition `Client::has_session()` already used.
+- **`acting_tenant()`'s `reachable_tenant_ids` check now compares tenant ids
+  as UUIDs, not as case-sensitive strings** (CONTRACT.md §5.2.3 rule 4,
+  CONTRACT 1.52 N5.6 (C-12)). Before this fix, the reach check was a plain
+  `std::find()` over `reachable_tenant_ids`, an exact byte compare — a
+  caller passing a tenant id spelled in a different hex case than the
+  server's own (lower-case) spelling was refused with `AuthzError` for a
+  tenant the principal could genuinely reach. Missed by the existing test
+  suite because every `reachable_tenant_ids` fixture used all-digit UUIDs
+  (no `a`-`f`), on which a case-sensitive and a case-insensitive compare
+  agree. `acting_tenant()` still sends the header exactly as the caller
+  spelled it — only the reach *check* is case-insensitive now, not what
+  reaches the wire.
+- **`SubjectAltName` refuses a value that holds neither or both of `dns`/
+  `ip`, client-side, before any request** (CONTRACT.md §27.13, CONTRACT
+  1.52 N3 (C-12)). `SubjectAltName` is an externally-tagged union — sent as
+  exactly one of `{"dns": …}` / `{"ip": …}` — modelled as two independent
+  `std::optional` members. Before this fix, `to_json()` silently emitted
+  `{}` for a value with neither engaged (a shape the server's tagged
+  decoder has no arm for) and `{"dns": …, "ip": …}` for a value with both.
+  `to_json()` now throws `NetworkError` for either, and a malformed element
+  inside a `std::vector<SubjectAltName>` (e.g.
+  `CreateCertificateRequest.subject_alt_names`) now refuses the WHOLE
+  request rather than reaching the wire with a bad element folded in.
+  Generated code: `scripts/gen_management.py` emits this check for any
+  schema its `externally_tagged()` detector recognises, not only
+  `SubjectAltName` by name, and its round-trip test fixtures for such a
+  type now build a well-formed one-tag-engaged example instead of `{}`.
+- **An engaged-but-empty `subject_alt_names` no longer reaches the wire as
+  `"subject_alt_names":[]`** (CONTRACT.md §27.13, CONTRACT 1.52 N3 (C-12)).
+  `CreateCertificateRequest.subject_alt_names` /
+  `SignCertificateCsrRequest.subject_alt_names` used the ordinary
+  `if (value.field)` optional guard, which an ENGAGED optional holding an
+  empty vector passes — built from a filtered collection with nothing left
+  in it, say. The key is now omitted whenever the vector is empty, engaged
+  or not, the same discipline `tenant_scope` already had (§5.2.3 rule 1).
+- **The `SubjectAltName` header doc no longer calls it a "SPARSE body."**
+  That description says every member may be independently sent or omitted;
+  `SubjectAltName` is the one struct here where that is false — exactly one
+  member is ever engaged. The generator now gives an externally-tagged
+  struct its own doc text instead of the generic sparse-body one.
+- **A manifest's plain (no-`resource`) role binding that states
+  `inherit: false` is now refused client-side** (CONTRACT.md §27.6.1 item 2,
+  CONTRACT 1.52 N6.2 (C-12)). `inherit: false` narrows a binding to one
+  resource; a plain binding names none, so the pairing has nothing to mean.
+  Before this fix, `{role, resource: std::nullopt, inherit: false}` passed
+  `validate()` and reached the wire as `inherit: false` with no `resource`
+  at all — a shape `ManifestRoleBinding` can express but the contract never
+  defines the meaning of. A stated `inherit: true` with no `resource` is
+  unaffected: item 2's first bullet accepts it on any binding, planned
+  exactly like an omitted one, matching this SDK's existing behaviour.
+- **A malformed `200` from `POST /api/v1/auth/device` is refused, not
+  adopted** (CONTRACT.md §6.1 rule 6, CONTRACT 1.52 N4.2 (C-12)). Before this
+  fix, an unparseable body, a non-object body, or an object with no (or an
+  empty) `access_token` was still adopted: `device_access_token` was
+  overwritten with an EMPTY `Sensitive<std::string>`, `device_session` was
+  set `true` regardless, and the acting-tenant gate was reset to unknown —
+  leaving the client with `has_session() == true` and a credential that
+  could never authenticate anything, and clobbering whatever device
+  credential a prior successful `authenticate_device()` call had adopted.
+  `authenticate_device()` now throws `NetworkError` for a malformed `200`
+  and changes no client state at all — the previous credential (if any), the
+  cookie jar and the acting-tenant gate are left exactly as they were,
+  matching the existing behaviour for a refused (non-2xx) device login.
+- **An adopted device credential is now released the instant any other call
+  completes a session** (CONTRACT.md §6.1 rule 6, CONTRACT 1.52 N4.4 (C-12)).
+  Before this fix, `authenticate_device()`'s `device_access_token` /
+  `device_session` were set once and never touched again by anything but
+  `close()` — `login()`, `login_opaque()`, `verify_mfa()`,
+  `mfa_setup_confirm()`, both WebAuthn finish ceremonies, `sso_complete()`
+  and `sso_complete_oauth2()`/`sso_complete_handoff()` all left them in
+  place, so `build_request()`'s `!device_access_token.empty()` branch kept
+  attaching the STALE device bearer — and withholding the fresh session's
+  cookie — to every request made after any of those calls succeeded, making
+  the new session unreachable. `logout()` likewise cleared only `session`,
+  so `has_session()` (`session || device_session`) stayed `true` and the
+  released device bearer kept riding on every request after logout.
+  `authenticate_device()` called again (device re-authentication, rule 6) is
+  unaffected — it already overwrote both fields with its own new values.
 - **The manifest now sends group → role bindings at all.** Before this, a
   `Group`'s `depends_on` only ordered it after the roles it named; nothing
   ever called `roles().assign_to_group()`. Bindings are now reconciled

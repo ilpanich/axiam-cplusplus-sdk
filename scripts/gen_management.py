@@ -761,8 +761,24 @@ def emit_models_header() -> str:
         _, description = fields_of(name, secrets.get(name, set()))
         summary = escape(description) if description else \
             f"The `{rendered}` schema from the server's OpenAPI document."
-        sparse = all(not f["required"] for f in fields)
-        if sparse:
+        tagged = tagged_union_arms(name)
+        sparse = tagged is None and all(not f["required"] for f in fields)
+        if tagged:
+            # CONTRACT 1.52 N3 (C-12): this is NOT a sparse body -- every member being
+            # `std::optional` here does not mean each is independently sent or omitted.
+            # It is an EXTERNALLY TAGGED union (§27.13): exactly one member is ever
+            # engaged, and to_json() refuses (before any request) a value holding
+            # neither or both. The generic "sparse body" wording said the opposite --
+            # that any subset of members could be engaged at once -- for exactly the
+            # struct where that is false.
+            tags = ", ".join(f"`{k}`" for k, _ in tagged)
+            summary += (
+                f"\n\nAn EXTERNALLY TAGGED union (CONTRACT.md §27.13): sent as exactly "
+                f"ONE of {tags}, never neither and never both. `to_json()` refuses "
+                "(`NetworkError`, before any request) a value that holds neither or "
+                "both -- it does not silently drop one, and it does not send `{}` or "
+                "both keys.")
+        elif sparse:
             summary += (
                 "\n\nEvery member is optional, so this is a SPARSE body: an engaged "
                 "`std::optional` is sent and a disengaged one is OMITTED from the request "
@@ -813,7 +829,25 @@ def emit_models_header() -> str:
 #: Deliberately an allowlist of ONE, not a blanket "skip empty arrays". Elsewhere an
 #: empty array is meaningful -- a replacement body clearing a list -- and dropping it
 #: would make "remove every entry" inexpressible.
-OMIT_WHEN_EMPTY = {"tenant_scope"}
+#:
+#: CONTRACT 1.52 N3 (C-12): `subject_alt_names` joins this set for the same reason --
+#: `CreateCertificateRequest{subject_alt_names: std::vector<SubjectAltName>{}}` (an
+#: ENGAGED but empty list, built from a filtered collection with nothing left in it, say)
+#: is not "no SANs stated"; it is "state a zero-element SAN list", which §27.13 defines
+#: no server meaning for. Omitting the key, exactly like an unset optional, is what a
+#: caller who built that value actually meant.
+OMIT_WHEN_EMPTY = {"tenant_scope", "subject_alt_names"}
+
+
+def tagged_union_arms(name: str) -> list[tuple[str, Any]] | None:
+    """The externally-tagged arms of schema ``name``, if it is that shape.
+
+    Thin wrapper over ``externally_tagged`` keyed by SPEC NAME rather than the schema
+    dict, so both emitters below (source generation and the header's struct doc) can
+    ask the same question ``fields_of`` already asked once, without threading the
+    tagged-ness through every caller of ``modelled_ordered()``.
+    """
+    return externally_tagged(SCHEMAS.get(name) or {})
 
 
 def emit_to_json_member(f: dict[str, Any]) -> list[str]:
@@ -899,6 +933,10 @@ def emit_models_source() -> str:
     out = [BANNER, ""]
     out.append("#include <stdexcept>")
     out.append("")
+    # CONTRACT 1.52 N3 (C-12): an externally-tagged union's to_json() (below) refuses
+    # a neither/both value with NetworkError, before any request -- the same error
+    # §27.4 rule 2 uses for a client-side refusal.
+    out.append('#include "axiam/errors.hpp"')
     out.append('#include "management_json.hpp"')
     out.append("")
     out.append("namespace axiam::management {")
@@ -945,8 +983,23 @@ def emit_models_source() -> str:
         out.append("}")
         out.append("")
 
-    for _name, rendered, fields in modelled_ordered():
+    for name, rendered, fields in modelled_ordered():
         out.append(f"void to_json(nlohmann::json& j, const {rendered}& value) {{")
+        tagged = tagged_union_arms(name)
+        if tagged:
+            # CONTRACT 1.52 N3 (C-12) / §27.13: sent as exactly ONE of the tags below,
+            # never neither and never both. Checked BEFORE `j` is built, so a refused
+            # value is refused client-side and never partially serialized.
+            engaged = " + ".join(f"(value.{member(k)} ? 1 : 0)" for k, _ in tagged)
+            tag_list = ", ".join(f"`{k}`" for k, _ in tagged)
+            out.append(f"    if (({engaged}) != 1) {{")
+            out.append(
+                f'        throw NetworkError("{rendered} must set exactly one of '
+                f'{tag_list}, never neither and never both '
+                f'(CONTRACT.md §27.13 / CONTRACT 1.52 N3 (C-12))", '
+                '"sdk_programming_error");'
+            )
+            out.append("    }")
         if any(f["kind"] == "union_raw" for f in fields):
             out.extend(comment(
                 "A union is forwarded EXACTLY as received. Re-encoding from the two "
@@ -1590,6 +1643,16 @@ def example_for(name: str, depth: int = 0) -> Any:
         for k, sub in (resolved.get("properties") or {}).items():
             out[k] = example_json(sub, depth + 1)
         return out
+    tagged = externally_tagged(schema)
+    if tagged:
+        # CONTRACT 1.52 N3 (C-12): an externally-tagged example MUST engage exactly
+        # ONE arm -- `flatten()` sees no top-level `properties` on a bare `oneOf` and
+        # reports zero fields, so falling through to the generic path below produced
+        # `{}` (neither tag engaged), which the round-trip test then decoded into a
+        # value `to_json()`'s N3 refusal correctly rejects on re-encode. The FIRST
+        # arm, same convention `discriminated()` uses just above.
+        key, prop_schema = tagged[0]
+        return {key: example_json(prop_schema, depth + 1)}
     props, _, _ = flatten(name)
     return {k: example_json(v, depth + 1) for k, v in props.items()}
 
