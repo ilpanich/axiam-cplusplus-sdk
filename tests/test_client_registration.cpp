@@ -403,6 +403,39 @@ AXIAM_TEST("§28.12.6 (5): neither the token nor the secret reaches any renderin
 
 // ── Tolerant decoding ───────────────────────────────────────────────────────
 
+// Contract 1.59 §34.2 P12.4 (R-23): the replacement is built from what the read
+// carried. A list the read lacked is not sent — never `[]`, which RFC 7591 reads
+// differently from absence (grant_types defaults to authorization_code) — and a
+// list of an unexpected shape is sent back exactly as read.
+AXIAM_TEST("§28.12.2 rule 4 (P12.4): a list the read lacked is not sent; a mistyped one is kept as read") {
+    const auto bare = ClientRegistration::from_json(R"({"client_id":"c1","client_name":"ciba-only"})");
+    const auto bare_body = nlohmann::json::parse(bare.update_body());
+    for (const char* key : {"redirect_uris", "grant_types", "response_types"}) {
+        AXIAM_CHECK(!bare_body.contains(key));
+    }
+    AXIAM_CHECK(bare_body.at("client_name") == "ciba-only");
+
+    const auto odd = ClientRegistration::from_json(
+        R"({"client_id":"c1","redirect_uris":"https://a","grant_types":["a",1],)"
+        R"("response_types":[]})");
+    const auto odd_body = nlohmann::json::parse(odd.update_body());
+    AXIAM_CHECK(odd_body.at("redirect_uris") == "https://a");
+    AXIAM_CHECK(odd_body.at("grant_types") == nlohmann::json::parse(R"(["a",1])"));
+    AXIAM_CHECK(odd_body.at("response_types") == nlohmann::json::array());  // carried, so sent
+
+    // What the read carried round-trips; what the caller sets is sent.
+    auto full = ClientRegistration::from_json(registration_body().dump());
+    AXIAM_REQUIRE(full.redirect_uris.has_value());
+    AXIAM_CHECK(*full.response_types == std::vector<std::string>{"code"});
+    auto added = bare;
+    added.grant_types = std::vector<std::string>{"urn:openid:params:grant-type:ciba"};
+    AXIAM_CHECK(nlohmann::json::parse(added.update_body()).at("grant_types") ==
+                nlohmann::json::parse(R"(["urn:openid:params:grant-type:ciba"])"));
+    const auto full_body = nlohmann::json::parse(full.update_body());
+    AXIAM_CHECK(full_body.at("redirect_uris") == nlohmann::json::parse(R"(["https://agent.example.com/cb"])"));
+    AXIAM_CHECK(full_body.at("grant_types") == nlohmann::json::parse(R"(["authorization_code"])"));
+}
+
 AXIAM_TEST("§28.12.1: unknown and mistyped members are kept, and the update body drops the stated ones") {
     const auto r = ClientRegistration::from_json(
         R"({"client_id":"c1","client_id_issued_at":"not-a-number","scope":7,)"
@@ -415,7 +448,9 @@ AXIAM_TEST("§28.12.1: unknown and mistyped members are kept, and the update bod
     AXIAM_CHECK(extra.at("redirect_uris") == "https://a");
     AXIAM_CHECK(!extra.contains("client_name") && !extra.contains("jwks"));
     AXIAM_CHECK(!r.client_id_issued_at && !r.scope && !r.client_name && !r.jwks_json);
-    AXIAM_CHECK(r.grant_types == std::vector<std::string>{"a"});
+    // §34.2 P12.4: a list holding a non-string is kept whole, not filtered.
+    AXIAM_CHECK(!r.grant_types && !r.redirect_uris);
+    AXIAM_CHECK(extra.at("grant_types") == nlohmann::json::parse(R"(["a",1])"));
 
     const auto body = nlohmann::json::parse(r.update_body());
     AXIAM_CHECK(!body.contains("client_id_issued_at"));  // even mistyped, never sent

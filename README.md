@@ -2207,7 +2207,10 @@ client.delete_client_registration(uri, token);            // 204 returns normall
 - **An update is a full replacement.** `ClientRegistration` keeps every member it does
   not name in `extra_json` (the CIBA `backchannel_*` members included), so a read
   passed to an update sends them back; the five server-stated members are dropped and
-  `client_id` is set from `metadata.client_id`.
+  `client_id` is set from `metadata.client_id`. A member the read did not carry is
+  not sent — `redirect_uris`, `grant_types` and `response_types` are
+  `std::optional`, never `[]` for a list the read lacked — and one of an unexpected
+  shape is sent back exactly as read (contract 1.59, §34.2 P12.4).
 - **Neither write is retried**, on any status or transport error: an update that
   lost its answer has already rotated the token. The read follows §16, never on a 4xx
   other than 408/429.
