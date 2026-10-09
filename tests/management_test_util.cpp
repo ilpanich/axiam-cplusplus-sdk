@@ -19,6 +19,7 @@ const char* kLoginOk =
 struct Canned {
     long status;
     std::string body;
+    axiam::HeaderMap headers{};
 };
 
 // The queued management responses, consumed in order. A router rather than a single
@@ -44,6 +45,7 @@ axiam::Transport routed(std::shared_ptr<FakeState> st, std::shared_ptr<Queue> qu
             const auto& canned = queue->replies[queue->served++];
             resp.status = canned.status;
             resp.body = canned.body;
+            resp.headers = canned.headers;
         } else {
             resp.status = 204;
         }
@@ -96,6 +98,15 @@ Fixture signed_in_many(std::vector<std::pair<long, std::string>> replies) {
     canned.reserve(replies.size());
     for (auto& reply : replies) {
         canned.push_back(Canned{reply.first, std::move(reply.second)});
+    }
+    return make(std::move(canned), true, true);
+}
+
+Fixture signed_in_with_headers(std::vector<Reply> replies) {
+    std::vector<Canned> canned;
+    canned.reserve(replies.size());
+    for (auto& reply : replies) {
+        canned.push_back(Canned{reply.status, std::move(reply.body), std::move(reply.headers)});
     }
     return make(std::move(canned), true, true);
 }

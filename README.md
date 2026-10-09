@@ -2225,7 +2225,9 @@ client.delete_client_registration(uri, token);            // 204 returns normall
 Four §27 namespaces, generated from the registry like every other and reached the same
 two ways (`client.directory()` or `client.management().directory()`). The `directory`,
 `saml` and `ssf` routes take the tenant from the client (`for_tenant()` overrides it);
-`scim_targets` is the token's tenant. Writes are never retried; a `400` is a
+`scim_targets` is the token's tenant. Writes are never retried; reads (`GET`) are
+retried per §16 — transport failure, `408`, `429`, `5xx`, with `Retry-After` honoured
+(contract 1.59 R-30) — and never on another `4xx`. A `400` is a
 `management::ValidationError` whose `what()` carries the server's `message` (for a
 human — never parse it), `404` `NotFoundError`, `409` `ConflictError`. Each operation's
 Doxygen repeats the contract's call-site warnings. Secrets on the way in are `Sensitive`
