@@ -13,6 +13,7 @@
 //  * Nothing here adopts a token. Every operation returns one; the client's own
 //    credential is untouched.
 
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
@@ -21,9 +22,11 @@
 #include <cstring>
 #include <ctime>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 
 #include "client_impl.hpp"
+#include "jose.hpp"
 #include "url_origin.hpp"
 
 namespace axiam {
@@ -180,7 +183,7 @@ std::string preferred_endpoint(const Client::Impl& impl, const OidcConfiguration
     return top_level;
 }
 
-/// The six aliasable endpoints, as selectors. Naming them as a closed set is
+/// The seven aliasable endpoints, as selectors. Naming them as a closed set is
 /// what keeps `authorization_endpoint`, `end_session_endpoint` and `jwks_uri`
 /// unreachable through preferred_endpoint() rather than merely unused.
 namespace alias_of {
@@ -199,6 +202,9 @@ const std::optional<std::string>& device_authorization(const MtlsEndpointAliases
 }
 const std::optional<std::string>& pushed_authorization_request(const MtlsEndpointAliases& a) {
     return a.pushed_authorization_request_endpoint;
+}
+const std::optional<std::string>& backchannel_authentication(const MtlsEndpointAliases& a) {
+    return a.backchannel_authentication_endpoint;
 }
 }  // namespace alias_of
 
@@ -614,7 +620,20 @@ OidcConfiguration Client::oidc_discover() {
         aliases.device_authorization_endpoint = opt_string(a, "device_authorization_endpoint");
         aliases.pushed_authorization_request_endpoint =
             opt_string(a, "pushed_authorization_request_endpoint");
+        aliases.backchannel_authentication_endpoint =
+            opt_string(a, "backchannel_authentication_endpoint");
         cfg.mtls_endpoint_aliases = std::move(aliases);
+    }
+    // §21.5 (contract 1.58): the four CIBA members, each optional.
+    cfg.backchannel_authentication_endpoint = opt_string(j, "backchannel_authentication_endpoint");
+    cfg.backchannel_token_delivery_modes_supported =
+        string_array(j, "backchannel_token_delivery_modes_supported");
+    cfg.backchannel_authentication_request_signing_alg_values_supported =
+        string_array(j, "backchannel_authentication_request_signing_alg_values_supported");
+    if (j.contains("backchannel_user_code_parameter_supported") &&
+        j["backchannel_user_code_parameter_supported"].is_boolean()) {
+        cfg.backchannel_user_code_parameter_supported =
+            j["backchannel_user_code_parameter_supported"].get<bool>();
     }
     cfg.scopes_supported = string_array(j, "scopes_supported");
     cfg.response_types_supported = string_array(j, "response_types_supported");
@@ -2157,6 +2176,342 @@ void Client::delete_client_registration(const std::string& registration_client_u
     check_registration_uri(p_->base_url, registration_client_uri, "delete_client_registration");
     registration_request(*p_, "DELETE", registration_client_uri, registration_access_token, {},
                          /*retryable=*/false, "delete_client_registration");
+}
+
+
+// ---------------------------------------------------------------------------
+// §33 CIBA — client-initiated backchannel authentication
+// ---------------------------------------------------------------------------
+
+CibaRequestSigner CibaRequestSigner::from_pem(CibaSigningAlg alg,
+                                              const Sensitive<std::string>& private_key_pem,
+                                              std::optional<std::string> kid) {
+    auto key = detail::jose::SigningKey::from_pem(alg, detail::reveal(private_key_pem));
+    if (!key) {
+        throw std::invalid_argument(
+            "CibaRequestSigner: the PEM is not a private key that signs under the given "
+            "algorithm (an Ed25519 key for EdDSA, a P-256 key for ES256, an RSA key of at "
+            "least 2048 bits for PS256; CONTRACT.md §33.2)");
+    }
+    CibaRequestSigner signer;
+    signer.key_ = std::move(key);
+    signer.kid_ = std::move(kid);
+    return signer;
+}
+
+CibaSigningAlg CibaRequestSigner::alg() const noexcept { return key_->alg(); }
+
+CibaClock CibaClock::system() {
+    CibaClock clock;
+    clock.now = [] { return std::chrono::steady_clock::now(); };
+    clock.sleep = [](std::chrono::seconds d) { std::this_thread::sleep_for(d); };
+    return clock;
+}
+
+namespace {
+
+/// The client's credential for both CIBA calls (§33.1): client_secret_post, or
+/// — for a `tls_client_auth` client — the §6.1 certificate the transport
+/// presents, with `client_id` alone in the form. A CIBA client is never public,
+/// so a client built with neither is refused before any request.
+void add_ciba_client_auth(const Client::Impl& impl, Form& form, const char* operation) {
+    const std::string& client_id = require_client_id(impl, operation);
+    const bool has_secret =
+        impl.oidc_client_secret && !detail::reveal(*impl.oidc_client_secret).empty();
+    if (!has_secret && !impl.presents_client_certificate) {
+        throw AuthError(std::string(operation) +
+                        " requires client authentication: a CIBA client is never public — build "
+                        "the client with oidc_client_secret() or a §6.1 client certificate "
+                        "(CONTRACT.md §33.1)");
+    }
+    form.add("client_id", client_id);
+    if (has_secret) form.add("client_secret", detail::reveal(*impl.oidc_client_secret));
+}
+
+/// The §33.2 authentication-request members the caller set, in wire spelling.
+/// `requested_expiry` is the one that differs by form: a string on the plain
+/// form, a JSON number inside the signed request.
+json ciba_members(const CibaInitiateParams& params) {
+    json m = json::object();
+    m["scope"] = params.scope;
+    m[params.hint.kind() == CibaUserHint::Kind::kLoginHint ? "login_hint" : "id_token_hint"] =
+        params.hint.value();
+    if (params.binding_message) m["binding_message"] = *params.binding_message;
+    if (params.requested_expiry) m["requested_expiry"] = *params.requested_expiry;
+    if (params.acr_values) m["acr_values"] = *params.acr_values;
+    if (params.resource) m["resource"] = *params.resource;
+    if (params.delivery.is_ping()) {
+        m["client_notification_token"] = detail::reveal(params.delivery.client_notification_token());
+    }
+    return m;
+}
+
+/// The CIBA Core §7.1.1 signed request: every member inside the JWT, plus `iss`
+/// (the client), `aud` (the issuer), `iat` = `nbf` = now, `exp` = now + 300 s
+/// and a fresh 128-bit `jti`. Returned wrapped: its members include the
+/// notification token (§33.5).
+Sensitive<std::string> signed_ciba_request(const CibaInitiateParams& params,
+                                           const CibaRequestSigner& signer,
+                                           const detail::jose::SigningKey& key,
+                                           const std::string& client_id,
+                                           const std::string& issuer) {
+    json claims = ciba_members(params);
+    const std::int64_t now = now_seconds();
+    claims["iss"] = client_id;
+    claims["aud"] = issuer;
+    claims["iat"] = now;
+    claims["nbf"] = now;
+    claims["exp"] = now + kCibaSignedRequestLifetimeSeconds;
+    claims["jti"] = detail::jose::random_hex(16);
+    json header{{"alg", detail::jose::alg_name(key.alg())}};
+    if (signer.kid()) header["kid"] = *signer.kid();
+
+    std::string jws = detail::jose::b64url_encode(header.dump()) + "." +
+                      detail::jose::b64url_encode(claims.dump());
+    const auto signature = key.sign(jws);
+    if (!signature) {
+        throw NetworkError("ciba_initiate: the signed request could not be signed", "sign_failure");
+    }
+    jws += "." + detail::jose::b64url_encode(*signature);
+    return Sensitive<std::string>(std::move(jws));
+}
+
+/// One CIBA token request (§33.1 `ciba_poll`), and whether a failure is the
+/// transient kind §33.7 rule 5 says the await loop survives.
+///
+/// §16 applies within the call: a transport failure, a 5xx, a 408 and a
+/// BODILESS 429 are retried; a protocol answer (`authorization_pending`,
+/// `slow_down`, `access_denied`, …) never is, and neither is any other 4xx.
+struct CibaPollOutcome {
+    std::optional<OidcTokenSet> tokens;
+    std::exception_ptr error;
+    bool transient = false;
+};
+
+CibaPollOutcome ciba_poll_once(Client::Impl& impl, const OidcConfiguration& config,
+                               const std::string& auth_req_id, const std::string& tenant) {
+    Form form;
+    form.add("grant_type", kCibaGrantType);
+    form.add("auth_req_id", auth_req_id);
+    add_ciba_client_auth(impl, form, "ciba_poll");
+
+    HttpRequest req;
+    req.method = "POST";
+    req.url = with_tenant(
+        preferred_endpoint(impl, config, alias_of::token, config.token_endpoint), tenant);
+    req.headers["X-Tenant-ID"] = impl.tenant_header;  // §5 rule 2, unconditional
+    req.headers["Accept"] = "application/json";
+    req.headers["Content-Type"] = "application/x-www-form-urlencoded";
+    req.body = form.str();
+
+    CibaPollOutcome out;
+    const int budget = impl.retry_enabled ? detail::kRetryMaxAttempts : 1;
+    for (int attempt = 1;; ++attempt) {
+        HttpResponse resp = impl.transport(req);
+        const std::optional<long> status =
+            resp.transport_error.empty() ? std::optional<long>(resp.status) : std::nullopt;
+        if (status && *status >= 200 && *status < 300) {
+            // §33.7 rule 7: a request is redeemed once. The 200 is consumed here
+            // and never re-requested, even if it does not parse.
+            out.tokens = parse_token_set(impl, resp.body, config, std::nullopt);
+            return out;
+        }
+        const json j = parse_or_object(resp.body);
+        const bool protocol_answer =
+            status && j.contains("error") && j["error"].is_string() &&
+            !j["error"].get<std::string>().empty();
+        out.transient = !protocol_answer && detail::retry_should_retry(status);
+        if (attempt >= budget || !out.transient) {
+            try {
+                if (!status) {
+                    throw NetworkError("ciba poll failed: " + resp.transport_error,
+                                       resp.transport_error);
+                }
+                raise_grant_error(resp, "ciba poll failed");
+            } catch (...) {
+                out.error = std::current_exception();
+            }
+            return out;
+        }
+        const auto hint = resp.headers.find("Retry-After");
+        impl.sleeper(detail::retry_delay(
+            attempt,
+            hint == resp.headers.end() ? std::nullopt
+                                       : detail::retry_after_from_header(hint->second),
+            impl.jitter()));
+    }
+}
+
+/// §33.1 rule 1: `Bearer`, one space, the token — compared in constant time.
+/// CRYPTO_memcmp is the comparison; a length mismatch is refused before it,
+/// which reveals only the length of a value the caller supplied.
+bool ping_token_matches(const std::string& token, const std::string& expected) {
+    return !expected.empty() && token.size() == expected.size() &&
+           CRYPTO_memcmp(token.data(), expected.data(), expected.size()) == 0;
+}
+
+}  // namespace
+
+CibaInitiateResponse Client::ciba_initiate(const CibaInitiateParams& params) {
+    p_->ensure_open();
+    if (params.delivery.is_ping() && params.delivery.client_notification_token().empty()) {
+        throw std::invalid_argument(
+            "ciba_initiate: a ping-mode request needs a client_notification_token — without "
+            "one AXIAM has nothing to ping with (CONTRACT.md §33.2)");
+    }
+    Form form;
+    add_ciba_client_auth(*p_, form, "ciba_initiate");
+    const std::string tenant = require_tenant_uuid(*p_, params.tenant_id, "ciba_initiate");
+    const OidcConfiguration config = oidc_discover();
+    // §21.3 rule 2: the seventh alias on an mTLS call. Absent at both levels is
+    // "this server does not support CIBA" — never a path built by concatenation.
+    const std::optional<std::string> endpoint =
+        preferred_endpoint(*p_, config, alias_of::backchannel_authentication,
+                           config.backchannel_authentication_endpoint);
+    if (!endpoint) {
+        throw AuthError(
+            "the discovery document advertises no backchannel_authentication_endpoint: this "
+            "server does not support CIBA (CONTRACT.md §33.1)");
+    }
+
+    if (params.signer) {
+        // §33.2 signed: client authentication and `request`, nothing else beside it.
+        const auto request = signed_ciba_request(params, *params.signer, *params.signer->key_,
+                                                 require_client_id(*p_, "ciba_initiate"),
+                                                 config.issuer);
+        form.add("request", detail::reveal(request));
+    } else {
+        const json members = ciba_members(params);
+        for (auto it = members.begin(); it != members.end(); ++it) {
+            form.add(it.key(), it.value().is_string() ? it.value().get<std::string>()
+                                                      : it.value().dump());
+        }
+    }
+
+    HttpRequest req;
+    req.method = "POST";
+    req.url = with_tenant(*endpoint, tenant);
+    req.headers["X-Tenant-ID"] = p_->tenant_header;
+    req.headers["Accept"] = "application/json";
+    req.headers["Content-Type"] = "application/x-www-form-urlencoded";
+    req.body = form.str();
+
+    // §33.7 rule 1: NEVER retried — not on a transport error, a 5xx or a 429.
+    // Every accepted call stores a request and may notify a person.
+    const HttpResponse resp = p_->send_raw(req);
+    if (resp.status < 200 || resp.status >= 300) raise_grant_error(resp, "ciba_initiate failed");
+    const auto received_at = std::chrono::steady_clock::now();
+
+    const json j = parse_or_object(resp.body);
+    const auto auth_req_id = opt_string(j, "auth_req_id");
+    const auto expires_in = opt_int(j, "expires_in");
+    if (!auth_req_id || !expires_in) {
+        throw NetworkError("malformed CibaInitiateResponse", "malformed_body");
+    }
+    CibaInitiateResponse out;
+    out.auth_req_id = Sensitive<std::string>(*auth_req_id);
+    out.expires_in = *expires_in;
+    const auto interval = opt_int(j, "interval");
+    out.interval = (interval && *interval > 0) ? *interval : kCibaDefaultIntervalSeconds;
+    out.received_at = received_at;
+    return out;
+}
+
+OidcTokenSet Client::ciba_poll(const Sensitive<std::string>& auth_req_id,
+                               std::optional<std::string> tenant_id) {
+    p_->ensure_open();
+    if (detail::reveal(auth_req_id).empty()) throw AuthError("ciba_poll requires an auth_req_id");
+    Form probe;
+    add_ciba_client_auth(*p_, probe, "ciba_poll");
+    const std::string tenant = require_tenant_uuid(*p_, tenant_id, "ciba_poll");
+    const OidcConfiguration config = oidc_discover();
+    CibaPollOutcome outcome = ciba_poll_once(*p_, config, detail::reveal(auth_req_id), tenant);
+    if (outcome.error) std::rethrow_exception(outcome.error);
+    return std::move(*outcome.tokens);
+}
+
+OidcTokenSet Client::ciba_await(const CibaInitiateResponse& initiated,
+                                const CibaAwaitOptions& options) {
+    p_->ensure_open();
+    if (detail::reveal(initiated.auth_req_id).empty()) {
+        throw AuthError("ciba_await requires an auth_req_id");
+    }
+    Form probe;
+    add_ciba_client_auth(*p_, probe, "ciba_await");
+    const std::string tenant = require_tenant_uuid(*p_, options.tenant_id, "ciba_await");
+    const OidcConfiguration config = oidc_discover();
+    const CibaClock clock = options.clock ? *options.clock : CibaClock::system();
+
+    const auto deadline = initiated.received_at + std::chrono::seconds(initiated.expires_in);
+    std::int64_t interval =
+        initiated.interval > 0 ? initiated.interval : kCibaDefaultIntervalSeconds;
+    for (;;) {
+        // §33.7 rule 4, checked BEFORE sleeping: it is the next attempt that must
+        // fall inside the deadline (the subtlety device_login() documents).
+        if (clock.now() + std::chrono::seconds(interval) >= deadline) {
+            throw OAuthProtocolError(
+                "expired_token: the CIBA request expired before it was decided (client-side "
+                "deadline from expires_in; CONTRACT.md §33.7 rule 4)",
+                "expired_token", std::nullopt);
+        }
+        // Rule 2: the first poll waits too — polling earlier only earns slow_down.
+        clock.sleep(std::chrono::seconds(interval));
+        CibaPollOutcome outcome =
+            ciba_poll_once(*p_, config, detail::reveal(initiated.auth_req_id), tenant);
+        if (outcome.tokens) return std::move(*outcome.tokens);
+        // Rule 5: a transport failure, 5xx or bodiless 429 that outlived §16 waits
+        // one interval and polls again.
+        if (outcome.transient) continue;
+        try {
+            std::rethrow_exception(outcome.error);
+        } catch (const OAuthProtocolError& e) {
+            const std::string& code = e.error_code();
+            if (code == "authorization_pending" || code == "rate_limit_exceeded") continue;
+            // Rule 3: +5 s per slow_down, cumulative, never reset.
+            if (code == "slow_down") {
+                interval += kCibaSlowDownIncrementSeconds;
+                continue;
+            }
+            // access_denied, expired_token, invalid_grant and anything else the
+            // server names: terminal, each with its own code (§33.4).
+            throw;
+        }
+    }
+    // Returned, never adopted — the posture of device_login() and
+    // login_client_credentials() (§33.1, §14.3 rule 4).
+}
+
+Sensitive<std::string> Client::ciba_handle_ping(
+    const std::vector<std::pair<std::string, std::string>>& headers, const std::string& body,
+    const Sensitive<std::string>& expected_token) const {
+    const auto refused = [] {
+        return AuthError(
+            "ciba ping refused: the Authorization header is not the expected bearer "
+            "(CONTRACT.md §33.1)");
+    };
+    const std::string* authorization = nullptr;
+    for (const auto& [name, value] : headers) {
+        if (CaseInsensitiveLess::lower(name) != "authorization") continue;
+        if (authorization != nullptr) throw refused();  // a second Authorization header
+        authorization = &value;
+    }
+    if (authorization == nullptr) throw refused();
+    const auto space = authorization->find(' ');
+    if (space == std::string::npos ||
+        CaseInsensitiveLess::lower(authorization->substr(0, space)) != "bearer" ||
+        !ping_token_matches(authorization->substr(space + 1), detail::reveal(expected_token))) {
+        throw refused();
+    }
+
+    const json j = json::parse(body, nullptr, false);
+    const auto id = j.is_object() ? opt_string(j, "auth_req_id") : std::nullopt;
+    if (!id) {
+        throw std::invalid_argument(
+            "ciba_handle_ping: the ping body is not a JSON object carrying a non-empty "
+            "auth_req_id string (CONTRACT.md §33.1)");
+    }
+    // Any other member is ignored — and never acted on.
+    return Sensitive<std::string>(*id);
 }
 
 }  // namespace axiam

@@ -42,7 +42,9 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <functional>
+#include <memory>
 #include <map>
 #include <optional>
 #include <string>
@@ -147,7 +149,7 @@ private:
     std::string reason_;
 };
 
-/// RFC 8705 §5 `mtls_endpoint_aliases` — the six endpoints re-based on the host
+/// RFC 8705 §5 `mtls_endpoint_aliases` — the seven endpoints re-based on the host
 /// that performs the mutual-TLS handshake (wire schema `MtlsEndpointAliases`,
 /// contract 1.40).
 ///
@@ -156,7 +158,7 @@ private:
 /// `/oauth2/token` but not on `/oauth2/authorize`" is not something one listener
 /// can do. A deployment wanting both runs two, and this object names the second.
 ///
-/// Only these six are ever aliased. `authorization_endpoint` and
+/// Only these seven are ever aliased. `authorization_endpoint` and
 /// `end_session_endpoint` are front-channel and `jwks_uri` is public key
 /// material, so CONTRACT.md §21.3 rule 2 forbids synthesising an alias for any
 /// of them — sending a browser to an mTLS host raises a native
@@ -164,7 +166,7 @@ private:
 /// endpoint and does not move either: §12.4 rule 3 still compares `iss` against
 /// it by exact string.
 ///
-/// **Every member is optional**, though the server's schema marks all six
+/// **Every member is optional**, though the server's schema marks them
 /// required. AXIAM builds them from one path through a shared macro and so
 /// always publishes the complete set, but RFC 8705 §5 permits an OP to alias
 /// fewer, and the shape of this member must never be why a client stops
@@ -184,6 +186,10 @@ struct MtlsEndpointAliases {
     std::optional<std::string> device_authorization_endpoint;
     /// RFC 9126 §2 — authenticates the client.
     std::optional<std::string> pushed_authorization_request_endpoint;
+    /// CIBA Core §7 — a `tls_client_auth` CIBA client authenticates at
+    /// `bc-authorize` exactly as at the token endpoint (§33, the seventh alias
+    /// §21.3.1 gained in contract 1.58).
+    std::optional<std::string> backchannel_authentication_endpoint;
 };
 
 /// The OIDC discovery document (§12.1), read from
@@ -211,6 +217,16 @@ struct OidcConfiguration {
     /// client-side rather than synthesising `/oauth2/par` from the issuer, which
     /// would produce a 404 that reads like a broken request.
     std::optional<std::string> pushed_authorization_request_endpoint;
+    /// §33.1: where ciba_initiate() asks AXIAM to authenticate a user on another
+    /// device. ABSENT means this server does not support CIBA — ciba_initiate()
+    /// then refuses rather than building a path.
+    std::optional<std::string> backchannel_authentication_endpoint;
+    /// §21.5: `poll` and/or `ping` (AXIAM offers no push). Empty means absent.
+    std::vector<std::string> backchannel_token_delivery_modes_supported;
+    /// §21.5: the algorithms a signed CIBA request may use. Empty means absent.
+    std::vector<std::string> backchannel_authentication_request_signing_alg_values_supported;
+    /// §21.5: whether a `user_code` is accepted — `false` from AXIAM (§33.3 rule 3).
+    std::optional<bool> backchannel_user_code_parameter_supported;
     std::vector<std::string> scopes_supported;
     std::vector<std::string> response_types_supported;
     /// Advertised ID-token algorithms. INFORMATIONAL ONLY: §12.4 rule 1 pins
@@ -593,6 +609,172 @@ struct TokenExchangeParams {
     std::optional<std::string> audience;
     std::optional<std::string> resource;
     std::optional<std::string> tenant_id;
+};
+
+// --- §33 CIBA (contract 1.58) ----------------------------------------------
+
+/// `grant_type` of the CIBA token request (CIBA Core §10.1).
+inline constexpr const char* kCibaGrantType = "urn:openid:params:grant-type:ciba";
+/// The interval used when the initiate response carries none, or 0 (§33.7 rule 2).
+inline constexpr int kCibaDefaultIntervalSeconds = 5;
+/// Seconds added to the interval per `slow_down`, permanently (§33.7 rule 3).
+inline constexpr int kCibaSlowDownIncrementSeconds = 5;
+/// The lifetime of a signed request this SDK mints: five minutes, inside the
+/// server's sixty-minute bound on `exp - nbf` (§33.2).
+inline constexpr int kCibaSignedRequestLifetimeSeconds = 300;
+
+/// Whom to authenticate: **exactly one** hint (§33.2). Built only through the
+/// two factories, so "both" and "neither" cannot be written. There is no
+/// `login_hint_token` (§33.3 rule 3).
+class CibaUserHint {
+public:
+    enum class Kind { kLoginHint, kIdTokenHint };
+
+    /// A username, then an e-mail address, within the tenant.
+    static CibaUserHint login_hint(std::string value) {
+        return CibaUserHint(Kind::kLoginHint, std::move(value));
+    }
+    /// An ID token this deployment issued to this client.
+    static CibaUserHint id_token_hint(std::string value) {
+        return CibaUserHint(Kind::kIdTokenHint, std::move(value));
+    }
+
+    Kind kind() const noexcept { return kind_; }
+    const std::string& value() const noexcept { return value_; }
+
+private:
+    CibaUserHint(Kind kind, std::string value) : kind_(kind), value_(std::move(value)) {}
+    Kind kind_;
+    std::string value_;
+};
+
+/// How the client receives the outcome, as it registered (§33.3 rule 1).
+/// Default-constructed is poll mode.
+class CibaDelivery {
+public:
+    /// The client polls the token endpoint.
+    static CibaDelivery poll() { return CibaDelivery(); }
+    /// AXIAM pings the client's registered notification endpoint presenting
+    /// `client_notification_token` as a bearer; the client then polls once.
+    /// Keep the token to check the ping with Client::ciba_handle_ping().
+    static CibaDelivery ping(Sensitive<std::string> client_notification_token) {
+        CibaDelivery d;
+        d.ping_ = true;
+        d.token_ = std::move(client_notification_token);
+        return d;
+    }
+
+    bool is_ping() const noexcept { return ping_; }
+    const Sensitive<std::string>& client_notification_token() const noexcept { return token_; }
+
+private:
+    bool ping_ = false;
+    Sensitive<std::string> token_;
+};
+
+/// The algorithms a signed request may use (§33.2).
+enum class CibaSigningAlg {
+    kPS256,  ///< RSASSA-PSS with SHA-256
+    kES256,  ///< ECDSA on P-256 with SHA-256
+    kEdDSA,  ///< Ed25519
+};
+
+namespace detail::jose {
+class SigningKey;
+}
+
+/// The key and algorithm for the signed request form (§33.2, CIBA Core §7.1.1).
+/// Both are the caller's: there is no default for either, and the SDK signs
+/// under exactly the algorithm given — the one the client registered as
+/// `backchannel_authentication_request_signing_alg`.
+///
+/// The key is held only as an OpenSSL key object, freed with the last copy;
+/// this type has no accessor for it and no stringification.
+class CibaRequestSigner {
+public:
+    /// A signer from a PEM private key (PKCS#8; PKCS#1 also for PS256) and the
+    /// algorithm it signs under. The key is probe-signed here.
+    ///
+    /// @throws std::invalid_argument (C++'s local ValidationError mapping) when the
+    ///         PEM is empty, encrypted, not a private key, or not a key that signs
+    ///         under `alg` — before any request.
+    static CibaRequestSigner from_pem(CibaSigningAlg alg,
+                                      const Sensitive<std::string>& private_key_pem,
+                                      std::optional<std::string> kid = std::nullopt);
+
+    CibaSigningAlg alg() const noexcept;
+    /// The JOSE `kid` the request's header carries, if any.
+    const std::optional<std::string>& kid() const noexcept { return kid_; }
+
+private:
+    friend class Client;
+    CibaRequestSigner() = default;
+    std::shared_ptr<const detail::jose::SigningKey> key_;
+    std::optional<std::string> kid_;
+};
+
+/// Arguments to Client::ciba_initiate() (§33.2 `CibaInitiateRequest`).
+///
+/// `binding_message` and `login_hint` can be personal data: this SDK never logs
+/// them. `user_code`, `login_hint_token` and `request_uri` are not members —
+/// AXIAM refuses each (§33.3 rule 3).
+struct CibaInitiateParams {
+    /// Space-separated; must include `openid`.
+    std::string scope;
+    /// Whom to authenticate.
+    CibaUserHint hint;
+    /// Shown to the user on the approval page — what lets them tell the request
+    /// they started from one an attacker did. Required of a `fapi2` client.
+    std::optional<std::string> binding_message = std::nullopt;
+    /// The requested lifetime in seconds, 30–600 (absent: 300). Not pre-checked
+    /// (§33.3 rule 5): the server's bounds are the authority.
+    std::optional<std::int64_t> requested_expiry = std::nullopt;
+    /// Space-separated authentication context classes.
+    std::optional<std::string> acr_values = std::nullopt;
+    /// RFC 8707 resource indicator.
+    std::optional<std::string> resource = std::nullopt;
+    /// Poll (the default) or ping, as registered.
+    CibaDelivery delivery = CibaDelivery::poll();
+    /// Engaged: the request is sent as ONE signed JWT (`request`) carrying every
+    /// member above — required of a client that registered a signing algorithm,
+    /// refused from one that did not.
+    std::optional<CibaRequestSigner> signer = std::nullopt;
+    /// Tenant UUID for the `tenant_id` query parameter; falls back to the
+    /// client's configured one. A slug is never a substitute (§12.3 rule 4).
+    std::optional<std::string> tenant_id = std::nullopt;
+};
+
+/// `CibaInitiateResponse` (§33.2), plus when it arrived.
+struct CibaInitiateResponse {
+    /// The request's id at the token endpoint — a bearer credential for the
+    /// grant (§33.5). Never parse or length-check it.
+    Sensitive<std::string> auth_req_id;
+    /// The request's lifetime in seconds — authoritative (§33.7 rule 4).
+    std::int64_t expires_in = 0;
+    /// The minimum seconds between token requests: the response's, or 5 when it
+    /// was absent or zero.
+    std::int64_t interval = kCibaDefaultIntervalSeconds;
+    /// When the response was received; ciba_await()'s deadline is this plus
+    /// `expires_in`.
+    std::chrono::steady_clock::time_point received_at{};
+};
+
+/// The clock ciba_await() waits on — injectable so its schedule is testable
+/// without sleeping. Both members must be set.
+struct CibaClock {
+    std::function<std::chrono::steady_clock::time_point()> now;
+    std::function<void(std::chrono::seconds)> sleep;
+
+    /// `steady_clock::now()` and `std::this_thread::sleep_for`.
+    static CibaClock system();
+};
+
+/// Arguments to Client::ciba_await().
+struct CibaAwaitOptions {
+    /// Tenant UUID for the `tenant_id` query parameter; as CibaInitiateParams.
+    std::optional<std::string> tenant_id = std::nullopt;
+    /// Disengaged: CibaClock::system().
+    std::optional<CibaClock> clock = std::nullopt;
 };
 
 /// An RFC 7591 §3.2.1 / RFC 7592 §3 client information response (§28.12).

@@ -183,6 +183,14 @@ public:
         return error_description_;
     }
 
+    /// `access_denied` — at a CIBA or device poll, the USER refused (§33.4,
+    /// §14.2 rule 3). Distinct from is_expired_token(): a client acts
+    /// differently on "a human said no" and "nobody answered".
+    bool is_access_denied() const noexcept { return error_code_ == "access_denied"; }
+    /// `expired_token` — at a CIBA or device poll, nobody decided in time; also
+    /// raised locally when ciba_await() reaches its deadline (§33.7 rule 4).
+    bool is_expired_token() const noexcept { return error_code_ == "expired_token"; }
+
 private:
     std::string error_code_;
     std::optional<std::string> error_description_;

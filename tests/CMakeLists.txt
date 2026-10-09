@@ -98,6 +98,8 @@ add_executable(axiam_cpp_tests
   test_oidc_errors.cpp
   # CONTRACT.md §28.12 (contract 1.53): RFC 7592 client configuration.
   test_client_registration.cpp
+  # CONTRACT.md §33 (contract 1.58): CIBA, including the §33.2 signed form.
+  test_ciba.cpp
   test_oidc_login_providers.cpp
   # §23 OPAQUE: the binding — exchange lifetime, key-stretching selection,
   # error taxonomy — driven against a fake Native that counts every handle the

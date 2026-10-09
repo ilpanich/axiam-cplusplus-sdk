@@ -941,6 +941,107 @@ public:
     void delete_client_registration(const std::string& registration_client_uri,
                                     const Sensitive<std::string>& registration_access_token);
 
+    // ---- §33 CIBA — client-initiated backchannel authentication (contract 1.58) ----
+    //
+    // A client that already knows whom it wants to authenticate asks AXIAM to
+    // authenticate that user ON ANOTHER DEVICE; AXIAM notifies the user, who
+    // approves or refuses on the console. The client collects the tokens at the
+    // token endpoint — by polling (ciba_await), or once after AXIAM pings it
+    // (ciba_handle_ping, then ciba_poll).
+    //
+    // The client ALWAYS authenticates (§33.1): client_secret_post with the
+    // configured oidc_client_secret(), or — a `tls_client_auth` client — the §6.1
+    // certificate with `client_id` alone in the form. A client built with neither
+    // is refused locally with AuthError, before any request. `tenant_id` goes in
+    // the query, never the body; X-Tenant-ID as for every /oauth2 call.
+    //
+    // Two things a caller must not read into a success:
+    //  * A successful ciba_initiate() proves NOTHING about the user (§33.3 rule 4):
+    //    AXIAM answers a hint naming nobody, a locked user and a real one
+    //    identically; the only sign a user did not answer is `expired_token`.
+    //  * A ping says the request was decided, never how (§33.2): the outcome —
+    //    tokens, `access_denied` or `expired_token` — comes from ciba_poll().
+    //
+    // Ping mode: answer the ping 204 as soon as ciba_handle_ping() returns, THEN
+    // call ciba_poll() once (again at `interval` on `authorization_pending` /
+    // `slow_down`); if no ping has arrived after half of `expires_in`, fall back
+    // to ciba_await() (§33.7 rule 6) — a ping is at-least-once, never guaranteed.
+
+    /// `POST /oauth2/bc-authorize` (CIBA Core §7) — ask AXIAM to authenticate a
+    /// user on another device. The endpoint is discovery's
+    /// `backchannel_authentication_endpoint` — its `mtls_endpoint_aliases` entry on
+    /// an mTLS client (§21.3 rule 2) — and its absence is an AuthError ("this
+    /// server does not support CIBA"), never a guessed path.
+    ///
+    /// Sends exactly the members `params` sets, form-encoded; with a `signer`,
+    /// ONLY client authentication and one signed `request` JWT carrying them
+    /// (§33.2 signed: `iss` = client_id, `aud` = the issuer, `iat` = `nbf` = now,
+    /// `exp` = now + 300 s, a fresh 128-bit `jti`; `requested_expiry` a number).
+    ///
+    /// **Never retried** — not on a transport error, a 5xx or a 429 (§33.7 rule
+    /// 1): each accepted call stores a request and may notify a person. On a lost
+    /// answer, let it expire and ask again deliberately.
+    ///
+    /// @throws AuthError without a request when the client has no credential.
+    /// @throws std::invalid_argument without a request for a ping-mode request
+    ///         with an empty client_notification_token.
+    /// @throws OAuthProtocolError for the server's refusals at any status — e.g.
+    ///         `invalid_binding_message` with its `error_description`, or a 429's
+    ///         `rate_limit_exceeded`; otherwise §2 by status.
+    CibaInitiateResponse ciba_initiate(const CibaInitiateParams& params);
+
+    /// One token request with `grant_type=urn:openid:params:grant-type:ciba`
+    /// (CIBA Core §10.1) at the token endpoint (its mTLS alias as for every token
+    /// call). The §33.3 rule 6 answers are OAuthProtocolErrors and are NOT
+    /// retried: `authorization_pending`, `slow_down` (non-terminal),
+    /// `access_denied` and `expired_token` (terminal and distinct —
+    /// OAuthProtocolError::is_access_denied() / is_expired_token()),
+    /// `invalid_grant`. A transport failure, 5xx, 408 or bodiless 429 is retried
+    /// per §16 within the call.
+    ///
+    /// A 200 is the §12 token set, its ID token validated as for every grant (no
+    /// nonce). **Store the tokens before anything else**: a request is redeemed
+    /// once, and a second ciba_poll() for it is `invalid_grant` (§33.7 rule 7).
+    OidcTokenSet ciba_poll(const Sensitive<std::string>& auth_req_id,
+                           std::optional<std::string> tenant_id = std::nullopt);
+
+    /// Poll `initiated` to a terminal outcome (§33.7), surfacing nothing to the
+    /// user (AXIAM notified them):
+    ///  * the first poll waits one `interval` (5 s when the response had none);
+    ///  * `slow_down` adds 5 s to the interval, cumulatively and for good;
+    ///    `authorization_pending` never lowers it;
+    ///  * a transport failure, 5xx or 429 that outlived §16 waits an interval and
+    ///    polls again;
+    ///  * polling stops at `received_at + expires_in`: when the NEXT poll would
+    ///    fall at or past it, `expired_token` is raised locally, without a request.
+    ///
+    /// Returns the token set WITHOUT adopting it as this client's credential —
+    /// the posture of device_login() and login_client_credentials(). The clock is
+    /// injectable (CibaAwaitOptions::clock) so the schedule is testable.
+    OidcTokenSet ciba_await(const CibaInitiateResponse& initiated,
+                            const CibaAwaitOptions& options = {});
+
+    /// Check a ping AXIAM delivered to your notification endpoint and return the
+    /// `auth_req_id` it names (CIBA Core §10.2). **No I/O, synchronous**, and it
+    /// neither answers the HTTP request nor calls the token endpoint.
+    ///
+    /// `headers` are the request's headers as name/value pairs (duplicates
+    /// kept); `body` its raw body; `expected_token` the client_notification_token
+    /// you sent with the request.
+    ///
+    ///  1. Exactly one `Authorization` header (name matched case-insensitively),
+    ///     `Bearer` in any case, ONE space, and the token — compared in constant
+    ///     time (CRYPTO_memcmp). Otherwise AuthError, whose message names no value.
+    ///  2. A JSON object with a non-empty string `auth_req_id`; any other member is
+    ///     ignored, never acted on. Otherwise std::invalid_argument (C++'s local
+    ///     ValidationError mapping).
+    ///
+    /// It does not check that the `auth_req_id` is one you issued: the token
+    /// endpoint answers `invalid_grant` for any other.
+    Sensitive<std::string> ciba_handle_ping(
+        const std::vector<std::pair<std::string, std::string>>& headers,
+        const std::string& body, const Sensitive<std::string>& expected_token) const;
+
     // ---- §24 WebAuthn / passkeys ----
     //
     // The six wire operations. See <axiam/webauthn.hpp> for what is deliberately
