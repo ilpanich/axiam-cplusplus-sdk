@@ -2398,7 +2398,10 @@ req.signer = axiam::CibaRequestSigner::from_pem(
 client.ciba_initiate(req);   // the form carries only client auth + one signed `request`
 ```
 
-`ciba_await` takes an injectable `CibaClock` (`CibaAwaitOptions::clock`). The
+`ciba_await` takes an injectable `CibaClock` (`CibaAwaitOptions::clock`). On
+`ciba_poll` a `5xx` is transient whatever its body — AXIAM's own
+`500 {"error":"server_error"}` included — so it is retried per §16 and never ends
+`ciba_await` (contract 1.59, §34.2 P8). The
 `auth_req_id`, the notification token, the key and the `request` string are never
 printed (`Sensitive`, or held only as an OpenSSL key).
 

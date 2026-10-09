@@ -583,10 +583,13 @@ AXIAM_TEST("§33.7 rule 4: with the default clock, an already-expired request ra
 
 // ── t08 Transient failure ──────────────────────────────────────────────────
 
-AXIAM_TEST("§33.8 t08: a 500 and a 429 mid-loop are survived, then a 200 with its tokens") {
+AXIAM_TEST("§33.8 t08: a 500 {\"error\":\"server_error\"} and a 429 mid-loop are survived, then a 200 with its tokens") {
     Rig rig;
+    // Contract 1.59 (§34.2 P8): the 500 carries the body AXIAM's token endpoint
+    // actually sends — a 5xx on ciba_poll is transient whatever its body.
     rig.token_script = {{400, error_body("authorization_pending")},
-                        {500, ""}, {500, ""}, {500, ""},
+                        {500, error_body("server_error")}, {500, error_body("server_error")},
+                        {500, error_body("server_error")},
                         {429, error_body("rate_limit_exceeded")},
                         {0, ""}, {429, ""}, {429, ""},
                         {200, rig.tokens()}};
@@ -598,7 +601,7 @@ AXIAM_TEST("§33.8 t08: a 500 and a 429 mid-loop are survived, then a 200 with i
     AXIAM_CHECK(!detail::reveal(tokens.access_token).empty());
     AXIAM_REQUIRE(tokens.id_token.has_value());
     AXIAM_CHECK(tokens.id_claims->subject == "user-1");
-    // pending, 3×500 (one §16-retried poll), rate_limit_exceeded, a reset then two
+    // pending, 3×500 server_error (one §16-retried poll), rate_limit_exceeded, a reset then two
     // bodiless 429s (one §16-retried poll), the 200: five intervals.
     AXIAM_CHECK(fc.sleeps->size() == 5);
     AXIAM_CHECK(rig.token_calls == 9);
@@ -629,6 +632,18 @@ AXIAM_TEST("§33.7 rule 5: ciba_poll retries a 5xx per §16 and not an empty aut
     AXIAM_CHECK(rig.token_calls == 2);
 
     rig.token_script = {{0, ""}};
+    rig.token_calls = 0;
+    AXIAM_REQUIRE_THROWS_AS(client.ciba_poll(Sensitive<std::string>(rig.auth_req_id)), NetworkError);
+    AXIAM_CHECK(rig.token_calls == 3);
+
+    // §34.2 P8: a 5xx WITH an `error` member is retried the same way — the
+    // server's own 500 {"error":"server_error"}, and 503 temporarily_unavailable —
+    // and, once §16 is spent, is a NetworkError, never a terminal protocol answer.
+    rig.token_script = {{500, error_body("server_error")}, {200, rig.tokens()}};
+    rig.token_calls = 0;
+    client.ciba_poll(Sensitive<std::string>(rig.auth_req_id));
+    AXIAM_CHECK(rig.token_calls == 2);
+    rig.token_script = {{503, error_body("temporarily_unavailable")}};
     rig.token_calls = 0;
     AXIAM_REQUIRE_THROWS_AS(client.ciba_poll(Sensitive<std::string>(rig.auth_req_id)), NetworkError);
     AXIAM_CHECK(rig.token_calls == 3);
