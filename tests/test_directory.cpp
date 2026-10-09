@@ -52,15 +52,10 @@ json config_body() {
 }
 
 SetDirectoryConfig set_body(std::optional<std::string> secret) {
-    SetDirectoryConfig s;
-    s.base_dn = "dc=corp";
-    s.bind_dn = "cn=svc,dc=corp";
+    SetDirectoryConfig s(/*enabled=*/true, DirectoryKind::ActiveDirectory, "ldaps://dc.corp.example",
+                         /*start_tls=*/false, "cn=svc,dc=corp", "dc=corp",
+                         "(sAMAccountName={username})");
     if (secret) s.bind_secret = Sensitive<std::string>(*secret);
-    s.enabled = true;
-    s.kind = DirectoryKind::ActiveDirectory;
-    s.start_tls = false;
-    s.url = "ldaps://dc.corp.example";
-    s.user_filter = "(sAMAccountName={username})";
     return s;
 }
 
@@ -179,10 +174,9 @@ AXIAM_TEST("§30.8 (4): set sends every required member, and a 201 and a 200 bot
         }
         AXIAM_CHECK(!sent.contains("bind_secret"));  // absent keeps the stored secret
     }
-    // C++ has no compile-time "required": the required members are plain (non-
-    // optional) members, ALWAYS serialized — a default-constructed body sends them
-    // (empty) for the server to refuse, never omits them.
-    const json bare = SetDirectoryConfig{};
+    // The body cannot be built without its required members (the R-27 trait test
+    // below); built with them, they are ALWAYS serialized, never omitted.
+    const json bare = set_body(std::nullopt);
     for (const char* required :
          {"enabled", "kind", "url", "start_tls", "bind_dn", "base_dn", "user_filter"}) {
         AXIAM_CHECK(bare.contains(required));
@@ -263,6 +257,16 @@ AXIAM_TEST("§30.1: a tenant override reaches the path; the configured tenant is
     fixture.client.directory().for_tenant("22222222-2222-4222-8222-222222222222").get();
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) ==
                 "/api/v1/tenants/22222222-2222-4222-8222-222222222222/directory");
+}
+
+// Contract 1.59 R-27: "the input cannot be built without" its required members is
+// a compile-time property in C++ -- a constructor taking every required member, in
+// the contract's order, and no public default constructor. Checked as traits so a
+// regression reads as a failed check rather than as a test that no longer builds.
+AXIAM_TEST("§30.8 (4) (R-27): SetDirectoryConfig cannot be built without enabled, kind, url, start_tls, bind_dn, base_dn and user_filter") {
+    AXIAM_CHECK(!std::is_default_constructible<SetDirectoryConfig>::value);
+    AXIAM_CHECK((!std::is_constructible<SetDirectoryConfig, bool, DirectoryKind, std::string, bool, std::string, std::string>::value));
+    AXIAM_CHECK((std::is_constructible<SetDirectoryConfig, bool, DirectoryKind, std::string, bool, std::string, std::string, std::string>::value));
 }
 
 }  // namespace

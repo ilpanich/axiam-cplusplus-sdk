@@ -3834,7 +3834,7 @@ struct SamlServiceProvider {
 /// later revision of this struct keeps working.
 struct SamlServiceProviderInput {
     /// The ACS allow-list. At least one, at most one default.
-    std::vector<AcsEndpoint> acs_urls;
+    std::vector<AcsEndpoint> acs_urls{};
     /// Whether IdP-initiated SSO is allowed for this SP (D-3). A per-SP opt-in, off by default:
     /// an unsolicited assertion has no `InResponseTo` to bind it to a request the SP made.
     /// Optional.
@@ -3845,7 +3845,7 @@ struct SamlServiceProviderInput {
     /// Attribute mapping table, at most [`MAX_ATTRIBUTE_MAPPINGS`] entries. Optional.
     std::optional<std::vector<AttributeMapping>> attribute_mappings = std::nullopt;
     /// Human-readable name for the console.
-    std::string display_name;
+    std::string display_name{};
     /// Whether the SP may sign in at all. A disabled SP stays registered but every SSO request
     /// for it is refused. Optional.
     std::optional<bool> enabled = std::nullopt;
@@ -3853,7 +3853,7 @@ struct SamlServiceProviderInput {
     /// [`Self::sp_encryption_cert_pem`]. Optional.
     std::optional<bool> encrypt_assertions = std::nullopt;
     /// The SP's `entityID`, unique per tenant. At most [`MAX_ENTITY_ID_BYTES`].
-    std::string entity_id;
+    std::string entity_id{};
     /// `NameID` policy. Default: persistent, pairwise. Optional.
     std::optional<NameIdFormat> name_id_format = std::nullopt;
     /// Sign the `<samlp:Response>` envelope as well as the assertion (which is signed always).
@@ -3871,6 +3871,17 @@ struct SamlServiceProviderInput {
     /// Refuse an `AuthnRequest` that is not signed by `sp_signing_cert_pem`. Requires that
     /// certificate. Optional.
     std::optional<bool> want_authn_requests_signed = std::nullopt;
+
+    /// Every required member -- `display_name`, `entity_id`, `acs_urls` -- in the contract's
+    /// order. This type **cannot be built without them** (CONTRACT.md §29.8 test 1, contract
+    /// 1.59 R-27): there is no public default constructor. Set the optional members afterwards.
+    SamlServiceProviderInput(std::string display_name, std::string entity_id, std::vector<AcsEndpoint> acs_urls);
+
+private:
+    // Default construction is for a model that embeds this one by value and is filled by its
+    // decoder; nothing else can reach it.
+    SamlServiceProviderInput() = default;
+    friend struct SamlSpMetadataDraft;
 };
 
 /// A parse of SP metadata: **a draft, not a registration**. Nothing is stored until the caller
@@ -3951,10 +3962,10 @@ struct ScimTargetScope {
 struct ScimTargetInput {
     /// `bearer`, or `oauth2_client_credentials` with `token_url` (the same URL policy),
     /// `client_id` (1–256 bytes) and an optional `scope`.
-    ScimTargetAuth auth;
+    ScimTargetAuth auth{};
     /// The downstream's SCIM service root: an `https` URL under the outbound address policy (no
     /// credentials or fragment, at most 2 048 bytes, no non-public address, no local name).
-    std::string base_url;
+    std::string base_url{};
     /// **Write-only.** The bearer token or the OAuth2 client secret, 1–4 096 bytes. Required on
     /// create. On update, absent keeps the stored one — except that moving it to another URL
     /// (`base_url` of a bearer target, `token_url` or `base_url` of a client-credentials one)
@@ -3965,15 +3976,25 @@ struct ScimTargetInput {
     /// `true` by default. A disabled target receives nothing. Optional.
     std::optional<bool> enabled = std::nullopt;
     /// 1–128 bytes.
-    std::string name;
+    std::string name{};
     /// Push groups too (every group for `all_users`, the listed ones for `groups`). `false` by
     /// default. Optional.
     std::optional<bool> push_groups = std::nullopt;
     /// `all_users`, or `groups` with 1–100 `group_ids` of this tenant: users who are direct
     /// members of any listed group.
-    ScimTargetScope scope;
+    ScimTargetScope scope{};
     /// `username` (default) or `email`. Optional.
     std::optional<UserNameSource> user_name_from = std::nullopt;
+
+    /// Every required member -- `name`, `base_url`, `auth`, `scope` -- in the contract's order.
+    /// This type **cannot be built without them** (CONTRACT.md §31.8 test 3, contract 1.59
+    /// R-27): there is no public default constructor. Set the optional members afterwards.
+    ScimTargetInput(std::string name, std::string base_url, ScimTargetAuth auth, ScimTargetScope scope);
+
+private:
+    // Default construction is for a model that embeds this one by value and is filled by its
+    // decoder; nothing else can reach it.
+    ScimTargetInput() = default;
 };
 
 /// A registered SCIM target, as the management API returns it. **The credential is never
@@ -4172,16 +4193,16 @@ struct SessionResponse {
 /// An omitted optional member is **reset to its default**, not kept.
 struct SetDirectoryConfig {
     /// Where users are searched for.
-    std::string base_dn;
+    std::string base_dn{};
     /// The service account the search runs as.
-    std::string bind_dn;
+    std::string bind_dn{};
     /// The service account's password: **write-only**, 1 to 4096 octets. Required when the
     /// tenant has no configuration yet; on a replacement, absent means *keep the stored secret*
     /// — unless the write moves the connection (`url`, `start_tls`, `bind_dn` or
     /// `trust_anchors_pem`), which then requires it (`400`, P23W2-01). Optional.
     std::optional<Sensitive<std::string>> bind_secret = std::nullopt;
     /// A disabled directory serves no sign-in and is not synced.
-    bool enabled;
+    bool enabled{};
     /// Defaults to null. Optional.
     std::optional<std::string> group_base_dn = std::nullopt;
     /// Defaults to null. Optional.
@@ -4195,19 +4216,30 @@ struct SetDirectoryConfig {
     /// Default false. Optional.
     std::optional<bool> jit_provisioning = std::nullopt;
     /// Chooses defaults only.
-    DirectoryKind kind;
+    DirectoryKind kind{};
     /// Upgrade an `ldap://` connection with StartTLS before any bind.
-    bool start_tls;
+    bool start_tls{};
     /// `300..=86400`, default 3600. Optional.
     std::optional<std::int64_t> sync_interval_secs = std::nullopt;
     /// At most 16 CA certificates in PEM. Default empty (the public roots). Optional.
     std::optional<std::vector<std::string>> trust_anchors_pem = std::nullopt;
     /// `ldaps://host[:port]`, or `ldap://host[:port]` with `start_tls`.
-    std::string url;
+    std::string url{};
     /// The server's `user_attribute_map` field. Optional.
     std::optional<UserAttributeMap> user_attribute_map = std::nullopt;
     /// One `{username}` placeholder in value position.
-    std::string user_filter;
+    std::string user_filter{};
+
+    /// Every required member -- `enabled`, `kind`, `url`, `start_tls`, `bind_dn`, `base_dn`,
+    /// `user_filter` -- in the contract's order. This type **cannot be built without them**
+    /// (CONTRACT.md §30.8 test 4, contract 1.59 R-27): there is no public default constructor.
+    /// Set the optional members afterwards.
+    SetDirectoryConfig(bool enabled, DirectoryKind kind, std::string url, bool start_tls, std::string bind_dn, std::string base_dn, std::string user_filter);
+
+private:
+    // Default construction is for a model that embeds this one by value and is filled by its
+    // decoder; nothing else can reach it.
+    SetDirectoryConfig() = default;
 };
 
 /// Body for `PUT .../ca-certificates/{id}/mtls-trust-anchor`.
@@ -4443,7 +4475,7 @@ struct SsfStream {
 /// `create_stream` and `update_stream` (a **replacement**) body.
 struct SsfStreamInput {
     /// 1–512 bytes; unique across the deployment.
-    std::string audience;
+    std::string audience{};
     /// **Write-only.** The `Authorization` header value AXIAM sends to a push endpoint. On
     /// update, absent keeps the stored one — except that moving the endpoint to another origin
     /// requires it again. Optional.
@@ -4452,26 +4484,37 @@ struct SsfStreamInput {
     /// Optional.
     std::optional<bool> clear_authorization_header = std::nullopt;
     /// `push` or `poll`.
-    SsfDeliveryMethod delivery_method;
+    SsfDeliveryMethod delivery_method{};
     /// At most 256 bytes. Optional.
     std::optional<std::string> description = std::nullopt;
     /// Required for `push` (an `https` URL under the outbound address policy), refused for
     /// `poll`. Optional.
     std::optional<std::string> endpoint_url = std::nullopt;
     /// 1–6 event types.
-    std::vector<SsfEventType> events_allowed;
+    std::vector<SsfEventType> events_allowed{};
     /// A subset of `events_allowed`; absent means all of them. The receiver may narrow it
     /// later, never widen it. Optional.
     std::optional<std::vector<SsfEventType>> events_requested = std::nullopt;
     /// An OAuth2 client of the tenant with the `client_credentials` grant and the `ssf.manage`
     /// scope.
-    std::string receiver_client_id;
+    std::string receiver_client_id{};
     /// `enabled` by default. Optional.
     std::optional<SsfStreamStatus> status = std::nullopt;
     /// At most 256 bytes. Optional.
     std::optional<std::string> status_reason = std::nullopt;
     /// `iss_sub` by default. Optional.
     std::optional<SsfSubjectFormat> subject_format = std::nullopt;
+
+    /// Every required member -- `receiver_client_id`, `audience`, `delivery_method`,
+    /// `events_allowed` -- in the contract's order. This type **cannot be built without them**
+    /// (CONTRACT.md §32.8 test 1, contract 1.59 R-27): there is no public default constructor.
+    /// Set the optional members afterwards.
+    SsfStreamInput(std::string receiver_client_id, std::string audience, SsfDeliveryMethod delivery_method, std::vector<SsfEventType> events_allowed);
+
+private:
+    // Default construction is for a model that embeds this one by value and is filled by its
+    // decoder; nothing else can reach it.
+    SsfStreamInput() = default;
 };
 
 /// A tenant is an isolated context within an organization. Each tenant has its own set of

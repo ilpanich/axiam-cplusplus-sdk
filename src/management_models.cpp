@@ -4,6 +4,7 @@
 
 
 #include <stdexcept>
+#include <utility>
 
 #include "axiam/errors.hpp"
 #include "management_json.hpp"
@@ -1604,6 +1605,18 @@ void to_json(nlohmann::json& j, const UserStatus& value) { j = send_wire(value);
 void from_json(const nlohmann::json& j, UserStatus& value) {
     value = user_status_from_wire(j.get<std::string>());
 }
+
+SamlServiceProviderInput::SamlServiceProviderInput(std::string display_name, std::string entity_id, std::vector<AcsEndpoint> acs_urls)
+    : acs_urls(std::move(acs_urls)), display_name(std::move(display_name)), entity_id(std::move(entity_id)) {}
+
+ScimTargetInput::ScimTargetInput(std::string name, std::string base_url, ScimTargetAuth auth, ScimTargetScope scope)
+    : auth(std::move(auth)), base_url(std::move(base_url)), name(std::move(name)), scope(std::move(scope)) {}
+
+SetDirectoryConfig::SetDirectoryConfig(bool enabled, DirectoryKind kind, std::string url, bool start_tls, std::string bind_dn, std::string base_dn, std::string user_filter)
+    : base_dn(std::move(base_dn)), bind_dn(std::move(bind_dn)), enabled(enabled), kind(kind), start_tls(start_tls), url(std::move(url)), user_filter(std::move(user_filter)) {}
+
+SsfStreamInput::SsfStreamInput(std::string receiver_client_id, std::string audience, SsfDeliveryMethod delivery_method, std::vector<SsfEventType> events_allowed)
+    : audience(std::move(audience)), delivery_method(delivery_method), events_allowed(std::move(events_allowed)), receiver_client_id(std::move(receiver_client_id)) {}
 
 void to_json(nlohmann::json& j, const AcsEndpoint& value) {
     j = nlohmann::json::object();
@@ -6533,3 +6546,34 @@ void from_json(const nlohmann::json& j, WebhookResponse& value) {
 }
 
 }  // namespace axiam::management
+
+// R-27: the REQUIRED_CTOR inputs have no public default constructor, so nlohmann decodes them
+// through these: built with placeholder required members, then filled by from_json above, which
+// reads every required member (and throws when one is absent, as for any other model).
+axiam::management::SamlServiceProviderInput nlohmann::adl_serializer<axiam::management::SamlServiceProviderInput>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::SamlServiceProviderInput value({}, {}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}
+
+axiam::management::ScimTargetInput nlohmann::adl_serializer<axiam::management::ScimTargetInput>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::ScimTargetInput value({}, {}, {}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}
+
+axiam::management::SetDirectoryConfig nlohmann::adl_serializer<axiam::management::SetDirectoryConfig>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::SetDirectoryConfig value({}, {}, {}, {}, {}, {}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}
+
+axiam::management::SsfStreamInput nlohmann::adl_serializer<axiam::management::SsfStreamInput>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::SsfStreamInput value({}, {}, {}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}

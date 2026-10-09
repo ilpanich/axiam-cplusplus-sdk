@@ -50,11 +50,8 @@ json stream_body(const json& extra = json::object()) {
 }
 
 SsfStreamInput input() {
-    SsfStreamInput in;
-    in.receiver_client_id = "rp-1";
-    in.audience = "https://rp.example.com/ssf";
-    in.delivery_method = SsfDeliveryMethod::Push;
-    in.events_allowed = {ssf_event_type::kSessionRevoked};
+    SsfStreamInput in("rp-1", "https://rp.example.com/ssf", SsfDeliveryMethod::Push,
+                      {ssf_event_type::kSessionRevoked});
     in.endpoint_url = "https://rp.example.com/ssf/push";
     return in;
 }
@@ -96,9 +93,9 @@ AXIAM_TEST("§32.8 management (1): update_stream PUTs every member it models and
     }
     AXIAM_CHECK(!sent.contains("authorization_header"));  // absent keeps the stored one
     AXIAM_CHECK(sent.at("events_allowed") == json({kRevoked, kPurged}));
-    // The four required members are plain, always serialized (no compile-time
-    // "required" in C++).
-    const json bare = SsfStreamInput{};
+    // The input cannot be built without its four required members (the R-27 trait
+    // test below); built with them, they are always serialized.
+    const json bare = input();
     for (const char* m : {"receiver_client_id", "audience", "delivery_method", "events_allowed"}) {
         AXIAM_CHECK(bare.contains(m));
     }
@@ -240,6 +237,16 @@ AXIAM_TEST("§32.2: SsfStream::to_input() keeps every member but the header") {
     AXIAM_CHECK(in.status_reason == std::optional<std::string>("maintenance"));
     AXIAM_CHECK(in.events_requested->size() == 1);
     AXIAM_CHECK(in.subject_format == std::optional<SsfSubjectFormat>(SsfSubjectFormat::IssSub));
+}
+
+// Contract 1.59 R-27: "the input cannot be built without" its required members is
+// a compile-time property in C++ -- a constructor taking every required member, in
+// the contract's order, and no public default constructor. Checked as traits so a
+// regression reads as a failed check rather than as a test that no longer builds.
+AXIAM_TEST("§32.8 management (1) (R-27): SsfStreamInput cannot be built without receiver_client_id, audience, delivery_method and events_allowed") {
+    AXIAM_CHECK(!std::is_default_constructible<SsfStreamInput>::value);
+    AXIAM_CHECK((!std::is_constructible<SsfStreamInput, std::string, std::string, SsfDeliveryMethod>::value));
+    AXIAM_CHECK((std::is_constructible<SsfStreamInput, std::string, std::string, SsfDeliveryMethod, std::vector<SsfEventType>>::value));
 }
 
 }  // namespace

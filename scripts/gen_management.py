@@ -221,6 +221,45 @@ PRECHECK_TEST_SETUP: dict[str, list[str]] = {
     "saml.parse_sp_metadata": ['body.metadata_url = "https://sp.example.com/metadata";'],
 }
 
+# CONTRACT.md §29.8 test 1, §30.8 test 4, §31.8 test 3 and §32.8 test 1 (contract
+# 1.59 R-27): these inputs "cannot be built without" their required members. C++
+# has the compile-time check, so it is one: a constructor taking every required
+# member, in the order the spec's `required` list names them, and no public default
+# constructor. Decoding goes through an nlohmann `adl_serializer` specialization
+# that calls the constructor; a model embedding one BY VALUE (SamlSpMetadataDraft's
+# `service_provider`) is a friend, so it can still be default-constructed and filled.
+# Keyed by spec name; the value is the required test that asks for it.
+REQUIRED_CTOR: dict[str, str] = {
+    "SamlServiceProviderInput": "\u00a729.8 test 1",
+    "SetDirectoryConfig": "\u00a730.8 test 4",
+    "ScimTargetInput": "\u00a731.8 test 3",
+    "SsfStreamInput": "\u00a732.8 test 1",
+}
+
+
+def required_ctor_fields(name: str) -> list[dict[str, Any]]:
+    """The required members of a REQUIRED_CTOR model, in the spec's `required` order."""
+    fields, _ = fields_of(name, sensitive_map().get(name, set()))
+    by_wire = {f["wire"]: f for f in fields}
+    order = (SCHEMAS.get(name) or {}).get("required") or []
+    out = [by_wire[w] for w in order if w in by_wire and by_wire[w]["required"]]
+    missing = [f["wire"] for f in fields if f["required"] and f not in out]
+    if missing:
+        raise SystemExit(f"{name}: required members {missing} are not in the spec's list")
+    return out
+
+
+def required_ctor_embedders(rendered: str) -> list[str]:
+    """Models that hold the REQUIRED_CTOR model ``rendered`` by value (not optional)."""
+    return sorted(other for _, other, fields in modelled()
+                  if any(f["kind"] == "model" and f["ref"] == rendered and f["required"]
+                         for f in fields))
+
+
+def ctor_param(f: dict[str, Any]) -> str:
+    return f"{f['decl']} {f['name']}"
+
+
 # Hand-written members declared inside a generated model (defined in
 # src/management_helpers.cpp): the read-modify-write helpers §27.4 rule 5
 # recommends and the factories that make a §29/§31 body hard to get wrong.
@@ -1108,6 +1147,8 @@ def emit_models_header() -> str:
             optional_note = "" if f["required"] or f.get("explicit_null") else " Optional."
             out.extend(doc(field_doc(f) + optional_note, "    "))
             default = "" if f["required"] else " = std::nullopt"
+            if f["required"] and name in REQUIRED_CTOR:
+                default = "{}"
             out.append(f"    {declared(f)} {f['name']}{default};")
         for text, decl in MODEL_MEMBERS.get(name, []):
             out.append("")
@@ -1132,6 +1173,24 @@ def emit_models_header() -> str:
                 "and when it explicitly sent `true`; EITHER WAY that means inherits. Read "
                 "this, never `inherit.value_or(false)`.", "    "))
             out.append("    bool inherits() const noexcept { return inherit.value_or(true); }")
+        if name in REQUIRED_CTOR:
+            req = required_ctor_fields(name)
+            names = ", ".join(f"`{f['wire']}`" for f in req)
+            out.append("")
+            out.extend(doc(
+                f"Every required member -- {names} -- in the contract's order. This type "
+                "**cannot be built without them** (CONTRACT.md "
+                f"{REQUIRED_CTOR[name]}, contract 1.59 R-27): there is no public default "
+                "constructor. Set the optional members afterwards.", "    "))
+            out.append(f"    {rendered}(" + ", ".join(ctor_param(f) for f in req) + ");")
+            out.append("")
+            out.append("private:")
+            out.extend(comment(
+                "Default construction is for a model that embeds this one by value and "
+                "is filled by its decoder; nothing else can reach it.", "    "))
+            out.append(f"    {rendered}() = default;")
+            for other in required_ctor_embedders(rendered):
+                out.append(f"    friend struct {other};")
         out.append("};")
         out.append("")
 
@@ -1278,6 +1337,7 @@ def emit_models_source() -> str:
     secrets = sensitive_map()
     out = [BANNER, ""]
     out.append("#include <stdexcept>")
+    out.append("#include <utility>")
     out.append("")
     # CONTRACT 1.52 N3 (C-12): an externally-tagged union's to_json() (below) refuses
     # a neither/both value with NetworkError, before any request -- the same error
@@ -1343,6 +1403,20 @@ def emit_models_source() -> str:
         out.append(f"void from_json(const nlohmann::json& j, {rendered}& value) {{")
         out.append(f"    value = {snake(rendered)}_from_wire(j.get<std::string>());")
         out.append("}")
+        out.append("")
+
+    for name in sorted(REQUIRED_CTOR):
+        rendered = model_type(name)
+        req = required_ctor_fields(name)
+        out.append(f"{rendered}::{rendered}(" + ", ".join(ctor_param(f) for f in req) + ")")
+        inits = []
+        # Member-initializers in DECLARATION order (-Wreorder), not parameter order.
+        declared_order = [f["wire"] for f in fields_of(name, secrets.get(name, set()))[0]]
+        for f in sorted(req, key=lambda f: declared_order.index(f["wire"])):
+            moved = f["kind"] in {"string", "open_string", "vector", "model"}
+            inits.append(f"{f['name']}(std::move({f['name']}))" if moved
+                         else f"{f['name']}({f['name']})")
+        out.append("    : " + ", ".join(inits) + " {}")
         out.append("")
 
     for name, rendered, fields in modelled_ordered():
@@ -1419,7 +1493,24 @@ def emit_models_source() -> str:
         out.append("")
 
     out.append("}  // namespace axiam::management")
-    return "\n".join(out) + "\n"
+    out.append("")
+    out.extend(comment(
+        "R-27: the REQUIRED_CTOR inputs have no public default constructor, so nlohmann "
+        "decodes them through these: built with placeholder required members, then "
+        "filled by from_json above, which reads every required member (and throws when "
+        "one is absent, as for any other model)."))
+    for name in sorted(REQUIRED_CTOR):
+        rendered = model_type(name)
+        placeholders = ", ".join("{}" for _ in required_ctor_fields(name))
+        out.append(f"axiam::management::{rendered} "
+                   f"nlohmann::adl_serializer<axiam::management::{rendered}>::from_json(")
+        out.append("    const nlohmann::json& j) {")
+        out.append(f"    axiam::management::{rendered} value({placeholders});")
+        out.append("    axiam::management::from_json(j, value);")
+        out.append("    return value;")
+        out.append("}")
+        out.append("")
+    return "\n".join(out).rstrip("\n") + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -1822,6 +1913,23 @@ def emit_json_header() -> str:
     out.append("")
     out.append("}  // namespace axiam::management")
     out.append("")
+    out.extend(comment(
+        "R-27 (CONTRACT.md \u00a729.8 t1, \u00a730.8 t4, \u00a731.8 t3, \u00a732.8 t1): "
+        "these inputs cannot be default-constructed, so nlohmann's default serializer, "
+        "which default-constructs, cannot decode them. Each specialization decodes "
+        "through the constructor and encodes through the to_json above."))
+    out.append("namespace nlohmann {")
+    for name in sorted(REQUIRED_CTOR):
+        rendered = model_type(name)
+        out.append("template <>")
+        out.append(f"struct adl_serializer<axiam::management::{rendered}> {{")
+        out.append(f"    static axiam::management::{rendered} from_json(const json& j);")
+        out.append(f"    static void to_json(json& j, const axiam::management::{rendered}& value) {{")
+        out.append("        axiam::management::to_json(j, value);")
+        out.append("    }")
+        out.append("};")
+    out.append("}  // namespace nlohmann")
+    out.append("")
     out.append("#endif  // AXIAM_MANAGEMENT_JSON_HPP")
     return "\n".join(out) + "\n"
 
@@ -2162,8 +2270,15 @@ def emit_test() -> str:
                 elif p["kind"] == "query" and p["required"]:
                     args.append('"example"')
                 elif p["kind"] == "body":
-                    bmodel = model_type(op["request_schema"].lstrip("[]"))
-                    out.append(f"    {bmodel} body{{}};")
+                    bschema = op["request_schema"].lstrip("[]")
+                    bmodel = model_type(bschema)
+                    if bschema in REQUIRED_CTOR:
+                        # R-27: no default constructor; every required member given.
+                        placeholders = ", ".join(
+                            "{}" for _ in required_ctor_fields(bschema))
+                        out.append(f"    {bmodel} body({placeholders});")
+                    else:
+                        out.append(f"    {bmodel} body{{}};")
                     out.extend(test_body_setup(op["request_schema"].lstrip("[]")))
                     out.extend(f"    {line}" for line in
                                PRECHECK_TEST_SETUP.get(f"{namespace}.{opname}", []))

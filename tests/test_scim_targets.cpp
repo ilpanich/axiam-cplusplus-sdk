@@ -46,12 +46,9 @@ json target_body(const json& extra = json::object()) {
 }
 
 ScimTargetInput input(std::optional<std::string> credential) {
-    ScimTargetInput in;
-    in.auth = ScimTargetAuth::bearer();
-    in.base_url = "https://idp.example.com/scim/v2";
+    ScimTargetInput in("Downstream", "https://idp.example.com/scim/v2", ScimTargetAuth::bearer(),
+                       ScimTargetScope::all_users());
     if (credential) in.credential = Sensitive<std::string>(*credential);
-    in.name = "Downstream";
-    in.scope = ScimTargetScope::all_users();
     return in;
 }
 
@@ -130,10 +127,11 @@ AXIAM_TEST("§31.8 (3): update without a credential sends none; with one sends i
     AXIAM_CHECK(json(ScimTargetScope::groups({"g-1", "g-2"})) ==
                 json({{"type", "groups"}, {"group_ids", {"g-1", "g-2"}}}));
 
-    // No compile-time "required" in C++: name, base_url, auth and scope are plain
-    // members, always serialized — and a default-constructed (tag-less) union is
+    // The input cannot be built without name, base_url, auth and scope (the R-27
+    // trait test below); built with a default-constructed (tag-less) union, it is
     // refused locally rather than sent.
-    AXIAM_REQUIRE_THROWS_AS(json(ScimTargetInput{}), NetworkError);
+    AXIAM_REQUIRE_THROWS_AS(json(ScimTargetInput("n", "https://h", ScimTargetAuth{}, ScimTargetScope{})),
+                            NetworkError);
 }
 
 AXIAM_TEST("§31.2: an unknown auth or scope type decodes but is never sent") {
@@ -251,6 +249,16 @@ AXIAM_TEST("§31: ScimTargetResponse::to_input() keeps every member but the cred
     const json encoded = in;
     AXIAM_CHECK(encoded.at("auth").at("token_url") == "https://idp.example.com/token");
     AXIAM_CHECK(encoded.at("scope") == json({{"type", "groups"}, {"group_ids", {"g-1"}}}));
+}
+
+// Contract 1.59 R-27: "the input cannot be built without" its required members is
+// a compile-time property in C++ -- a constructor taking every required member, in
+// the contract's order, and no public default constructor. Checked as traits so a
+// regression reads as a failed check rather than as a test that no longer builds.
+AXIAM_TEST("§31.8 (3) (R-27): ScimTargetInput cannot be built without name, base_url, auth and scope") {
+    AXIAM_CHECK(!std::is_default_constructible<ScimTargetInput>::value);
+    AXIAM_CHECK((!std::is_constructible<ScimTargetInput, std::string, std::string, ScimTargetAuth>::value));
+    AXIAM_CHECK((std::is_constructible<ScimTargetInput, std::string, std::string, ScimTargetAuth, ScimTargetScope>::value));
 }
 
 }  // namespace

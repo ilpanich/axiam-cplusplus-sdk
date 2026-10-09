@@ -2269,16 +2269,24 @@ client.saml().update_service_provider(sp.id, replacement);
 `SamlIdpInfo::active_credential_id` / `next_credential_id` keep JSON `null` (an empty
 slot) apart from an absent member.
 
+**Required members are constructor arguments** (contract 1.59 R-27). The four
+replacement inputs — `SamlServiceProviderInput(display_name, entity_id, acs_urls)`,
+`SetDirectoryConfig(enabled, kind, url, start_tls, bind_dn, base_dn, user_filter)`,
+`ScimTargetInput(name, base_url, auth, scope)` and
+`SsfStreamInput(receiver_client_id, audience, delivery_method, events_allowed)` —
+have no public default constructor, so none can be built without the members
+§29.8, §30.8, §31.8 and §32.8 name; the `to_input()` helpers build them from a read.
+
 **SCIM targets (§31) and SSF streams (§32)** — replacements, so start from the read;
 the write-only secret is absent from it and absent keeps the stored one, unless the
 write moves the URL:
 
 ```cpp
-ScimTargetInput target;
-target.name = "Downstream";
-target.base_url = "https://idp.example.com/scim/v2";
-target.auth = ScimTargetAuth::oauth2_client_credentials("https://idp.example.com/token", "axiam");
-target.scope = ScimTargetScope::groups({engineering_group_id});
+// The four required members are constructor arguments: the input cannot be built
+// without them (§31.8 test 3). Optional members are set afterwards.
+ScimTargetInput target("Downstream", "https://idp.example.com/scim/v2",
+                       ScimTargetAuth::oauth2_client_credentials("https://idp.example.com/token", "axiam"),
+                       ScimTargetScope::groups({engineering_group_id}));
 target.credential = axiam::Sensitive<std::string>(client_secret_from_your_vault);
 auto created = client.scim_targets().create(target);
 
