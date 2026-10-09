@@ -6,6 +6,72 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+Contract 1.59 (re-vendored `CONTRACT.md` from axiam `fe369eb`; `openapi.json`,
+`management-registry.json` unchanged). The README states conformance to §1–§7, §9–§13,
+§14, §15, §17, §19, §20 – §28, §28.12, §29, §30, §31, §32 and §33 at contract 1.59, with
+§32.7 and §33.2 signed (PS256, ES256, EdDSA). This entry closes follow-up F-59-11
+(ilpanich/axiam#586), the §34.3 rows R-1, R-8, R-11, R-19, R-22, R-23, R-27, R-29, R-30.
+
+### Changed (source-incompatible)
+
+- **SSF event types are strings (§32.2, R-22).** `management::SsfEventType` is now
+  `std::string`, with the six URIs as `management::ssf_event_type::k…` constants and
+  `is_known_ssf_event_type()`; an unlisted URI decodes as itself, not as a lossy
+  `Unknown`. Code naming `SsfEventType::<Enumerator>` must use the constants.
+- **Required members are constructor arguments (§29.8 t1, §30.8 t4, §31.8 t3, §32.8 t1,
+  R-27).** `SamlServiceProviderInput`, `SetDirectoryConfig`, `ScimTargetInput` and
+  `SsfStreamInput` have a constructor taking every required member in the spec's order and
+  no public default constructor (decoding goes through `nlohmann::adl_serializer`
+  specializations). `SetDirectoryConfig`'s required `bool`s can no longer be left
+  indeterminate.
+- **`ClientRegistration::redirect_uris`, `grant_types`, `response_types` are
+  `std::optional<std::vector<std::string>>` (§28.12.2 rule 4, P12.4, R-23).** An update no
+  longer sends `[]` for a list the read lacked, and a list of an unexpected shape is kept
+  whole in `extra_json` and sent back as read (it used to be filtered or overwritten).
+- **`SsfPollResult::unjudged` (§34.2 P1, R-1).** `ssf.poll` no longer throws when a SET's
+  key fetch or the replay store fails mid-batch: that SET is listed in `unjudged` (its
+  `jti` and the failure's message), in neither `events` nor `refused`, with its `jti`
+  unrecorded, and the rest of the batch is returned. **P1 form taken: the second** —
+  "return what was judged and leave the unjudged SETs unrecorded", listing their `jti`s.
+  It is the form that also covers a replay store failing after earlier SETs were recorded.
+
+### Added
+
+- `Sensitive<T>::expose()` — the single public accessor §7 rule 3 and its C++ row name
+  (R-19). `axiam::detail::reveal` stays as the SDK's internal equivalent (rule 4); the
+  README and examples now use `expose()`, and the §28.12 example persists the rotated
+  `registration_access_token` with it.
+- `SsfReceiver::_set_clock_for_testing()` — a test seam for the JWKS fetch limit.
+
+### Fixed
+
+- **`ciba_poll` retries a `5xx` whatever its body (§33.4, §33.7 rule 5, P8, R-11).** The
+  server's `500 {"error":"server_error"}` was an `OAuthProtocolError` that ended
+  `ciba_await`; it is now §16-retried, a `NetworkError` once §16 is spent, and never
+  terminal in the await loop. §33.8 test 8's `500` carries `{"error":"server_error"}`.
+- **A failed JWKS fetch waits out the minute (§32.7 step 4, P6, R-8).** The once-a-minute
+  limit now counts every failed fetch, the cold-cache fill included; a SET needing the
+  held-off fetch raises `NetworkError` without a request. A successful fill is not "the
+  refetch" and leaves it available.
+- **An open enum's `Unknown` is refused locally (§34.2 P12.2, R-22).** Every generated
+  request serializer refuses it with `NetworkError` before any request instead of sending
+  `""`; `to_wire()` still renders it (as `""`) for logs without failing.
+- **Management reads follow §16 (§27.4 rule 8, R-30).** A `GET` is retried on `408` and
+  `429` as well as transport failures and `5xx`, and honours `Retry-After`.
+- **Call-site documentation (R-29).** `scim_targets.create` states the credential–URL
+  binding (§31.3 rule 2, "both call sites"); the `sp_signing_cert_pem` field doc carries
+  the RSA/ECDSA rule with HTTP-Redirect RSA-only (§29.3 rule 2). Both come from the
+  generator (`CALL_SITE_NOTES`, new `FIELD_NOTES`).
+
+### Documentation
+
+- README: acknowledge a `replayed` refusal instead of reporting it (§34.2 P2); the default
+  `MemoryReplayStore` is unbounded in count, bounded by the window (P4); a store that
+  cannot answer throws, so `verify_set` fails closed and `poll` reports the SET unjudged
+  (**P4 route: this SDK's store interface already reports failure, by throwing** — the
+  documentation states it). **P10 anchor: the response-received instant** (`received_at`),
+  unchanged — one of the two anchors P10 allows; the waits come from the injected clock.
+
 Contract 1.58 (re-vendored `CONTRACT.md`, `openapi.json`, `management-registry.json`;
 190 operations across 28 namespaces).
 
