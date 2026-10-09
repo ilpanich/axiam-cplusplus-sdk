@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Generate the CONTRACT §27 management surface for the C++ SDK.
 
-Reads ``management-registry.json`` (the management operations across 24 namespaces,
+Reads ``management-registry.json`` (every management operation in every namespace,
 maintained in ``ilpanich/axiam`` and vendored here) plus ``openapi.json``, and writes:
 
 - ``include/axiam/management_models.hpp`` — one struct or enum per request and response
   type, with ``from_json``/``to_json`` free functions ADL-found by nlohmann;
-- ``include/axiam/management.hpp`` — the 24 namespace handles and the ``management()``
+- ``include/axiam/management.hpp`` — every namespace handle and the ``management()``
   accessor;
 - ``src/management_models.cpp`` / ``src/management_ops.cpp`` — the implementations;
 - ``tests/test_management_generated.cpp`` — one conformance case per operation.
@@ -48,7 +48,13 @@ OP_COUNT: int = sum(len(ns["operations"]) for ns in REGISTRY["namespaces"].value
 # §27.4 rule 3: `{org_id}` always defaults from the client. `{tenant_id}`
 # defaults from the client only where it names the *context*; in `tenants` and
 # the signing-CA routes it names the object being acted on.
-IMPLICIT_TENANT_NAMESPACES = {"email_config", "settings", "webauthn_policy"}
+#
+# Contract 1.58 adds three more context namespaces: `directory` (§30), `saml` (§29) and
+# `ssf` (§32) all live under `/api/v1/tenants/{tenant_id}/...` where the tenant is the
+# one the client is pointed at, so it defaults exactly like `email_config`. (`scim_targets`
+# (§31) carries no tenant path parameter at all.)
+IMPLICIT_TENANT_NAMESPACES = {"email_config", "settings", "webauthn_policy",
+                              "directory", "saml", "ssf"}
 
 # Schema names that would collide with a type this SDK already declares. The models sit
 # in `axiam::management` alongside the hand-written core, so a collision is possible --
@@ -56,6 +62,15 @@ IMPLICIT_TENANT_NAMESPACES = {"email_config", "settings", "webauthn_policy"}
 # model_type() turns a future collision into a build failure rather than a silent
 # redefinition; this map is where the rename goes when one happens.
 RENAMED_SCHEMAS: dict[str, str] = {}
+
+# CONTRACT.md §31.2: the `auth` and `scope` unions of a SCIM target are tagged on `type`,
+# and "an unknown `type` MUST decode without failing and MUST NOT be sent". Every
+# discriminated union here already DECODES an unknown tag (the tag plus the raw object);
+# these two are request-side as well, so their to_json() additionally refuses -- locally,
+# before any request -- a tag that is not one of the spec's arms, and always writes the
+# tag member itself so a value built as `{type = "bearer"}` with no raw text still says
+# which arm it is.
+OPEN_UNIONS = {"ScimTargetAuth", "ScimTargetScope"}
 
 EXAMPLE_UUID = "11111111-1111-4111-8111-111111111111"
 
@@ -406,8 +421,17 @@ def model_type(name: str) -> str:
 
 
 def enum_value(value: str) -> str:
-    """A C++ enum-class enumerator (``pending_review`` -> ``PendingReview``)."""
-    rendered = pascal(value)
+    """A C++ enum-class enumerator (``pending_review`` -> ``PendingReview``).
+
+    §32's ``SsfEventType`` values are event-type URIs
+    (``https://schemas.openid.net/secevent/caep/event-type/session-revoked``). The last
+    path segment is what names the event, so that names the enumerator
+    (``SessionRevoked``); the URI stays the wire value in ``to_wire``/``*_from_wire``.
+    """
+    text = str(value)
+    if "/" in text:
+        text = text.rstrip("/").rsplit("/", 1)[-1]
+    rendered = pascal(text)
     if not rendered or not rendered[0].isalpha():
         rendered = f"V{rendered}"
     return f"{rendered}_" if rendered.lower() in CPP_KEYWORDS else rendered
@@ -1001,12 +1025,32 @@ def emit_models_source() -> str:
             )
             out.append("    }")
         if any(f["kind"] == "union_raw" for f in fields):
+            union = discriminated(SCHEMAS.get(name) or {})
+            if name in OPEN_UNIONS and union:
+                tag, arms = union
+                tag_member = member(tag)
+                known = " && ".join(f'value.{tag_member} != "{v}"' for v, _ in arms)
+                names = ", ".join(f"`{v}`" for v, _ in arms)
+                out.extend(comment(
+                    f"CONTRACT.md §31.2: an unknown `{tag}` decodes but MUST NOT be sent. "
+                    "Refused here, before any request, with no part of the value in the "
+                    "message.", "    "))
+                out.append(f"    if ({known}) {{")
+                out.append(
+                    f'        throw NetworkError("{rendered}: `{tag}` must be one of {names}; '
+                    'a variant this SDK does not know is never sent (CONTRACT.md §31.2)", '
+                    '"sdk_programming_error");')
+                out.append("    }")
             out.extend(comment(
                 "A union is forwarded EXACTLY as received. Re-encoding from the two "
                 "members this SDK models would drop every field belonging to the variant "
                 "it does not model -- and the server round-trips those.", "    "))
             out.append("    j = nlohmann::json::parse(value.raw, nullptr, false);")
-            out.append("    if (j.is_discarded()) j = nlohmann::json::object();")
+            if name in OPEN_UNIONS and union:
+                out.append("    if (j.is_discarded() || !j.is_object()) j = nlohmann::json::object();")
+                out.append(f'    j["{union[0]}"] = value.{member(union[0])};')
+            else:
+                out.append("    if (j.is_discarded()) j = nlohmann::json::object();")
             out.append("}")
             out.append("")
             out.append(f"void from_json(const nlohmann::json& j, {rendered}& value) {{")
@@ -1158,7 +1202,7 @@ def op_decl(namespace: str, opname: str, op: dict[str, Any], defaults: bool) -> 
 
 
 def emit_api_header() -> str:
-    """The 24 namespace handles, the Page/PageRequest types, and the §27.4 errors."""
+    """Every namespace handle, the Page/PageRequest types, and the §27.4 errors."""
     out = [BANNER, ""]
     out.append("#ifndef AXIAM_MANAGEMENT_HPP")
     out.append("#define AXIAM_MANAGEMENT_HPP")
@@ -1500,7 +1544,7 @@ def emit_op_body(namespace: str, opname: str, op: dict[str, Any]) -> list[str]:
 
 
 def emit_ops_source() -> str:
-    """The 24 handle classes' implementations, plus Client::management()."""
+    """Every handle class's implementation, plus Client::management()."""
     out = [BANNER, ""]
     out.append('#include "axiam/management.hpp"')
     out.append("")
@@ -1591,9 +1635,19 @@ def emit_ops_source() -> str:
 # ---------------------------------------------------------------------------
 
 
+MAX_EXAMPLE_DEPTH = 10
+
+
 def example_json(schema: Any, depth: int = 0) -> Any:
-    """A plausible wire value for ``schema`` -- what the fake transport returns."""
-    if depth > 6 or not isinstance(schema, dict):
+    """A plausible wire value for ``schema`` -- what the fake transport returns.
+
+    ``depth`` only guards against a self-referencing schema; it counts two steps per
+    ``$ref`` hop (one here, one in ``example_for``). Contract 1.58's
+    ``SamlSpMetadataDraft -> SamlServiceProviderInput -> AcsEndpoint -> SamlBinding`` is
+    the first legitimate chain deeper than the old bound of 6, which cut it off with a
+    ``null`` the decoder then refused.
+    """
+    if depth > MAX_EXAMPLE_DEPTH or not isinstance(schema, dict):
         return None
     if "$ref" in schema:
         return example_for(schema["$ref"].split("/")[-1], depth + 1)
@@ -1629,7 +1683,7 @@ def example_json(schema: Any, depth: int = 0) -> Any:
 
 def example_for(name: str, depth: int = 0) -> Any:
     """A plausible wire object for the named schema."""
-    if depth > 6:
+    if depth > MAX_EXAMPLE_DEPTH:
         return None
     schema = SCHEMAS.get(name) or {}
     if isinstance(schema.get("enum"), list) and schema["enum"]:
@@ -1685,6 +1739,28 @@ def expected_path(op: dict[str, Any]) -> str:
     return re.sub(r"\{[^}]+\}", EXAMPLE_UUID, op["path"])
 
 
+def test_body_setup(schema_name: str, var: str = "body") -> list[str]:
+    """Statements that make a default-constructed request body SENDABLE.
+
+    A default-constructed ``OPEN_UNIONS`` member carries an empty tag, which its
+    ``to_json()`` refuses (§31.2) -- correctly, and before any request, so a generated
+    case sending ``Model body{}`` would test the refusal rather than the route. Engage the
+    first arm of each such member instead.
+    """
+    out: list[str] = []
+    fields, _ = fields_of(schema_name, sensitive_map().get(schema_name, set()))
+    for f in fields:
+        if f["kind"] != "model" or f["ref"] not in OPEN_UNIONS:
+            continue
+        union = discriminated(SCHEMAS.get(f["ref"]) or {})
+        if not union:
+            continue
+        tag, arms = union
+        target = f"{var}.{f['name']}" if f["required"] else f"{var}.{f['name']}.emplace()"
+        out.append(f'    {target}.{member(tag)} = "{arms[0][0]}";')
+    return out
+
+
 def emit_test() -> str:
     """One conformance case per operation: right method, right path, decodes."""
     out = [BANNER, ""]
@@ -1734,6 +1810,7 @@ def emit_test() -> str:
                 elif p["kind"] == "body":
                     bmodel = model_type(op["request_schema"].lstrip("[]"))
                     out.append(f"    {bmodel} body{{}};")
+                    out.extend(test_body_setup(op["request_schema"].lstrip("[]")))
                     args.append("body")
             call = (f"fixture.client.management().{method(namespace)}()."
                     f"{method(opname)}(" + ", ".join(args) + ")")

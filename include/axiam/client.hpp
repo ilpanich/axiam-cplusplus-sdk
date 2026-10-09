@@ -49,6 +49,10 @@ class Oauth2ClientsApi;
 class FederationApi;
 class NotificationRulesApi;
 class EmailConfigApi;
+class DirectoryApi;
+class SamlApi;
+class SsfApi;
+class ScimTargetsApi;
 class SettingsApi;
 class ScimTokensApi;
 class ReactorsApi;
@@ -1194,7 +1198,7 @@ public:
     /// construct or inspect one — the alternative was a second copy of the
     /// request plumbing living beside the first, which is exactly the "second,
     /// parallel stack" the §12.6 deferral warned about.
-    /// The CONTRACT.md §27 management surface: 162 operations across 24 namespaces.
+    /// The CONTRACT.md §27 management surface: 190 operations across 28 namespaces.
     ///
     /// `client.management().users().list()`. §27.3's C++ row is
     /// `client.service_accounts().rotate_secret(id)` — a method returning a handle,
@@ -1202,7 +1206,7 @@ public:
     ///
     /// Built on the same request path every other operation uses, so §3 CSRF, the §4
     /// cookie jar, the §5 tenant header, §6 TLS, §16 retry and §19 telemetry apply to all
-    /// 147 by construction rather than by 147 opportunities to forget one (§27.8).
+    /// 190 by construction rather than by 190 opportunities to forget one (§27.8).
     ///
     /// Returned by value: it holds a shared_ptr to the transport and a scope, and
     /// building one per call is what keeps `in_org()` from having anything shared to
@@ -1222,7 +1226,7 @@ public:
     // constructors take a transport nothing outside this library can build.
     //
     // Declared, not defined, here: the definitions live in the generated
-    // src/management_ops.cpp, so client.cpp still knows nothing about the 147
+    // src/management_ops.cpp, so client.cpp still knows nothing about the 190
     // operations and a caller who never touches §27 never compiles its models.
 
     /// Organizations an SDK client may read and configure. Creation and deletion are outside
@@ -1282,6 +1286,26 @@ public:
     /// Transactional-mail transport, configurable at organization level and overridable per
     /// tenant.
     management::EmailConfigApi email_config();
+
+    /// A tenant's LDAP / Active Directory identity source (CONTRACT §30): the one
+    /// configuration, the explicit act that links an existing local account to its
+    /// directory entry, and a read-only view of the sync job.
+    management::DirectoryApi directory();
+
+    /// A tenant's SAML 2.0 identity provider (CONTRACT §29): the registry of service
+    /// providers, the import of an SP's metadata into a *draft* registration (never a
+    /// write), and the lifecycle of the IdP signing credential.
+    management::SamlApi saml();
+
+    /// A tenant's Shared Signals Framework streams (CONTRACT §32): which receiver
+    /// receives which CAEP and RISC security events. The receiver side is
+    /// axiam::ssf::SsfReceiver (§32.7).
+    management::SsfApi ssf();
+
+    /// A tenant's outbound SCIM targets (CONTRACT §31): the downstream SCIM 2.0 service
+    /// providers AXIAM pushes the tenant's users and groups to. The credential is
+    /// write-only; deleting a target deprovisions nothing downstream.
+    management::ScimTargetsApi scim_targets();
 
     /// Effective settings, and the organization/tenant layers they resolve from.
     management::SettingsApi settings();

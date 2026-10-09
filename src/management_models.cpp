@@ -70,6 +70,44 @@ void from_json(const nlohmann::json& j, AttestationMode& value) {
     value = attestation_mode_from_wire(j.get<std::string>());
 }
 
+std::string to_wire(AttributeSource value) {
+    switch (value) {
+        case AttributeSource::Username: return "username";
+        case AttributeSource::Email: return "email";
+        case AttributeSource::DisplayName: return "display_name";
+        case AttributeSource::GivenName: return "given_name";
+        case AttributeSource::FamilyName: return "family_name";
+        case AttributeSource::Groups: return "groups";
+        case AttributeSource::Roles: return "roles";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case AttributeSource::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "username";
+}
+
+AttributeSource attribute_source_from_wire(const std::string& value) {
+    if (value == "username") return AttributeSource::Username;
+    if (value == "email") return AttributeSource::Email;
+    if (value == "display_name") return AttributeSource::DisplayName;
+    if (value == "given_name") return AttributeSource::GivenName;
+    if (value == "family_name") return AttributeSource::FamilyName;
+    if (value == "groups") return AttributeSource::Groups;
+    if (value == "roles") return AttributeSource::Roles;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return AttributeSource::Unknown;
+}
+
+void to_json(nlohmann::json& j, const AttributeSource& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, AttributeSource& value) {
+    value = attribute_source_from_wire(j.get<std::string>());
+}
+
 std::string to_wire(AuditOutcome value) {
     switch (value) {
         case AuditOutcome::Success: return "Success";
@@ -226,6 +264,64 @@ void from_json(const nlohmann::json& j, CertificationLevel& value) {
     value = certification_level_from_wire(j.get<std::string>());
 }
 
+std::string to_wire(CibaDeliveryMode value) {
+    switch (value) {
+        case CibaDeliveryMode::Poll: return "poll";
+        case CibaDeliveryMode::Ping: return "ping";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case CibaDeliveryMode::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "poll";
+}
+
+CibaDeliveryMode ciba_delivery_mode_from_wire(const std::string& value) {
+    if (value == "poll") return CibaDeliveryMode::Poll;
+    if (value == "ping") return CibaDeliveryMode::Ping;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return CibaDeliveryMode::Unknown;
+}
+
+void to_json(nlohmann::json& j, const CibaDeliveryMode& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, CibaDeliveryMode& value) {
+    value = ciba_delivery_mode_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(CibaRequestSigningAlg value) {
+    switch (value) {
+        case CibaRequestSigningAlg::PS256: return "PS256";
+        case CibaRequestSigningAlg::ES256: return "ES256";
+        case CibaRequestSigningAlg::EdDSA: return "EdDSA";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case CibaRequestSigningAlg::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "PS256";
+}
+
+CibaRequestSigningAlg ciba_request_signing_alg_from_wire(const std::string& value) {
+    if (value == "PS256") return CibaRequestSigningAlg::PS256;
+    if (value == "ES256") return CibaRequestSigningAlg::ES256;
+    if (value == "EdDSA") return CibaRequestSigningAlg::EdDSA;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return CibaRequestSigningAlg::Unknown;
+}
+
+void to_json(nlohmann::json& j, const CibaRequestSigningAlg& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, CibaRequestSigningAlg& value) {
+    value = ciba_request_signing_alg_from_wire(j.get<std::string>());
+}
+
 std::string to_wire(ClientAuthMethod value) {
     switch (value) {
         case ClientAuthMethod::ClientSecretPost: return "client_secret_post";
@@ -288,6 +384,62 @@ ClientProfile client_profile_from_wire(const std::string& value) {
 void to_json(nlohmann::json& j, const ClientProfile& value) { j = to_wire(value); }
 void from_json(const nlohmann::json& j, ClientProfile& value) {
     value = client_profile_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(DeprovisionPolicy value) {
+    switch (value) {
+        case DeprovisionPolicy::Deactivate: return "deactivate";
+        case DeprovisionPolicy::Delete_: return "delete";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case DeprovisionPolicy::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "deactivate";
+}
+
+DeprovisionPolicy deprovision_policy_from_wire(const std::string& value) {
+    if (value == "deactivate") return DeprovisionPolicy::Deactivate;
+    if (value == "delete") return DeprovisionPolicy::Delete_;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return DeprovisionPolicy::Unknown;
+}
+
+void to_json(nlohmann::json& j, const DeprovisionPolicy& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, DeprovisionPolicy& value) {
+    value = deprovision_policy_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(DirectoryKind value) {
+    switch (value) {
+        case DirectoryKind::OpenLdap: return "open_ldap";
+        case DirectoryKind::ActiveDirectory: return "active_directory";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case DirectoryKind::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "open_ldap";
+}
+
+DirectoryKind directory_kind_from_wire(const std::string& value) {
+    if (value == "open_ldap") return DirectoryKind::OpenLdap;
+    if (value == "active_directory") return DirectoryKind::ActiveDirectory;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return DirectoryKind::Unknown;
+}
+
+void to_json(nlohmann::json& j, const DirectoryKind& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, DirectoryKind& value) {
+    value = directory_kind_from_wire(j.get<std::string>());
 }
 
 std::string to_wire(FailurePolicy value) {
@@ -406,6 +558,34 @@ void from_json(const nlohmann::json& j, MfaMethodType& value) {
     value = mfa_method_type_from_wire(j.get<std::string>());
 }
 
+std::string to_wire(NameIdFormat value) {
+    switch (value) {
+        case NameIdFormat::Persistent: return "persistent";
+        case NameIdFormat::EmailAddress: return "email_address";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case NameIdFormat::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "persistent";
+}
+
+NameIdFormat name_id_format_from_wire(const std::string& value) {
+    if (value == "persistent") return NameIdFormat::Persistent;
+    if (value == "email_address") return NameIdFormat::EmailAddress;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return NameIdFormat::Unknown;
+}
+
+void to_json(nlohmann::json& j, const NameIdFormat& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, NameIdFormat& value) {
+    value = name_id_format_from_wire(j.get<std::string>());
+}
+
 std::string to_wire(NotificationEventType value) {
     switch (value) {
         case NotificationEventType::LoginFailure: return "login_failure";
@@ -425,6 +605,7 @@ std::string to_wire(NotificationEventType value) {
         case NotificationEventType::UserUpdated: return "user_updated";
         case NotificationEventType::ServiceAccountCreated: return "service_account_created";
         case NotificationEventType::ServiceAccountDeleted: return "service_account_deleted";
+        case NotificationEventType::ScimDeliveryFailed: return "scim_delivery_failed";
         // The empty string, which no server value is: an unrecognised value carried back into
         // an update is refused by the server rather than written as a spelling it never used.
         case NotificationEventType::Unknown: return "";
@@ -452,6 +633,7 @@ NotificationEventType notification_event_type_from_wire(const std::string& value
     if (value == "user_updated") return NotificationEventType::UserUpdated;
     if (value == "service_account_created") return NotificationEventType::ServiceAccountCreated;
     if (value == "service_account_deleted") return NotificationEventType::ServiceAccountDeleted;
+    if (value == "scim_delivery_failed") return NotificationEventType::ScimDeliveryFailed;
     // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
     // whole response the value arrived in, so one field of one record takes down the page it
     // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
@@ -604,6 +786,92 @@ void from_json(const nlohmann::json& j, ReactorMode& value) {
     value = reactor_mode_from_wire(j.get<std::string>());
 }
 
+std::string to_wire(SamlBinding value) {
+    switch (value) {
+        case SamlBinding::HttpPost: return "http_post";
+        case SamlBinding::HttpRedirect: return "http_redirect";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case SamlBinding::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "http_post";
+}
+
+SamlBinding saml_binding_from_wire(const std::string& value) {
+    if (value == "http_post") return SamlBinding::HttpPost;
+    if (value == "http_redirect") return SamlBinding::HttpRedirect;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return SamlBinding::Unknown;
+}
+
+void to_json(nlohmann::json& j, const SamlBinding& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, SamlBinding& value) {
+    value = saml_binding_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(SamlIdpCredentialStatus value) {
+    switch (value) {
+        case SamlIdpCredentialStatus::Active: return "active";
+        case SamlIdpCredentialStatus::Next: return "next";
+        case SamlIdpCredentialStatus::Retired: return "retired";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case SamlIdpCredentialStatus::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "active";
+}
+
+SamlIdpCredentialStatus saml_idp_credential_status_from_wire(const std::string& value) {
+    if (value == "active") return SamlIdpCredentialStatus::Active;
+    if (value == "next") return SamlIdpCredentialStatus::Next;
+    if (value == "retired") return SamlIdpCredentialStatus::Retired;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return SamlIdpCredentialStatus::Unknown;
+}
+
+void to_json(nlohmann::json& j, const SamlIdpCredentialStatus& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, SamlIdpCredentialStatus& value) {
+    value = saml_idp_credential_status_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(SamlIdpSlot value) {
+    switch (value) {
+        case SamlIdpSlot::Active: return "active";
+        case SamlIdpSlot::Next: return "next";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case SamlIdpSlot::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "active";
+}
+
+SamlIdpSlot saml_idp_slot_from_wire(const std::string& value) {
+    if (value == "active") return SamlIdpSlot::Active;
+    if (value == "next") return SamlIdpSlot::Next;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return SamlIdpSlot::Unknown;
+}
+
+void to_json(nlohmann::json& j, const SamlIdpSlot& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, SamlIdpSlot& value) {
+    value = saml_idp_slot_from_wire(j.get<std::string>());
+}
+
 std::string to_wire(ScimTokenStatus value) {
     switch (value) {
         case ScimTokenStatus::Active: return "active";
@@ -660,6 +928,156 @@ SettingsScope settings_scope_from_wire(const std::string& value) {
 void to_json(nlohmann::json& j, const SettingsScope& value) { j = to_wire(value); }
 void from_json(const nlohmann::json& j, SettingsScope& value) {
     value = settings_scope_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(SsfDeliveryMethod value) {
+    switch (value) {
+        case SsfDeliveryMethod::Push: return "push";
+        case SsfDeliveryMethod::Poll: return "poll";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case SsfDeliveryMethod::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "push";
+}
+
+SsfDeliveryMethod ssf_delivery_method_from_wire(const std::string& value) {
+    if (value == "push") return SsfDeliveryMethod::Push;
+    if (value == "poll") return SsfDeliveryMethod::Poll;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return SsfDeliveryMethod::Unknown;
+}
+
+void to_json(nlohmann::json& j, const SsfDeliveryMethod& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, SsfDeliveryMethod& value) {
+    value = ssf_delivery_method_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(SsfEventType value) {
+    switch (value) {
+        case SsfEventType::SessionRevoked: return "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
+        case SsfEventType::CredentialChange: return "https://schemas.openid.net/secevent/caep/event-type/credential-change";
+        case SsfEventType::AssuranceLevelChange: return "https://schemas.openid.net/secevent/caep/event-type/assurance-level-change";
+        case SsfEventType::AccountDisabled: return "https://schemas.openid.net/secevent/risc/event-type/account-disabled";
+        case SsfEventType::AccountEnabled: return "https://schemas.openid.net/secevent/risc/event-type/account-enabled";
+        case SsfEventType::AccountPurged: return "https://schemas.openid.net/secevent/risc/event-type/account-purged";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case SsfEventType::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
+}
+
+SsfEventType ssf_event_type_from_wire(const std::string& value) {
+    if (value == "https://schemas.openid.net/secevent/caep/event-type/session-revoked") return SsfEventType::SessionRevoked;
+    if (value == "https://schemas.openid.net/secevent/caep/event-type/credential-change") return SsfEventType::CredentialChange;
+    if (value == "https://schemas.openid.net/secevent/caep/event-type/assurance-level-change") return SsfEventType::AssuranceLevelChange;
+    if (value == "https://schemas.openid.net/secevent/risc/event-type/account-disabled") return SsfEventType::AccountDisabled;
+    if (value == "https://schemas.openid.net/secevent/risc/event-type/account-enabled") return SsfEventType::AccountEnabled;
+    if (value == "https://schemas.openid.net/secevent/risc/event-type/account-purged") return SsfEventType::AccountPurged;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return SsfEventType::Unknown;
+}
+
+void to_json(nlohmann::json& j, const SsfEventType& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, SsfEventType& value) {
+    value = ssf_event_type_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(SsfStatusActor value) {
+    switch (value) {
+        case SsfStatusActor::Admin: return "admin";
+        case SsfStatusActor::Receiver: return "receiver";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case SsfStatusActor::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "admin";
+}
+
+SsfStatusActor ssf_status_actor_from_wire(const std::string& value) {
+    if (value == "admin") return SsfStatusActor::Admin;
+    if (value == "receiver") return SsfStatusActor::Receiver;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return SsfStatusActor::Unknown;
+}
+
+void to_json(nlohmann::json& j, const SsfStatusActor& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, SsfStatusActor& value) {
+    value = ssf_status_actor_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(SsfStreamStatus value) {
+    switch (value) {
+        case SsfStreamStatus::Enabled: return "enabled";
+        case SsfStreamStatus::Paused: return "paused";
+        case SsfStreamStatus::Disabled: return "disabled";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case SsfStreamStatus::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "enabled";
+}
+
+SsfStreamStatus ssf_stream_status_from_wire(const std::string& value) {
+    if (value == "enabled") return SsfStreamStatus::Enabled;
+    if (value == "paused") return SsfStreamStatus::Paused;
+    if (value == "disabled") return SsfStreamStatus::Disabled;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return SsfStreamStatus::Unknown;
+}
+
+void to_json(nlohmann::json& j, const SsfStreamStatus& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, SsfStreamStatus& value) {
+    value = ssf_stream_status_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(SsfSubjectFormat value) {
+    switch (value) {
+        case SsfSubjectFormat::IssSub: return "iss_sub";
+        case SsfSubjectFormat::Email: return "email";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case SsfSubjectFormat::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "iss_sub";
+}
+
+SsfSubjectFormat ssf_subject_format_from_wire(const std::string& value) {
+    if (value == "iss_sub") return SsfSubjectFormat::IssSub;
+    if (value == "email") return SsfSubjectFormat::Email;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return SsfSubjectFormat::Unknown;
+}
+
+void to_json(nlohmann::json& j, const SsfSubjectFormat& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, SsfSubjectFormat& value) {
+    value = ssf_subject_format_from_wire(j.get<std::string>());
 }
 
 std::string to_wire(TenantKind value) {
@@ -746,6 +1164,34 @@ void from_json(const nlohmann::json& j, UnknownAaguidAction& value) {
     value = unknown_aaguid_action_from_wire(j.get<std::string>());
 }
 
+std::string to_wire(UserNameSource value) {
+    switch (value) {
+        case UserNameSource::Username: return "username";
+        case UserNameSource::Email: return "email";
+        // The empty string, which no server value is: an unrecognised value carried back into
+        // an update is refused by the server rather than written as a spelling it never used.
+        case UserNameSource::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "username";
+}
+
+UserNameSource user_name_source_from_wire(const std::string& value) {
+    if (value == "username") return UserNameSource::Username;
+    if (value == "email") return UserNameSource::Email;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return UserNameSource::Unknown;
+}
+
+void to_json(nlohmann::json& j, const UserNameSource& value) { j = to_wire(value); }
+void from_json(const nlohmann::json& j, UserNameSource& value) {
+    value = user_name_source_from_wire(j.get<std::string>());
+}
+
 std::string to_wire(UserStatus value) {
     switch (value) {
         case UserStatus::Active: return "Active";
@@ -780,6 +1226,25 @@ UserStatus user_status_from_wire(const std::string& value) {
 void to_json(nlohmann::json& j, const UserStatus& value) { j = to_wire(value); }
 void from_json(const nlohmann::json& j, UserStatus& value) {
     value = user_status_from_wire(j.get<std::string>());
+}
+
+void to_json(nlohmann::json& j, const AcsEndpoint& value) {
+    j = nlohmann::json::object();
+    j["binding"] = to_wire(value.binding);
+    j["index"] = value.index;
+    if (value.is_default) {
+        j["is_default"] = *value.is_default;
+    }
+    j["url"] = value.url;
+}
+
+void from_json(const nlohmann::json& j, AcsEndpoint& value) {
+    value.binding = saml_binding_from_wire(j.at("binding").get<std::string>());
+    value.index = j.at("index").get<std::int64_t>();
+    if (auto it = j.find("is_default"); it != j.end() && !it->is_null()) {
+        value.is_default = it->get<bool>();
+    }
+    value.url = j.at("url").get<std::string>();
 }
 
 void to_json(nlohmann::json& j, const AddMemberRequest& value) {
@@ -892,6 +1357,23 @@ void from_json(const nlohmann::json& j, AssignRoleToUserRequest& value) {
         value.tenant_scope = it->get<std::vector<std::string>>();
     }
     value.user_id = j.at("user_id").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const AttributeMapping& value) {
+    j = nlohmann::json::object();
+    if (value.name_format) {
+        j["name_format"] = *value.name_format;
+    }
+    j["saml_name"] = value.saml_name;
+    j["source"] = to_wire(value.source);
+}
+
+void from_json(const nlohmann::json& j, AttributeMapping& value) {
+    if (auto it = j.find("name_format"); it != j.end() && !it->is_null()) {
+        value.name_format = it->get<std::string>();
+    }
+    value.saml_name = j.at("saml_name").get<std::string>();
+    value.source = attribute_source_from_wire(j.at("source").get<std::string>());
 }
 
 void to_json(nlohmann::json& j, const AuditLogEntry& value) {
@@ -1467,8 +1949,20 @@ void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value) {
     if (value.authn_request_params) {
         j["authn_request_params"] = to_wire(*value.authn_request_params);
     }
+    if (value.backchannel_authentication_request_signing_alg) {
+        j["backchannel_authentication_request_signing_alg"] = *value.backchannel_authentication_request_signing_alg;
+    }
+    if (value.backchannel_client_notification_endpoint) {
+        j["backchannel_client_notification_endpoint"] = *value.backchannel_client_notification_endpoint;
+    }
     if (value.backchannel_logout_uri) {
         j["backchannel_logout_uri"] = *value.backchannel_logout_uri;
+    }
+    if (value.backchannel_token_delivery_mode) {
+        j["backchannel_token_delivery_mode"] = *value.backchannel_token_delivery_mode;
+    }
+    if (value.backchannel_user_code_parameter) {
+        j["backchannel_user_code_parameter"] = *value.backchannel_user_code_parameter;
     }
     if (value.browser_sso) {
         j["browser_sso"] = *value.browser_sso;
@@ -1525,8 +2019,20 @@ void from_json(const nlohmann::json& j, CreateOAuth2ClientRequest& value) {
     if (auto it = j.find("authn_request_params"); it != j.end() && !it->is_null()) {
         value.authn_request_params = authn_request_params_mode_from_wire(it->get<std::string>());
     }
+    if (auto it = j.find("backchannel_authentication_request_signing_alg"); it != j.end() && !it->is_null()) {
+        value.backchannel_authentication_request_signing_alg = it->get<std::string>();
+    }
+    if (auto it = j.find("backchannel_client_notification_endpoint"); it != j.end() && !it->is_null()) {
+        value.backchannel_client_notification_endpoint = it->get<std::string>();
+    }
     if (auto it = j.find("backchannel_logout_uri"); it != j.end() && !it->is_null()) {
         value.backchannel_logout_uri = it->get<std::string>();
+    }
+    if (auto it = j.find("backchannel_token_delivery_mode"); it != j.end() && !it->is_null()) {
+        value.backchannel_token_delivery_mode = it->get<std::string>();
+    }
+    if (auto it = j.find("backchannel_user_code_parameter"); it != j.end() && !it->is_null()) {
+        value.backchannel_user_code_parameter = it->get<bool>();
     }
     if (auto it = j.find("browser_sso"); it != j.end() && !it->is_null()) {
         value.browser_sso = it->get<bool>();
@@ -1904,6 +2410,133 @@ void from_json(const nlohmann::json& j, CreateWebhookRequest& value) {
     }
     value.secret = Sensitive<std::string>(j.at("secret").get<std::string>());
     value.url = j.at("url").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const GroupMapping& value) {
+    j = nlohmann::json::object();
+    j["directory_group_dn"] = value.directory_group_dn;
+    j["group_id"] = value.group_id;
+}
+
+void from_json(const nlohmann::json& j, GroupMapping& value) {
+    value.directory_group_dn = j.at("directory_group_dn").get<std::string>();
+    value.group_id = j.at("group_id").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const UserAttributeMap& value) {
+    j = nlohmann::json::object();
+    j["display_name"] = value.display_name;
+    j["email"] = value.email;
+    j["external_id"] = value.external_id;
+    j["username"] = value.username;
+}
+
+void from_json(const nlohmann::json& j, UserAttributeMap& value) {
+    value.display_name = j.at("display_name").get<std::string>();
+    value.email = j.at("email").get<std::string>();
+    value.external_id = j.at("external_id").get<std::string>();
+    value.username = j.at("username").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const DirectoryConfig& value) {
+    j = nlohmann::json::object();
+    j["base_dn"] = value.base_dn;
+    j["bind_dn"] = value.bind_dn;
+    j["created_at"] = value.created_at;
+    j["enabled"] = value.enabled;
+    if (value.group_base_dn) {
+        j["group_base_dn"] = *value.group_base_dn;
+    }
+    if (value.group_filter) {
+        j["group_filter"] = *value.group_filter;
+    }
+    j["group_mappings"] = value.group_mappings;
+    j["group_member_attribute"] = value.group_member_attribute;
+    j["group_nesting_depth"] = value.group_nesting_depth;
+    j["id"] = value.id;
+    j["jit_provisioning"] = value.jit_provisioning;
+    j["kind"] = to_wire(value.kind);
+    j["start_tls"] = value.start_tls;
+    j["sync_interval_secs"] = value.sync_interval_secs;
+    j["tenant_id"] = value.tenant_id;
+    j["trust_anchors_pem"] = value.trust_anchors_pem;
+    j["updated_at"] = value.updated_at;
+    j["url"] = value.url;
+    j["user_attribute_map"] = value.user_attribute_map;
+    j["user_filter"] = value.user_filter;
+}
+
+void from_json(const nlohmann::json& j, DirectoryConfig& value) {
+    value.base_dn = j.at("base_dn").get<std::string>();
+    value.bind_dn = j.at("bind_dn").get<std::string>();
+    value.created_at = j.at("created_at").get<std::string>();
+    value.enabled = j.at("enabled").get<bool>();
+    if (auto it = j.find("group_base_dn"); it != j.end() && !it->is_null()) {
+        value.group_base_dn = it->get<std::string>();
+    }
+    if (auto it = j.find("group_filter"); it != j.end() && !it->is_null()) {
+        value.group_filter = it->get<std::string>();
+    }
+    value.group_mappings = j.at("group_mappings").get<std::vector<GroupMapping>>();
+    value.group_member_attribute = j.at("group_member_attribute").get<std::string>();
+    value.group_nesting_depth = j.at("group_nesting_depth").get<std::int64_t>();
+    value.id = j.at("id").get<std::string>();
+    value.jit_provisioning = j.at("jit_provisioning").get<bool>();
+    value.kind = directory_kind_from_wire(j.at("kind").get<std::string>());
+    value.start_tls = j.at("start_tls").get<bool>();
+    value.sync_interval_secs = j.at("sync_interval_secs").get<std::int64_t>();
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+    value.trust_anchors_pem = j.at("trust_anchors_pem").get<std::vector<std::string>>();
+    value.updated_at = j.at("updated_at").get<std::string>();
+    value.url = j.at("url").get<std::string>();
+    value.user_attribute_map = j.at("user_attribute_map").get<UserAttributeMap>();
+    value.user_filter = j.at("user_filter").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const DirectoryLinkResult& value) {
+    j = nlohmann::json::object();
+    j["certificates_revoked"] = value.certificates_revoked;
+    j["directory_external_id"] = value.directory_external_id;
+    j["user_id"] = value.user_id;
+    j["was_already_linked"] = value.was_already_linked;
+    j["webauthn_credentials_deleted"] = value.webauthn_credentials_deleted;
+}
+
+void from_json(const nlohmann::json& j, DirectoryLinkResult& value) {
+    value.certificates_revoked = j.at("certificates_revoked").get<std::int64_t>();
+    value.directory_external_id = j.at("directory_external_id").get<std::string>();
+    value.user_id = j.at("user_id").get<std::string>();
+    value.was_already_linked = j.at("was_already_linked").get<bool>();
+    value.webauthn_credentials_deleted = j.at("webauthn_credentials_deleted").get<std::int64_t>();
+}
+
+void to_json(nlohmann::json& j, const DirectorySyncStatus& value) {
+    j = nlohmann::json::object();
+    j["full_required"] = value.full_required;
+    j["has_watermark"] = value.has_watermark;
+    if (value.last_attempt_at) {
+        j["last_attempt_at"] = *value.last_attempt_at;
+    }
+    if (value.last_full_run_at) {
+        j["last_full_run_at"] = *value.last_full_run_at;
+    }
+    if (value.last_result) {
+        j["last_result"] = *value.last_result;
+    }
+}
+
+void from_json(const nlohmann::json& j, DirectorySyncStatus& value) {
+    value.full_required = j.at("full_required").get<bool>();
+    value.has_watermark = j.at("has_watermark").get<bool>();
+    if (auto it = j.find("last_attempt_at"); it != j.end() && !it->is_null()) {
+        value.last_attempt_at = it->get<std::string>();
+    }
+    if (auto it = j.find("last_full_run_at"); it != j.end() && !it->is_null()) {
+        value.last_full_run_at = it->get<std::string>();
+    }
+    if (auto it = j.find("last_result"); it != j.end() && !it->is_null()) {
+        value.last_result = it->get<std::string>();
+    }
 }
 
 void to_json(nlohmann::json& j, const ProviderConfig& value) {
@@ -2387,11 +3020,19 @@ void from_json(const nlohmann::json& j, Group& value) {
 
 void to_json(nlohmann::json& j, const HealthResponse& value) {
     j = nlohmann::json::object();
+    j["profile"] = value.profile;
     j["status"] = value.status;
+    if (value.unavailable) {
+        j["unavailable"] = *value.unavailable;
+    }
 }
 
 void from_json(const nlohmann::json& j, HealthResponse& value) {
+    value.profile = j.at("profile").get<std::string>();
     value.status = j.at("status").get<std::string>();
+    if (auto it = j.find("unavailable"); it != j.end() && !it->is_null()) {
+        value.unavailable = it->get<std::vector<std::string>>();
+    }
 }
 
 void to_json(nlohmann::json& j, const ImportCaCertificateRequest& value) {
@@ -2407,6 +3048,32 @@ void from_json(const nlohmann::json& j, ImportCaCertificateRequest& value) {
         value.private_key_pem = Sensitive<std::string>(it->get<std::string>());
     }
     value.public_cert_pem = j.at("public_cert_pem").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const IssueSamlIdpCredential& value) {
+    j = nlohmann::json::object();
+    j["issuer_ca_id"] = value.issuer_ca_id;
+    j["slot"] = to_wire(value.slot);
+    if (value.validity_days) {
+        j["validity_days"] = *value.validity_days;
+    }
+}
+
+void from_json(const nlohmann::json& j, IssueSamlIdpCredential& value) {
+    value.issuer_ca_id = j.at("issuer_ca_id").get<std::string>();
+    value.slot = saml_idp_slot_from_wire(j.at("slot").get<std::string>());
+    if (auto it = j.find("validity_days"); it != j.end() && !it->is_null()) {
+        value.validity_days = it->get<std::int64_t>();
+    }
+}
+
+void to_json(nlohmann::json& j, const LinkDirectoryAccount& value) {
+    j = nlohmann::json::object();
+    j["user_id"] = value.user_id;
+}
+
+void from_json(const nlohmann::json& j, LinkDirectoryAccount& value) {
+    value.user_id = j.at("user_id").get<std::string>();
 }
 
 void to_json(nlohmann::json& j, const LockoutPolicy& value) {
@@ -2607,6 +3274,15 @@ void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
     j = nlohmann::json::object();
     j["allowed_resources"] = value.allowed_resources;
     j["authn_request_params"] = to_wire(value.authn_request_params);
+    if (value.backchannel_authentication_request_signing_alg) {
+        j["backchannel_authentication_request_signing_alg"] = to_wire(*value.backchannel_authentication_request_signing_alg);
+    }
+    if (value.backchannel_client_notification_endpoint) {
+        j["backchannel_client_notification_endpoint"] = *value.backchannel_client_notification_endpoint;
+    }
+    if (value.backchannel_token_delivery_mode) {
+        j["backchannel_token_delivery_mode"] = to_wire(*value.backchannel_token_delivery_mode);
+    }
     j["browser_sso"] = value.browser_sso;
     j["client_id"] = value.client_id;
     j["created_at"] = value.created_at;
@@ -2648,6 +3324,15 @@ void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
 void from_json(const nlohmann::json& j, OAuth2ClientResponse& value) {
     value.allowed_resources = j.at("allowed_resources").get<std::vector<std::string>>();
     value.authn_request_params = authn_request_params_mode_from_wire(j.at("authn_request_params").get<std::string>());
+    if (auto it = j.find("backchannel_authentication_request_signing_alg"); it != j.end() && !it->is_null()) {
+        value.backchannel_authentication_request_signing_alg = ciba_request_signing_alg_from_wire(it->get<std::string>());
+    }
+    if (auto it = j.find("backchannel_client_notification_endpoint"); it != j.end() && !it->is_null()) {
+        value.backchannel_client_notification_endpoint = it->get<std::string>();
+    }
+    if (auto it = j.find("backchannel_token_delivery_mode"); it != j.end() && !it->is_null()) {
+        value.backchannel_token_delivery_mode = ciba_delivery_mode_from_wire(it->get<std::string>());
+    }
     value.browser_sso = j.at("browser_sso").get<bool>();
     value.client_id = j.at("client_id").get<std::string>();
     value.created_at = j.at("created_at").get<std::string>();
@@ -2766,7 +3451,16 @@ void to_json(nlohmann::json& j, const OidcPolicy& value) {
     if (value.external_client_allowed_resources) {
         j["external_client_allowed_resources"] = *value.external_client_allowed_resources;
     }
+    if (value.saml_idp_enabled) {
+        j["saml_idp_enabled"] = *value.saml_idp_enabled;
+    }
     j["sensitive_scopes_enabled"] = value.sensitive_scopes_enabled;
+    if (value.ssf_enabled) {
+        j["ssf_enabled"] = *value.ssf_enabled;
+    }
+    if (value.ssf_inactive_reason) {
+        j["ssf_inactive_reason"] = *value.ssf_inactive_reason;
+    }
 }
 
 void from_json(const nlohmann::json& j, OidcPolicy& value) {
@@ -2794,7 +3488,16 @@ void from_json(const nlohmann::json& j, OidcPolicy& value) {
     if (auto it = j.find("external_client_allowed_resources"); it != j.end() && !it->is_null()) {
         value.external_client_allowed_resources = it->get<std::vector<std::string>>();
     }
+    if (auto it = j.find("saml_idp_enabled"); it != j.end() && !it->is_null()) {
+        value.saml_idp_enabled = it->get<bool>();
+    }
     value.sensitive_scopes_enabled = j.at("sensitive_scopes_enabled").get<bool>();
+    if (auto it = j.find("ssf_enabled"); it != j.end() && !it->is_null()) {
+        value.ssf_enabled = it->get<bool>();
+    }
+    if (auto it = j.find("ssf_inactive_reason"); it != j.end() && !it->is_null()) {
+        value.ssf_inactive_reason = it->get<std::string>();
+    }
 }
 
 void to_json(nlohmann::json& j, const OpaquePolicy& value) {
@@ -2827,6 +3530,25 @@ void from_json(const nlohmann::json& j, Organization& value) {
     value.name = j.at("name").get<std::string>();
     value.slug = j.at("slug").get<std::string>();
     value.updated_at = j.at("updated_at").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const ParseSamlSpMetadata& value) {
+    j = nlohmann::json::object();
+    if (value.metadata_url) {
+        j["metadata_url"] = *value.metadata_url;
+    }
+    if (value.metadata_xml) {
+        j["metadata_xml"] = *value.metadata_xml;
+    }
+}
+
+void from_json(const nlohmann::json& j, ParseSamlSpMetadata& value) {
+    if (auto it = j.find("metadata_url"); it != j.end() && !it->is_null()) {
+        value.metadata_url = it->get<std::string>();
+    }
+    if (auto it = j.find("metadata_xml"); it != j.end() && !it->is_null()) {
+        value.metadata_xml = it->get<std::string>();
+    }
 }
 
 void to_json(nlohmann::json& j, const PasswordPolicy& value) {
@@ -3263,6 +3985,424 @@ void from_json(const nlohmann::json& j, RotateSecretResponse& value) {
     value.client_secret = Sensitive<std::string>(j.at("client_secret").get<std::string>());
 }
 
+void to_json(nlohmann::json& j, const SamlIdpCredential& value) {
+    j = nlohmann::json::object();
+    j["certificate_pem"] = value.certificate_pem;
+    j["created_at"] = value.created_at;
+    j["fingerprint"] = value.fingerprint;
+    j["id"] = value.id;
+    j["issuer_ca_id"] = value.issuer_ca_id;
+    j["not_after"] = value.not_after;
+    j["not_before"] = value.not_before;
+    if (value.retired_at) {
+        j["retired_at"] = *value.retired_at;
+    }
+    j["serial"] = value.serial;
+    j["status"] = to_wire(value.status);
+    j["tenant_id"] = value.tenant_id;
+}
+
+void from_json(const nlohmann::json& j, SamlIdpCredential& value) {
+    value.certificate_pem = j.at("certificate_pem").get<std::string>();
+    value.created_at = j.at("created_at").get<std::string>();
+    value.fingerprint = j.at("fingerprint").get<std::string>();
+    value.id = j.at("id").get<std::string>();
+    value.issuer_ca_id = j.at("issuer_ca_id").get<std::string>();
+    value.not_after = j.at("not_after").get<std::string>();
+    value.not_before = j.at("not_before").get<std::string>();
+    if (auto it = j.find("retired_at"); it != j.end() && !it->is_null()) {
+        value.retired_at = it->get<std::string>();
+    }
+    value.serial = j.at("serial").get<std::string>();
+    value.status = saml_idp_credential_status_from_wire(j.at("status").get<std::string>());
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const SamlIdpCredentialPromotion& value) {
+    j = nlohmann::json::object();
+    j["active"] = value.active;
+    if (value.retired) {
+        j["retired"] = *value.retired;
+    }
+}
+
+void from_json(const nlohmann::json& j, SamlIdpCredentialPromotion& value) {
+    value.active = j.at("active").get<SamlIdpCredential>();
+    if (auto it = j.find("retired"); it != j.end() && !it->is_null()) {
+        value.retired = it->get<SamlIdpCredential>();
+    }
+}
+
+void to_json(nlohmann::json& j, const SamlIdpInfo& value) {
+    j = nlohmann::json::object();
+    if (value.active_credential_id) {
+        j["active_credential_id"] = *value.active_credential_id;
+    }
+    j["entity_id"] = value.entity_id;
+    j["metadata_served"] = value.metadata_served;
+    j["metadata_url"] = value.metadata_url;
+    if (value.next_credential_id) {
+        j["next_credential_id"] = *value.next_credential_id;
+    }
+    j["saml_available"] = value.saml_available;
+    j["saml_idp_enabled"] = value.saml_idp_enabled;
+    j["slo_url"] = value.slo_url;
+    j["sso_url"] = value.sso_url;
+    j["tenant_id"] = value.tenant_id;
+}
+
+void from_json(const nlohmann::json& j, SamlIdpInfo& value) {
+    if (auto it = j.find("active_credential_id"); it != j.end() && !it->is_null()) {
+        value.active_credential_id = it->get<std::string>();
+    }
+    value.entity_id = j.at("entity_id").get<std::string>();
+    value.metadata_served = j.at("metadata_served").get<bool>();
+    value.metadata_url = j.at("metadata_url").get<std::string>();
+    if (auto it = j.find("next_credential_id"); it != j.end() && !it->is_null()) {
+        value.next_credential_id = it->get<std::string>();
+    }
+    value.saml_available = j.at("saml_available").get<bool>();
+    value.saml_idp_enabled = j.at("saml_idp_enabled").get<bool>();
+    value.slo_url = j.at("slo_url").get<std::string>();
+    value.sso_url = j.at("sso_url").get<std::string>();
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const SamlServiceProvider& value) {
+    j = nlohmann::json::object();
+    j["acs_urls"] = value.acs_urls;
+    j["allow_idp_initiated"] = value.allow_idp_initiated;
+    j["allowed_groups"] = value.allowed_groups;
+    j["attribute_mappings"] = value.attribute_mappings;
+    j["created_at"] = value.created_at;
+    j["display_name"] = value.display_name;
+    j["enabled"] = value.enabled;
+    j["encrypt_assertions"] = value.encrypt_assertions;
+    j["entity_id"] = value.entity_id;
+    j["id"] = value.id;
+    j["name_id_format"] = to_wire(value.name_id_format);
+    j["sign_responses"] = value.sign_responses;
+    if (value.slo_binding) {
+        j["slo_binding"] = to_wire(*value.slo_binding);
+    }
+    if (value.slo_url) {
+        j["slo_url"] = *value.slo_url;
+    }
+    if (value.sp_encryption_cert_pem) {
+        j["sp_encryption_cert_pem"] = *value.sp_encryption_cert_pem;
+    }
+    if (value.sp_signing_cert_pem) {
+        j["sp_signing_cert_pem"] = *value.sp_signing_cert_pem;
+    }
+    j["tenant_id"] = value.tenant_id;
+    j["updated_at"] = value.updated_at;
+    j["want_authn_requests_signed"] = value.want_authn_requests_signed;
+}
+
+void from_json(const nlohmann::json& j, SamlServiceProvider& value) {
+    value.acs_urls = j.at("acs_urls").get<std::vector<AcsEndpoint>>();
+    value.allow_idp_initiated = j.at("allow_idp_initiated").get<bool>();
+    value.allowed_groups = j.at("allowed_groups").get<std::vector<std::string>>();
+    value.attribute_mappings = j.at("attribute_mappings").get<std::vector<AttributeMapping>>();
+    value.created_at = j.at("created_at").get<std::string>();
+    value.display_name = j.at("display_name").get<std::string>();
+    value.enabled = j.at("enabled").get<bool>();
+    value.encrypt_assertions = j.at("encrypt_assertions").get<bool>();
+    value.entity_id = j.at("entity_id").get<std::string>();
+    value.id = j.at("id").get<std::string>();
+    value.name_id_format = name_id_format_from_wire(j.at("name_id_format").get<std::string>());
+    value.sign_responses = j.at("sign_responses").get<bool>();
+    if (auto it = j.find("slo_binding"); it != j.end() && !it->is_null()) {
+        value.slo_binding = saml_binding_from_wire(it->get<std::string>());
+    }
+    if (auto it = j.find("slo_url"); it != j.end() && !it->is_null()) {
+        value.slo_url = it->get<std::string>();
+    }
+    if (auto it = j.find("sp_encryption_cert_pem"); it != j.end() && !it->is_null()) {
+        value.sp_encryption_cert_pem = it->get<std::string>();
+    }
+    if (auto it = j.find("sp_signing_cert_pem"); it != j.end() && !it->is_null()) {
+        value.sp_signing_cert_pem = it->get<std::string>();
+    }
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+    value.updated_at = j.at("updated_at").get<std::string>();
+    value.want_authn_requests_signed = j.at("want_authn_requests_signed").get<bool>();
+}
+
+void to_json(nlohmann::json& j, const SamlServiceProviderInput& value) {
+    j = nlohmann::json::object();
+    j["acs_urls"] = value.acs_urls;
+    if (value.allow_idp_initiated) {
+        j["allow_idp_initiated"] = *value.allow_idp_initiated;
+    }
+    if (value.allowed_groups) {
+        j["allowed_groups"] = *value.allowed_groups;
+    }
+    if (value.attribute_mappings) {
+        j["attribute_mappings"] = *value.attribute_mappings;
+    }
+    j["display_name"] = value.display_name;
+    if (value.enabled) {
+        j["enabled"] = *value.enabled;
+    }
+    if (value.encrypt_assertions) {
+        j["encrypt_assertions"] = *value.encrypt_assertions;
+    }
+    j["entity_id"] = value.entity_id;
+    if (value.name_id_format) {
+        j["name_id_format"] = to_wire(*value.name_id_format);
+    }
+    if (value.sign_responses) {
+        j["sign_responses"] = *value.sign_responses;
+    }
+    if (value.slo_binding) {
+        j["slo_binding"] = to_wire(*value.slo_binding);
+    }
+    if (value.slo_url) {
+        j["slo_url"] = *value.slo_url;
+    }
+    if (value.sp_encryption_cert_pem) {
+        j["sp_encryption_cert_pem"] = *value.sp_encryption_cert_pem;
+    }
+    if (value.sp_signing_cert_pem) {
+        j["sp_signing_cert_pem"] = *value.sp_signing_cert_pem;
+    }
+    if (value.want_authn_requests_signed) {
+        j["want_authn_requests_signed"] = *value.want_authn_requests_signed;
+    }
+}
+
+void from_json(const nlohmann::json& j, SamlServiceProviderInput& value) {
+    value.acs_urls = j.at("acs_urls").get<std::vector<AcsEndpoint>>();
+    if (auto it = j.find("allow_idp_initiated"); it != j.end() && !it->is_null()) {
+        value.allow_idp_initiated = it->get<bool>();
+    }
+    if (auto it = j.find("allowed_groups"); it != j.end() && !it->is_null()) {
+        value.allowed_groups = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("attribute_mappings"); it != j.end() && !it->is_null()) {
+        value.attribute_mappings = it->get<std::vector<AttributeMapping>>();
+    }
+    value.display_name = j.at("display_name").get<std::string>();
+    if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
+        value.enabled = it->get<bool>();
+    }
+    if (auto it = j.find("encrypt_assertions"); it != j.end() && !it->is_null()) {
+        value.encrypt_assertions = it->get<bool>();
+    }
+    value.entity_id = j.at("entity_id").get<std::string>();
+    if (auto it = j.find("name_id_format"); it != j.end() && !it->is_null()) {
+        value.name_id_format = name_id_format_from_wire(it->get<std::string>());
+    }
+    if (auto it = j.find("sign_responses"); it != j.end() && !it->is_null()) {
+        value.sign_responses = it->get<bool>();
+    }
+    if (auto it = j.find("slo_binding"); it != j.end() && !it->is_null()) {
+        value.slo_binding = saml_binding_from_wire(it->get<std::string>());
+    }
+    if (auto it = j.find("slo_url"); it != j.end() && !it->is_null()) {
+        value.slo_url = it->get<std::string>();
+    }
+    if (auto it = j.find("sp_encryption_cert_pem"); it != j.end() && !it->is_null()) {
+        value.sp_encryption_cert_pem = it->get<std::string>();
+    }
+    if (auto it = j.find("sp_signing_cert_pem"); it != j.end() && !it->is_null()) {
+        value.sp_signing_cert_pem = it->get<std::string>();
+    }
+    if (auto it = j.find("want_authn_requests_signed"); it != j.end() && !it->is_null()) {
+        value.want_authn_requests_signed = it->get<bool>();
+    }
+}
+
+void to_json(nlohmann::json& j, const SamlSpMetadataDraft& value) {
+    j = nlohmann::json::object();
+    if (value.encryption_certificate_fingerprint) {
+        j["encryption_certificate_fingerprint"] = *value.encryption_certificate_fingerprint;
+    }
+    j["service_provider"] = value.service_provider;
+    if (value.signing_certificate_fingerprint) {
+        j["signing_certificate_fingerprint"] = *value.signing_certificate_fingerprint;
+    }
+    j["warnings"] = value.warnings;
+}
+
+void from_json(const nlohmann::json& j, SamlSpMetadataDraft& value) {
+    if (auto it = j.find("encryption_certificate_fingerprint"); it != j.end() && !it->is_null()) {
+        value.encryption_certificate_fingerprint = it->get<std::string>();
+    }
+    value.service_provider = j.at("service_provider").get<SamlServiceProviderInput>();
+    if (auto it = j.find("signing_certificate_fingerprint"); it != j.end() && !it->is_null()) {
+        value.signing_certificate_fingerprint = it->get<std::string>();
+    }
+    value.warnings = j.at("warnings").get<std::vector<std::string>>();
+}
+
+void to_json(nlohmann::json& j, const ScimReconcileAccepted& value) {
+    j = nlohmann::json::object();
+    j["status"] = value.status;
+    j["target_id"] = value.target_id;
+}
+
+void from_json(const nlohmann::json& j, ScimReconcileAccepted& value) {
+    value.status = j.at("status").get<std::string>();
+    value.target_id = j.at("target_id").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const ScimTargetAuth& value) {
+    // CONTRACT.md §31.2: an unknown `type` decodes but MUST NOT be sent. Refused here, before
+    // any request, with no part of the value in the message.
+    if (value.type != "bearer" && value.type != "oauth2_client_credentials") {
+        throw NetworkError("ScimTargetAuth: `type` must be one of `bearer`, `oauth2_client_credentials`; a variant this SDK does not know is never sent (CONTRACT.md §31.2)", "sdk_programming_error");
+    }
+    // A union is forwarded EXACTLY as received. Re-encoding from the two members this SDK
+    // models would drop every field belonging to the variant it does not model -- and the
+    // server round-trips those.
+    j = nlohmann::json::parse(value.raw, nullptr, false);
+    if (j.is_discarded() || !j.is_object()) j = nlohmann::json::object();
+    j["type"] = value.type;
+}
+
+void from_json(const nlohmann::json& j, ScimTargetAuth& value) {
+    value.type = j.at("type").get<std::string>();
+    value.raw = j.dump();
+}
+
+void to_json(nlohmann::json& j, const ScimTargetDeliveryState& value) {
+    j = nlohmann::json::object();
+    j["consecutive_failures"] = value.consecutive_failures;
+    j["dead_lettered_total"] = value.dead_lettered_total;
+    if (value.last_failure_at) {
+        j["last_failure_at"] = *value.last_failure_at;
+    }
+    if (value.last_failure_reason) {
+        j["last_failure_reason"] = *value.last_failure_reason;
+    }
+    if (value.last_reconciled_at) {
+        j["last_reconciled_at"] = *value.last_reconciled_at;
+    }
+    if (value.last_success_at) {
+        j["last_success_at"] = *value.last_success_at;
+    }
+}
+
+void from_json(const nlohmann::json& j, ScimTargetDeliveryState& value) {
+    value.consecutive_failures = j.at("consecutive_failures").get<std::int64_t>();
+    value.dead_lettered_total = j.at("dead_lettered_total").get<std::int64_t>();
+    if (auto it = j.find("last_failure_at"); it != j.end() && !it->is_null()) {
+        value.last_failure_at = it->get<std::string>();
+    }
+    if (auto it = j.find("last_failure_reason"); it != j.end() && !it->is_null()) {
+        value.last_failure_reason = it->get<std::string>();
+    }
+    if (auto it = j.find("last_reconciled_at"); it != j.end() && !it->is_null()) {
+        value.last_reconciled_at = it->get<std::string>();
+    }
+    if (auto it = j.find("last_success_at"); it != j.end() && !it->is_null()) {
+        value.last_success_at = it->get<std::string>();
+    }
+}
+
+void to_json(nlohmann::json& j, const ScimTargetScope& value) {
+    // CONTRACT.md §31.2: an unknown `type` decodes but MUST NOT be sent. Refused here, before
+    // any request, with no part of the value in the message.
+    if (value.type != "all_users" && value.type != "groups") {
+        throw NetworkError("ScimTargetScope: `type` must be one of `all_users`, `groups`; a variant this SDK does not know is never sent (CONTRACT.md §31.2)", "sdk_programming_error");
+    }
+    // A union is forwarded EXACTLY as received. Re-encoding from the two members this SDK
+    // models would drop every field belonging to the variant it does not model -- and the
+    // server round-trips those.
+    j = nlohmann::json::parse(value.raw, nullptr, false);
+    if (j.is_discarded() || !j.is_object()) j = nlohmann::json::object();
+    j["type"] = value.type;
+}
+
+void from_json(const nlohmann::json& j, ScimTargetScope& value) {
+    value.type = j.at("type").get<std::string>();
+    value.raw = j.dump();
+}
+
+void to_json(nlohmann::json& j, const ScimTargetInput& value) {
+    j = nlohmann::json::object();
+    j["auth"] = value.auth;
+    j["base_url"] = value.base_url;
+    if (value.credential) {
+        j["credential"] = detail::reveal(*value.credential);
+    }
+    if (value.deprovision) {
+        j["deprovision"] = to_wire(*value.deprovision);
+    }
+    if (value.enabled) {
+        j["enabled"] = *value.enabled;
+    }
+    j["name"] = value.name;
+    if (value.push_groups) {
+        j["push_groups"] = *value.push_groups;
+    }
+    j["scope"] = value.scope;
+    if (value.user_name_from) {
+        j["user_name_from"] = to_wire(*value.user_name_from);
+    }
+}
+
+void from_json(const nlohmann::json& j, ScimTargetInput& value) {
+    value.auth = j.at("auth").get<ScimTargetAuth>();
+    value.base_url = j.at("base_url").get<std::string>();
+    if (auto it = j.find("credential"); it != j.end() && !it->is_null()) {
+        value.credential = Sensitive<std::string>(it->get<std::string>());
+    }
+    if (auto it = j.find("deprovision"); it != j.end() && !it->is_null()) {
+        value.deprovision = deprovision_policy_from_wire(it->get<std::string>());
+    }
+    if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
+        value.enabled = it->get<bool>();
+    }
+    value.name = j.at("name").get<std::string>();
+    if (auto it = j.find("push_groups"); it != j.end() && !it->is_null()) {
+        value.push_groups = it->get<bool>();
+    }
+    value.scope = j.at("scope").get<ScimTargetScope>();
+    if (auto it = j.find("user_name_from"); it != j.end() && !it->is_null()) {
+        value.user_name_from = user_name_source_from_wire(it->get<std::string>());
+    }
+}
+
+void to_json(nlohmann::json& j, const ScimTargetResponse& value) {
+    j = nlohmann::json::object();
+    j["auth"] = value.auth;
+    j["base_url"] = value.base_url;
+    j["created_at"] = value.created_at;
+    j["deprovision"] = to_wire(value.deprovision);
+    j["enabled"] = value.enabled;
+    j["id"] = value.id;
+    j["name"] = value.name;
+    j["push_groups"] = value.push_groups;
+    j["scope"] = value.scope;
+    if (value.state) {
+        j["state"] = *value.state;
+    }
+    j["tenant_id"] = value.tenant_id;
+    j["updated_at"] = value.updated_at;
+    j["user_name_from"] = to_wire(value.user_name_from);
+}
+
+void from_json(const nlohmann::json& j, ScimTargetResponse& value) {
+    value.auth = j.at("auth").get<ScimTargetAuth>();
+    value.base_url = j.at("base_url").get<std::string>();
+    value.created_at = j.at("created_at").get<std::string>();
+    value.deprovision = deprovision_policy_from_wire(j.at("deprovision").get<std::string>());
+    value.enabled = j.at("enabled").get<bool>();
+    value.id = j.at("id").get<std::string>();
+    value.name = j.at("name").get<std::string>();
+    value.push_groups = j.at("push_groups").get<bool>();
+    value.scope = j.at("scope").get<ScimTargetScope>();
+    if (auto it = j.find("state"); it != j.end() && !it->is_null()) {
+        value.state = it->get<ScimTargetDeliveryState>();
+    }
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+    value.updated_at = j.at("updated_at").get<std::string>();
+    value.user_name_from = user_name_source_from_wire(j.at("user_name_from").get<std::string>());
+}
+
 void to_json(nlohmann::json& j, const ScimTokenResponse& value) {
     j = nlohmann::json::object();
     j["created_at"] = value.created_at;
@@ -3448,6 +4588,87 @@ void from_json(const nlohmann::json& j, SessionResponse& value) {
     }
 }
 
+void to_json(nlohmann::json& j, const SetDirectoryConfig& value) {
+    j = nlohmann::json::object();
+    j["base_dn"] = value.base_dn;
+    j["bind_dn"] = value.bind_dn;
+    if (value.bind_secret) {
+        j["bind_secret"] = detail::reveal(*value.bind_secret);
+    }
+    j["enabled"] = value.enabled;
+    if (value.group_base_dn) {
+        j["group_base_dn"] = *value.group_base_dn;
+    }
+    if (value.group_filter) {
+        j["group_filter"] = *value.group_filter;
+    }
+    if (value.group_mappings) {
+        j["group_mappings"] = *value.group_mappings;
+    }
+    if (value.group_member_attribute) {
+        j["group_member_attribute"] = *value.group_member_attribute;
+    }
+    if (value.group_nesting_depth) {
+        j["group_nesting_depth"] = *value.group_nesting_depth;
+    }
+    if (value.jit_provisioning) {
+        j["jit_provisioning"] = *value.jit_provisioning;
+    }
+    j["kind"] = to_wire(value.kind);
+    j["start_tls"] = value.start_tls;
+    if (value.sync_interval_secs) {
+        j["sync_interval_secs"] = *value.sync_interval_secs;
+    }
+    if (value.trust_anchors_pem) {
+        j["trust_anchors_pem"] = *value.trust_anchors_pem;
+    }
+    j["url"] = value.url;
+    if (value.user_attribute_map) {
+        j["user_attribute_map"] = *value.user_attribute_map;
+    }
+    j["user_filter"] = value.user_filter;
+}
+
+void from_json(const nlohmann::json& j, SetDirectoryConfig& value) {
+    value.base_dn = j.at("base_dn").get<std::string>();
+    value.bind_dn = j.at("bind_dn").get<std::string>();
+    if (auto it = j.find("bind_secret"); it != j.end() && !it->is_null()) {
+        value.bind_secret = Sensitive<std::string>(it->get<std::string>());
+    }
+    value.enabled = j.at("enabled").get<bool>();
+    if (auto it = j.find("group_base_dn"); it != j.end() && !it->is_null()) {
+        value.group_base_dn = it->get<std::string>();
+    }
+    if (auto it = j.find("group_filter"); it != j.end() && !it->is_null()) {
+        value.group_filter = it->get<std::string>();
+    }
+    if (auto it = j.find("group_mappings"); it != j.end() && !it->is_null()) {
+        value.group_mappings = it->get<std::vector<GroupMapping>>();
+    }
+    if (auto it = j.find("group_member_attribute"); it != j.end() && !it->is_null()) {
+        value.group_member_attribute = it->get<std::string>();
+    }
+    if (auto it = j.find("group_nesting_depth"); it != j.end() && !it->is_null()) {
+        value.group_nesting_depth = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("jit_provisioning"); it != j.end() && !it->is_null()) {
+        value.jit_provisioning = it->get<bool>();
+    }
+    value.kind = directory_kind_from_wire(j.at("kind").get<std::string>());
+    value.start_tls = j.at("start_tls").get<bool>();
+    if (auto it = j.find("sync_interval_secs"); it != j.end() && !it->is_null()) {
+        value.sync_interval_secs = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("trust_anchors_pem"); it != j.end() && !it->is_null()) {
+        value.trust_anchors_pem = it->get<std::vector<std::string>>();
+    }
+    value.url = j.at("url").get<std::string>();
+    if (auto it = j.find("user_attribute_map"); it != j.end() && !it->is_null()) {
+        value.user_attribute_map = it->get<UserAttributeMap>();
+    }
+    value.user_filter = j.at("user_filter").get<std::string>();
+}
+
 void to_json(nlohmann::json& j, const SetMtlsTrustAnchor& value) {
     j = nlohmann::json::object();
     j["enabled"] = value.enabled;
@@ -3536,11 +4757,17 @@ void to_json(nlohmann::json& j, const SetOrgSettings& value) {
     j["require_lowercase"] = value.require_lowercase;
     j["require_symbols"] = value.require_symbols;
     j["require_uppercase"] = value.require_uppercase;
+    if (value.saml_idp_enabled) {
+        j["saml_idp_enabled"] = *value.saml_idp_enabled;
+    }
     if (value.sensitive_scopes_enabled) {
         j["sensitive_scopes_enabled"] = *value.sensitive_scopes_enabled;
     }
     if (value.server_cert_allowed_names) {
         j["server_cert_allowed_names"] = *value.server_cert_allowed_names;
+    }
+    if (value.ssf_enabled) {
+        j["ssf_enabled"] = *value.ssf_enabled;
     }
     if (value.webauthn_user_verification) {
         j["webauthn_user_verification"] = *value.webauthn_user_verification;
@@ -3604,11 +4831,17 @@ void from_json(const nlohmann::json& j, SetOrgSettings& value) {
     value.require_lowercase = j.at("require_lowercase").get<bool>();
     value.require_symbols = j.at("require_symbols").get<bool>();
     value.require_uppercase = j.at("require_uppercase").get<bool>();
+    if (auto it = j.find("saml_idp_enabled"); it != j.end() && !it->is_null()) {
+        value.saml_idp_enabled = it->get<bool>();
+    }
     if (auto it = j.find("sensitive_scopes_enabled"); it != j.end() && !it->is_null()) {
         value.sensitive_scopes_enabled = it->get<bool>();
     }
     if (auto it = j.find("server_cert_allowed_names"); it != j.end() && !it->is_null()) {
         value.server_cert_allowed_names = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("ssf_enabled"); it != j.end() && !it->is_null()) {
+        value.ssf_enabled = it->get<bool>();
     }
     if (auto it = j.find("webauthn_user_verification"); it != j.end() && !it->is_null()) {
         value.webauthn_user_verification = it->get<std::string>();
@@ -3697,6 +4930,136 @@ void from_json(const nlohmann::json& j, SmtpConfig& value) {
     value.port = j.at("port").get<std::int64_t>();
     value.starttls = j.at("starttls").get<bool>();
     value.username = j.at("username").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const SsfStream& value) {
+    j = nlohmann::json::object();
+    j["audience"] = value.audience;
+    j["authorization_header_set"] = value.authorization_header_set;
+    j["created_at"] = value.created_at;
+    j["delivery_method"] = to_wire(value.delivery_method);
+    if (value.description) {
+        j["description"] = *value.description;
+    }
+    if (value.endpoint_url) {
+        j["endpoint_url"] = *value.endpoint_url;
+    }
+    j["events_allowed"] = value.events_allowed;
+    j["events_delivered"] = value.events_delivered;
+    j["events_requested"] = value.events_requested;
+    j["id"] = value.id;
+    if (value.last_verification_at) {
+        j["last_verification_at"] = *value.last_verification_at;
+    }
+    j["receiver_client_id"] = value.receiver_client_id;
+    j["status"] = to_wire(value.status);
+    j["status_actor"] = to_wire(value.status_actor);
+    if (value.status_reason) {
+        j["status_reason"] = *value.status_reason;
+    }
+    j["subject_format"] = to_wire(value.subject_format);
+    j["tenant_id"] = value.tenant_id;
+    j["transmitter_active"] = value.transmitter_active;
+    if (value.transmitter_inactive_reason) {
+        j["transmitter_inactive_reason"] = *value.transmitter_inactive_reason;
+    }
+    j["updated_at"] = value.updated_at;
+}
+
+void from_json(const nlohmann::json& j, SsfStream& value) {
+    value.audience = j.at("audience").get<std::string>();
+    value.authorization_header_set = j.at("authorization_header_set").get<bool>();
+    value.created_at = j.at("created_at").get<std::string>();
+    value.delivery_method = ssf_delivery_method_from_wire(j.at("delivery_method").get<std::string>());
+    if (auto it = j.find("description"); it != j.end() && !it->is_null()) {
+        value.description = it->get<std::string>();
+    }
+    if (auto it = j.find("endpoint_url"); it != j.end() && !it->is_null()) {
+        value.endpoint_url = it->get<std::string>();
+    }
+    value.events_allowed = j.at("events_allowed").get<std::vector<SsfEventType>>();
+    value.events_delivered = j.at("events_delivered").get<std::vector<SsfEventType>>();
+    value.events_requested = j.at("events_requested").get<std::vector<SsfEventType>>();
+    value.id = j.at("id").get<std::string>();
+    if (auto it = j.find("last_verification_at"); it != j.end() && !it->is_null()) {
+        value.last_verification_at = it->get<std::string>();
+    }
+    value.receiver_client_id = j.at("receiver_client_id").get<std::string>();
+    value.status = ssf_stream_status_from_wire(j.at("status").get<std::string>());
+    value.status_actor = ssf_status_actor_from_wire(j.at("status_actor").get<std::string>());
+    if (auto it = j.find("status_reason"); it != j.end() && !it->is_null()) {
+        value.status_reason = it->get<std::string>();
+    }
+    value.subject_format = ssf_subject_format_from_wire(j.at("subject_format").get<std::string>());
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+    value.transmitter_active = j.at("transmitter_active").get<bool>();
+    if (auto it = j.find("transmitter_inactive_reason"); it != j.end() && !it->is_null()) {
+        value.transmitter_inactive_reason = it->get<std::string>();
+    }
+    value.updated_at = j.at("updated_at").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const SsfStreamInput& value) {
+    j = nlohmann::json::object();
+    j["audience"] = value.audience;
+    if (value.authorization_header) {
+        j["authorization_header"] = detail::reveal(*value.authorization_header);
+    }
+    if (value.clear_authorization_header) {
+        j["clear_authorization_header"] = *value.clear_authorization_header;
+    }
+    j["delivery_method"] = to_wire(value.delivery_method);
+    if (value.description) {
+        j["description"] = *value.description;
+    }
+    if (value.endpoint_url) {
+        j["endpoint_url"] = *value.endpoint_url;
+    }
+    j["events_allowed"] = value.events_allowed;
+    if (value.events_requested) {
+        j["events_requested"] = *value.events_requested;
+    }
+    j["receiver_client_id"] = value.receiver_client_id;
+    if (value.status) {
+        j["status"] = to_wire(*value.status);
+    }
+    if (value.status_reason) {
+        j["status_reason"] = *value.status_reason;
+    }
+    if (value.subject_format) {
+        j["subject_format"] = to_wire(*value.subject_format);
+    }
+}
+
+void from_json(const nlohmann::json& j, SsfStreamInput& value) {
+    value.audience = j.at("audience").get<std::string>();
+    if (auto it = j.find("authorization_header"); it != j.end() && !it->is_null()) {
+        value.authorization_header = Sensitive<std::string>(it->get<std::string>());
+    }
+    if (auto it = j.find("clear_authorization_header"); it != j.end() && !it->is_null()) {
+        value.clear_authorization_header = it->get<bool>();
+    }
+    value.delivery_method = ssf_delivery_method_from_wire(j.at("delivery_method").get<std::string>());
+    if (auto it = j.find("description"); it != j.end() && !it->is_null()) {
+        value.description = it->get<std::string>();
+    }
+    if (auto it = j.find("endpoint_url"); it != j.end() && !it->is_null()) {
+        value.endpoint_url = it->get<std::string>();
+    }
+    value.events_allowed = j.at("events_allowed").get<std::vector<SsfEventType>>();
+    if (auto it = j.find("events_requested"); it != j.end() && !it->is_null()) {
+        value.events_requested = it->get<std::vector<SsfEventType>>();
+    }
+    value.receiver_client_id = j.at("receiver_client_id").get<std::string>();
+    if (auto it = j.find("status"); it != j.end() && !it->is_null()) {
+        value.status = ssf_stream_status_from_wire(it->get<std::string>());
+    }
+    if (auto it = j.find("status_reason"); it != j.end() && !it->is_null()) {
+        value.status_reason = it->get<std::string>();
+    }
+    if (auto it = j.find("subject_format"); it != j.end() && !it->is_null()) {
+        value.subject_format = ssf_subject_format_from_wire(it->get<std::string>());
+    }
 }
 
 void to_json(nlohmann::json& j, const Tenant& value) {
@@ -3826,11 +5189,17 @@ void to_json(nlohmann::json& j, const TenantSettingsOverride& value) {
     if (value.require_uppercase) {
         j["require_uppercase"] = *value.require_uppercase;
     }
+    if (value.saml_idp_enabled) {
+        j["saml_idp_enabled"] = *value.saml_idp_enabled;
+    }
     if (value.sensitive_scopes_enabled) {
         j["sensitive_scopes_enabled"] = *value.sensitive_scopes_enabled;
     }
     if (value.server_cert_allowed_names) {
         j["server_cert_allowed_names"] = *value.server_cert_allowed_names;
+    }
+    if (value.ssf_enabled) {
+        j["ssf_enabled"] = *value.ssf_enabled;
     }
     if (value.webauthn_user_verification) {
         j["webauthn_user_verification"] = *value.webauthn_user_verification;
@@ -3934,14 +5303,129 @@ void from_json(const nlohmann::json& j, TenantSettingsOverride& value) {
     if (auto it = j.find("require_uppercase"); it != j.end() && !it->is_null()) {
         value.require_uppercase = it->get<bool>();
     }
+    if (auto it = j.find("saml_idp_enabled"); it != j.end() && !it->is_null()) {
+        value.saml_idp_enabled = it->get<bool>();
+    }
     if (auto it = j.find("sensitive_scopes_enabled"); it != j.end() && !it->is_null()) {
         value.sensitive_scopes_enabled = it->get<bool>();
     }
     if (auto it = j.find("server_cert_allowed_names"); it != j.end() && !it->is_null()) {
         value.server_cert_allowed_names = it->get<std::vector<std::string>>();
     }
+    if (auto it = j.find("ssf_enabled"); it != j.end() && !it->is_null()) {
+        value.ssf_enabled = it->get<bool>();
+    }
     if (auto it = j.find("webauthn_user_verification"); it != j.end() && !it->is_null()) {
         value.webauthn_user_verification = it->get<std::string>();
+    }
+}
+
+void to_json(nlohmann::json& j, const UpdateDirectoryConfig& value) {
+    j = nlohmann::json::object();
+    if (value.base_dn) {
+        j["base_dn"] = *value.base_dn;
+    }
+    if (value.bind_dn) {
+        j["bind_dn"] = *value.bind_dn;
+    }
+    if (value.bind_secret) {
+        j["bind_secret"] = detail::reveal(*value.bind_secret);
+    }
+    if (value.enabled) {
+        j["enabled"] = *value.enabled;
+    }
+    if (value.group_base_dn) {
+        j["group_base_dn"] = *value.group_base_dn;
+    }
+    if (value.group_filter) {
+        j["group_filter"] = *value.group_filter;
+    }
+    if (value.group_mappings) {
+        j["group_mappings"] = *value.group_mappings;
+    }
+    if (value.group_member_attribute) {
+        j["group_member_attribute"] = *value.group_member_attribute;
+    }
+    if (value.group_nesting_depth) {
+        j["group_nesting_depth"] = *value.group_nesting_depth;
+    }
+    if (value.jit_provisioning) {
+        j["jit_provisioning"] = *value.jit_provisioning;
+    }
+    if (value.kind) {
+        j["kind"] = to_wire(*value.kind);
+    }
+    if (value.start_tls) {
+        j["start_tls"] = *value.start_tls;
+    }
+    if (value.sync_interval_secs) {
+        j["sync_interval_secs"] = *value.sync_interval_secs;
+    }
+    if (value.trust_anchors_pem) {
+        j["trust_anchors_pem"] = *value.trust_anchors_pem;
+    }
+    if (value.url) {
+        j["url"] = *value.url;
+    }
+    if (value.user_attribute_map) {
+        j["user_attribute_map"] = *value.user_attribute_map;
+    }
+    if (value.user_filter) {
+        j["user_filter"] = *value.user_filter;
+    }
+}
+
+void from_json(const nlohmann::json& j, UpdateDirectoryConfig& value) {
+    if (auto it = j.find("base_dn"); it != j.end() && !it->is_null()) {
+        value.base_dn = it->get<std::string>();
+    }
+    if (auto it = j.find("bind_dn"); it != j.end() && !it->is_null()) {
+        value.bind_dn = it->get<std::string>();
+    }
+    if (auto it = j.find("bind_secret"); it != j.end() && !it->is_null()) {
+        value.bind_secret = Sensitive<std::string>(it->get<std::string>());
+    }
+    if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
+        value.enabled = it->get<bool>();
+    }
+    if (auto it = j.find("group_base_dn"); it != j.end() && !it->is_null()) {
+        value.group_base_dn = it->get<std::string>();
+    }
+    if (auto it = j.find("group_filter"); it != j.end() && !it->is_null()) {
+        value.group_filter = it->get<std::string>();
+    }
+    if (auto it = j.find("group_mappings"); it != j.end() && !it->is_null()) {
+        value.group_mappings = it->get<std::vector<GroupMapping>>();
+    }
+    if (auto it = j.find("group_member_attribute"); it != j.end() && !it->is_null()) {
+        value.group_member_attribute = it->get<std::string>();
+    }
+    if (auto it = j.find("group_nesting_depth"); it != j.end() && !it->is_null()) {
+        value.group_nesting_depth = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("jit_provisioning"); it != j.end() && !it->is_null()) {
+        value.jit_provisioning = it->get<bool>();
+    }
+    if (auto it = j.find("kind"); it != j.end() && !it->is_null()) {
+        value.kind = directory_kind_from_wire(it->get<std::string>());
+    }
+    if (auto it = j.find("start_tls"); it != j.end() && !it->is_null()) {
+        value.start_tls = it->get<bool>();
+    }
+    if (auto it = j.find("sync_interval_secs"); it != j.end() && !it->is_null()) {
+        value.sync_interval_secs = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("trust_anchors_pem"); it != j.end() && !it->is_null()) {
+        value.trust_anchors_pem = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("url"); it != j.end() && !it->is_null()) {
+        value.url = it->get<std::string>();
+    }
+    if (auto it = j.find("user_attribute_map"); it != j.end() && !it->is_null()) {
+        value.user_attribute_map = it->get<UserAttributeMap>();
+    }
+    if (auto it = j.find("user_filter"); it != j.end() && !it->is_null()) {
+        value.user_filter = it->get<std::string>();
     }
 }
 
@@ -4144,8 +5628,20 @@ void to_json(nlohmann::json& j, const UpdateOAuth2ClientRequest& value) {
     if (value.authn_request_params) {
         j["authn_request_params"] = to_wire(*value.authn_request_params);
     }
+    if (value.backchannel_authentication_request_signing_alg) {
+        j["backchannel_authentication_request_signing_alg"] = *value.backchannel_authentication_request_signing_alg;
+    }
+    if (value.backchannel_client_notification_endpoint) {
+        j["backchannel_client_notification_endpoint"] = *value.backchannel_client_notification_endpoint;
+    }
     if (value.backchannel_logout_uri) {
         j["backchannel_logout_uri"] = *value.backchannel_logout_uri;
+    }
+    if (value.backchannel_token_delivery_mode) {
+        j["backchannel_token_delivery_mode"] = *value.backchannel_token_delivery_mode;
+    }
+    if (value.backchannel_user_code_parameter) {
+        j["backchannel_user_code_parameter"] = *value.backchannel_user_code_parameter;
     }
     if (value.browser_sso) {
         j["browser_sso"] = *value.browser_sso;
@@ -4210,8 +5706,20 @@ void from_json(const nlohmann::json& j, UpdateOAuth2ClientRequest& value) {
     if (auto it = j.find("authn_request_params"); it != j.end() && !it->is_null()) {
         value.authn_request_params = authn_request_params_mode_from_wire(it->get<std::string>());
     }
+    if (auto it = j.find("backchannel_authentication_request_signing_alg"); it != j.end() && !it->is_null()) {
+        value.backchannel_authentication_request_signing_alg = it->get<std::string>();
+    }
+    if (auto it = j.find("backchannel_client_notification_endpoint"); it != j.end() && !it->is_null()) {
+        value.backchannel_client_notification_endpoint = it->get<std::string>();
+    }
     if (auto it = j.find("backchannel_logout_uri"); it != j.end() && !it->is_null()) {
         value.backchannel_logout_uri = it->get<std::string>();
+    }
+    if (auto it = j.find("backchannel_token_delivery_mode"); it != j.end() && !it->is_null()) {
+        value.backchannel_token_delivery_mode = it->get<std::string>();
+    }
+    if (auto it = j.find("backchannel_user_code_parameter"); it != j.end() && !it->is_null()) {
+        value.backchannel_user_code_parameter = it->get<bool>();
     }
     if (auto it = j.find("browser_sso"); it != j.end() && !it->is_null()) {
         value.browser_sso = it->get<bool>();

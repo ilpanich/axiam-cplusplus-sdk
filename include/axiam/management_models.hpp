@@ -83,6 +83,42 @@ std::string to_wire(AttestationMode value);
 /// `switch` over this enum needs an `Unknown` arm.
 AttestationMode attestation_mode_from_wire(const std::string& value);
 
+/// Where an attribute's value comes from.
+///
+/// Every variant has a real source today; a variant with none (a telephone number the OIDC
+/// `phone` scope gates behind its own consent, say) is deliberately absent rather than mapped
+/// to an empty value.
+enum class AttributeSource {
+    Username,  ///< Wire value `username`.
+    Email,  ///< Wire value `email`.
+    DisplayName,  ///< Wire value `display_name`.
+    GivenName,  ///< Wire value `given_name`.
+    FamilyName,  ///< Wire value `family_name`.
+    Groups,  ///< Wire value `groups`.
+    Roles,  ///< Wire value `roles`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a AttributeSource.
+///
+/// `AttributeSource::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(AttributeSource value);
+
+/// Parse a wire value into a AttributeSource.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `AttributeSource::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+AttributeSource attribute_source_from_wire(const std::string& value);
+
 /// The `AuditOutcome` enumeration from the server's OpenAPI document.
 enum class AuditOutcome {
     Success,  ///< Wire value `Success`.
@@ -243,6 +279,71 @@ std::string to_wire(CertificationLevel value);
 /// `switch` over this enum needs an `Unknown` arm.
 CertificationLevel certification_level_from_wire(const std::string& value);
 
+/// How a CIBA client learns that a request has been decided (CIBA Core §5).
+///
+/// `push` is deliberately absent: AXIAM does not offer it, and the FAPI-CIBA profile forbids it
+/// — push delivers the tokens themselves to a client endpoint, which makes the notification
+/// endpoint a token sink.
+enum class CibaDeliveryMode {
+    Poll,  ///< Wire value `poll`.
+    Ping,  ///< Wire value `ping`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a CibaDeliveryMode.
+///
+/// `CibaDeliveryMode::Unknown` spells as the empty string, which no server value is: carrying
+/// an unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(CibaDeliveryMode value);
+
+/// Parse a wire value into a CibaDeliveryMode.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `CibaDeliveryMode::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+CibaDeliveryMode ciba_delivery_mode_from_wire(const std::string& value);
+
+/// The JWS algorithm a CIBA client signs its authentication requests with (CIBA Core §4
+/// `backchannel_authentication_request_signing_alg`, §7.1.1).
+///
+/// Exactly the three algorithms AXIAM verifies on any client-signed JWT
+/// (`axiam_oauth2::jose::PERMITTED_ALGORITHMS`): FAPI 2.0 §5.3.1.1's list. A registration
+/// naming anything else — `RS256`, `HS256`, `none` — is refused rather than stored, so no row
+/// can hold an algorithm the verifier would not honour (D-61).
+enum class CibaRequestSigningAlg {
+    PS256,  ///< Wire value `PS256`.
+    ES256,  ///< Wire value `ES256`.
+    EdDSA,  ///< Wire value `EdDSA`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a CibaRequestSigningAlg.
+///
+/// `CibaRequestSigningAlg::Unknown` spells as the empty string, which no server value is:
+/// carrying an unrecognised value back into an update is refused by the server rather than
+/// written as a spelling it never used.
+std::string to_wire(CibaRequestSigningAlg value);
+
+/// Parse a wire value into a CibaRequestSigningAlg.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `CibaRequestSigningAlg::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+CibaRequestSigningAlg ciba_request_signing_alg_from_wire(const std::string& value);
+
 /// How a client proves its identity at the token endpoint (RFC 8705 §2, OIDC Core §9 naming).
 ///
 /// Only the methods AXIAM actually implements are representable. `None` — the public-client
@@ -320,6 +421,66 @@ std::string to_wire(ClientProfile value);
 /// turns a new server state into a wrong one, and on this surface these values gate access. A
 /// `switch` over this enum needs an `Unknown` arm.
 ClientProfile client_profile_from_wire(const std::string& value);
+
+/// What happens downstream to a user who falls out of scope or is no longer active. Erasure
+/// always deletes, whatever this says.
+enum class DeprovisionPolicy {
+    Deactivate,  ///< Wire value `deactivate`.
+    Delete_,  ///< Wire value `delete`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a DeprovisionPolicy.
+///
+/// `DeprovisionPolicy::Unknown` spells as the empty string, which no server value is: carrying
+/// an unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(DeprovisionPolicy value);
+
+/// Parse a wire value into a DeprovisionPolicy.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `DeprovisionPolicy::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+DeprovisionPolicy deprovision_policy_from_wire(const std::string& value);
+
+/// Which kind of directory server a configuration points at.
+///
+/// It drives **defaults only**: the external-id attribute, the group-membership strategy and
+/// the change attribute the sync job reads. Every one of them is still an explicit, editable
+/// field of the configuration (or, for the strategy and change attribute, derived from this
+/// value at the point of use); nothing about the kind changes what is *allowed*.
+enum class DirectoryKind {
+    OpenLdap,  ///< Wire value `open_ldap`.
+    ActiveDirectory,  ///< Wire value `active_directory`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a DirectoryKind.
+///
+/// `DirectoryKind::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(DirectoryKind value);
+
+/// Parse a wire value into a DirectoryKind.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `DirectoryKind::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+DirectoryKind directory_kind_from_wire(const std::string& value);
 
 /// What the server does when an interceptor does not produce a usable reply — timeout,
 /// transport failure, bad signature, stale nonce, or a patch the allow-list rejects.
@@ -446,6 +607,33 @@ std::string to_wire(MfaMethodType value);
 /// `switch` over this enum needs an `Unknown` arm.
 MfaMethodType mfa_method_type_from_wire(const std::string& value);
 
+/// How the assertion's `NameID` is formed (per service provider).
+enum class NameIdFormat {
+    Persistent,  ///< Wire value `persistent`.
+    EmailAddress,  ///< Wire value `email_address`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a NameIdFormat.
+///
+/// `NameIdFormat::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(NameIdFormat value);
+
+/// Parse a wire value into a NameIdFormat.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `NameIdFormat::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+NameIdFormat name_id_format_from_wire(const std::string& value);
+
 /// Events that can trigger an admin notification.
 enum class NotificationEventType {
     LoginFailure,  ///< Wire value `login_failure`.
@@ -465,6 +653,7 @@ enum class NotificationEventType {
     UserUpdated,  ///< Wire value `user_updated`.
     ServiceAccountCreated,  ///< Wire value `service_account_created`.
     ServiceAccountDeleted,  ///< Wire value `service_account_deleted`.
+    ScimDeliveryFailed,  ///< Wire value `scim_delivery_failed`.
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
@@ -638,6 +827,92 @@ std::string to_wire(ReactorMode value);
 /// `switch` over this enum needs an `Unknown` arm.
 ReactorMode reactor_mode_from_wire(const std::string& value);
 
+/// A SAML 2.0 protocol binding (SAML Bindings §3).
+///
+/// The response binding for Web Browser SSO is always [`Self::HttpPost`], but the enum keeps
+/// both because SP metadata carries both, and an `slo_url` may use either.
+enum class SamlBinding {
+    HttpPost,  ///< Wire value `http_post`.
+    HttpRedirect,  ///< Wire value `http_redirect`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a SamlBinding.
+///
+/// `SamlBinding::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(SamlBinding value);
+
+/// Parse a wire value into a SamlBinding.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `SamlBinding::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+SamlBinding saml_binding_from_wire(const std::string& value);
+
+/// Where a signing credential is in its life. An open set: an SDK decodes a value it does not
+/// know without failing.
+enum class SamlIdpCredentialStatus {
+    Active,  ///< Wire value `active`.
+    Next,  ///< Wire value `next`.
+    Retired,  ///< Wire value `retired`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a SamlIdpCredentialStatus.
+///
+/// `SamlIdpCredentialStatus::Unknown` spells as the empty string, which no server value is:
+/// carrying an unrecognised value back into an update is refused by the server rather than
+/// written as a spelling it never used.
+std::string to_wire(SamlIdpCredentialStatus value);
+
+/// Parse a wire value into a SamlIdpCredentialStatus.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `SamlIdpCredentialStatus::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1).
+/// Throwing fails the WHOLE response, so one field of one record would take down the page it
+/// arrived on -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+SamlIdpCredentialStatus saml_idp_credential_status_from_wire(const std::string& value);
+
+/// Which slot a credential is issued into.
+enum class SamlIdpSlot {
+    Active,  ///< Wire value `active`.
+    Next,  ///< Wire value `next`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a SamlIdpSlot.
+///
+/// `SamlIdpSlot::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(SamlIdpSlot value);
+
+/// Parse a wire value into a SamlIdpSlot.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `SamlIdpSlot::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+SamlIdpSlot saml_idp_slot_from_wire(const std::string& value);
+
 /// Why a token is or is not currently usable — for display only. The authentication path never
 /// surfaces this distinction on the wire.
 enum class ScimTokenStatus {
@@ -693,6 +968,150 @@ std::string to_wire(SettingsScope value);
 /// turns a new server state into a wrong one, and on this surface these values gate access. A
 /// `switch` over this enum needs an `Unknown` arm.
 SettingsScope settings_scope_from_wire(const std::string& value);
+
+/// How SETs reach the receiver.
+enum class SsfDeliveryMethod {
+    Push,  ///< Wire value `push`.
+    Poll,  ///< Wire value `poll`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a SsfDeliveryMethod.
+///
+/// `SsfDeliveryMethod::Unknown` spells as the empty string, which no server value is: carrying
+/// an unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(SsfDeliveryMethod value);
+
+/// Parse a wire value into a SsfDeliveryMethod.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `SsfDeliveryMethod::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+SsfDeliveryMethod ssf_delivery_method_from_wire(const std::string& value);
+
+/// The six event types AXIAM transmits (G-5).
+///
+/// Stored and sent as their event-type URIs; [`Self::ALL`] is the canonical order every list
+/// AXIAM returns is sorted in.
+enum class SsfEventType {
+    SessionRevoked,  ///< Wire value `https://schemas.openid.net/secevent/caep/event-type/session-revoked`.
+    CredentialChange,  ///< Wire value `https://schemas.openid.net/secevent/caep/event-type/credential-change`.
+    AssuranceLevelChange,  ///< Wire value `https://schemas.openid.net/secevent/caep/event-type/assurance-level-change`.
+    AccountDisabled,  ///< Wire value `https://schemas.openid.net/secevent/risc/event-type/account-disabled`.
+    AccountEnabled,  ///< Wire value `https://schemas.openid.net/secevent/risc/event-type/account-enabled`.
+    AccountPurged,  ///< Wire value `https://schemas.openid.net/secevent/risc/event-type/account-purged`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a SsfEventType.
+///
+/// `SsfEventType::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(SsfEventType value);
+
+/// Parse a wire value into a SsfEventType.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `SsfEventType::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
+/// WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+SsfEventType ssf_event_type_from_wire(const std::string& value);
+
+/// Who set a stream's current status. A status an administrator set to anything but `enabled`
+/// cannot be changed by the receiver (D-51).
+enum class SsfStatusActor {
+    Admin,  ///< Wire value `admin`.
+    Receiver,  ///< Wire value `receiver`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a SsfStatusActor.
+///
+/// `SsfStatusActor::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(SsfStatusActor value);
+
+/// Parse a wire value into a SsfStatusActor.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `SsfStatusActor::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+SsfStatusActor ssf_status_actor_from_wire(const std::string& value);
+
+/// A stream's SSF status (SSF 1.0 §8.1.2), with AXIAM's meaning pinned by D-51.
+enum class SsfStreamStatus {
+    Enabled,  ///< Wire value `enabled`.
+    Paused,  ///< Wire value `paused`.
+    Disabled,  ///< Wire value `disabled`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a SsfStreamStatus.
+///
+/// `SsfStreamStatus::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(SsfStreamStatus value);
+
+/// Parse a wire value into a SsfStreamStatus.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `SsfStreamStatus::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+SsfStreamStatus ssf_stream_status_from_wire(const std::string& value);
+
+/// Which RFC 9493 subject identifier names the user in the SETs of a stream (D-46).
+enum class SsfSubjectFormat {
+    IssSub,  ///< Wire value `iss_sub`.
+    Email,  ///< Wire value `email`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a SsfSubjectFormat.
+///
+/// `SsfSubjectFormat::Unknown` spells as the empty string, which no server value is: carrying
+/// an unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(SsfSubjectFormat value);
+
+/// Parse a wire value into a SsfSubjectFormat.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `SsfSubjectFormat::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+SsfSubjectFormat ssf_subject_format_from_wire(const std::string& value);
 
 /// What a tenant *is*, as distinct from what state it is in.
 ///
@@ -784,6 +1203,34 @@ std::string to_wire(UnknownAaguidAction value);
 /// `switch` over this enum needs an `Unknown` arm.
 UnknownAaguidAction unknown_aaguid_action_from_wire(const std::string& value);
 
+/// Which AXIAM attribute becomes the downstream `userName`. The mapping is a fixed attribute
+/// set, not a mapping language (D-57).
+enum class UserNameSource {
+    Username,  ///< Wire value `username`.
+    Email,  ///< Wire value `email`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a UserNameSource.
+///
+/// `UserNameSource::Unknown` spells as the empty string, which no server value is: carrying an
+/// unrecognised value back into an update is refused by the server rather than written as a
+/// spelling it never used.
+std::string to_wire(UserNameSource value);
+
+/// Parse a wire value into a UserNameSource.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `UserNameSource::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails
+/// the WHOLE response, so one field of one record would take down the page it arrived on --
+/// including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+UserNameSource user_name_source_from_wire(const std::string& value);
+
 /// The `UserStatus` enumeration from the server's OpenAPI document.
 enum class UserStatus {
     Active,  ///< Wire value `Active`.
@@ -817,12 +1264,14 @@ UserStatus user_status_from_wire(const std::string& value);
 
 // Forward declarations. The spec's types reference each other freely and in both directions, so
 // every struct is named before any is defined.
+struct AcsEndpoint;
 struct AddMemberRequest;
 struct AddServiceAccountMemberRequest;
 struct ApiProviderConfig;
 struct AssignRoleToGroupRequest;
 struct AssignRoleToServiceAccountRequest;
 struct AssignRoleToUserRequest;
+struct AttributeMapping;
 struct AuditLogEntry;
 struct BindCertificate;
 struct CaCertificate;
@@ -852,6 +1301,9 @@ struct CreateServiceAccountRequest;
 struct CreateTenantRequest;
 struct CreateUserRequest;
 struct CreateWebhookRequest;
+struct DirectoryConfig;
+struct DirectoryLinkResult;
+struct DirectorySyncStatus;
 struct EmailConfig;
 struct EmailConfigOverride;
 struct EmailTestResult;
@@ -867,8 +1319,11 @@ struct GrantPermissionRequest;
 struct GrantScopeConsent;
 struct GrantedScope;
 struct Group;
+struct GroupMapping;
 struct HealthResponse;
 struct ImportCaCertificateRequest;
+struct IssueSamlIdpCredential;
+struct LinkDirectoryAccount;
 struct LockoutPolicy;
 struct MdsRefreshOutcome;
 struct MdsStatusResponse;
@@ -888,6 +1343,7 @@ struct OidcPolicy;
 struct OpaqueEnrollment;
 struct OpaquePolicy;
 struct Organization;
+struct ParseSamlSpMetadata;
 struct PasswordPolicy;
 struct Permission;
 struct PgpKey;
@@ -907,12 +1363,25 @@ struct RoleGroupAssignment;
 struct RoleServiceAccountAssignment;
 struct RoleUserAssignment;
 struct RotateSecretResponse;
+struct SamlIdpCredential;
+struct SamlIdpCredentialPromotion;
+struct SamlIdpInfo;
+struct SamlServiceProvider;
+struct SamlServiceProviderInput;
+struct SamlSpMetadataDraft;
+struct ScimReconcileAccepted;
+struct ScimTargetAuth;
+struct ScimTargetDeliveryState;
+struct ScimTargetInput;
+struct ScimTargetResponse;
+struct ScimTargetScope;
 struct ScimTokenResponse;
 struct Scope;
 struct SecuritySettings;
 struct ServiceAccountCreatedResponse;
 struct ServiceAccountResponse;
 struct SessionResponse;
+struct SetDirectoryConfig;
 struct SetMtlsTrustAnchor;
 struct SetOrgEmailConfig;
 struct SetOrgSettings;
@@ -921,12 +1390,15 @@ struct SignCertificateCsrRequest;
 struct SignIntermediateCsrRequest;
 struct SignedAuditBatch;
 struct SmtpConfig;
+struct SsfStream;
+struct SsfStreamInput;
 struct SubjectAltName;
 struct Tenant;
 struct TenantSettingsOverride;
 struct TokenExchangeTrustRequest;
 struct TokenExchangeTrustResponse;
 struct TokenPolicy;
+struct UpdateDirectoryConfig;
 struct UpdateFederationConfigRequest;
 struct UpdateGroup;
 struct UpdateNotificationRuleRequest;
@@ -941,10 +1413,27 @@ struct UpdateServiceAccount;
 struct UpdateTenant;
 struct UpdateUserRequest;
 struct UpdateWebhookRequest;
+struct UserAttributeMap;
 struct UserResponse;
 struct WebauthnAttestationPolicy;
 struct WebauthnPolicy;
 struct WebhookResponse;
+
+/// One `AssertionConsumerService` endpoint of a service provider. The list of these is an
+/// **allow-list**, checked the way OAuth2 redirect URIs are: an `AuthnRequest` naming an ACS
+/// URL is honoured only when the URL equals one registered here, byte for byte. No globs, no
+/// prefix match.
+struct AcsEndpoint {
+    /// The binding the endpoint accepts.
+    SamlBinding binding;
+    /// The `index` an `AuthnRequest` may use instead of a URL. Unique per SP.
+    std::int64_t index;
+    /// Whether this is the SP's default endpoint. At most one is; when none is marked, the
+    /// first listed is the default (SAML Metadata §2.4.4.1). Optional.
+    std::optional<bool> is_default = std::nullopt;
+    /// The endpoint URL.
+    std::string url;
+};
 
 /// The `AddMemberRequest` schema from the server's OpenAPI document.
 struct AddMemberRequest {
@@ -1051,6 +1540,18 @@ struct AssignRoleToUserRequest {
     /// `std::nullopt` both when the server omitted the field and when it explicitly sent
     /// `true`; EITHER WAY that means inherits. Read this, never `inherit.value_or(false)`.
     bool inherits() const noexcept { return inherit.value_or(true); }
+};
+
+/// One entry of an SP's attribute mapping table.
+struct AttributeMapping {
+    /// The `NameFormat`, one of [`ATTRIBUTE_NAME_FORMATS`]. `None` leaves the attribute
+    /// unqualified (`unspecified`). Optional.
+    std::optional<std::string> name_format = std::nullopt;
+    /// The `Name` of the emitted `<saml:Attribute>`. Unique within one SP, compared exactly
+    /// (SAML attribute names are case-sensitive).
+    std::string saml_name;
+    /// Where the value comes from.
+    AttributeSource source;
 };
 
 /// The `AuditLogEntry` schema from the server's OpenAPI document.
@@ -1532,9 +2033,26 @@ struct CreateOAuth2ClientRequest {
     /// and the authorization endpoint — the two are different answers to the same question
     /// about what a request from this client means. Optional.
     std::optional<AuthnRequestParamsMode> authn_request_params = std::nullopt;
+    /// G-7 — CIBA Core §4: `PS256`, `ES256` or `EdDSA`. When set, every backchannel
+    /// authentication request must be a signed `request` JWT under this algorithm, verified
+    /// against `jwks` or `jwks_uri` (exactly one is required; an inline `jwks` must hold a key
+    /// of the algorithm). Required for a `fapi2` client holding the CIBA grant. Optional.
+    std::optional<std::string> backchannel_authentication_request_signing_alg = std::nullopt;
+    /// G-7 — CIBA Core §4: where a ping-mode client is notified. Required in ping mode and
+    /// refused in poll mode; an absolute `https` URL held to the webhook address policy (no
+    /// credentials, no fragment, no private, loopback or internal host). Optional.
+    std::optional<std::string> backchannel_client_notification_endpoint = std::nullopt;
     /// B5 — where OIDC back-channel logout tokens are delivered. Omit for a client that does
     /// not participate. Optional.
     std::optional<std::string> backchannel_logout_uri = std::nullopt;
+    /// G-7 — CIBA Core §4 `backchannel_token_delivery_mode`: `poll` or `ping`. Required when
+    /// `grant_types` holds `urn:openid:params:grant-type:ciba`, refused otherwise; `push` is
+    /// not offered. A CIBA client must be confidential; a `fapi2` one must also register
+    /// `backchannel_authentication_request_signing_alg`. Optional.
+    std::optional<std::string> backchannel_token_delivery_mode = std::nullopt;
+    /// G-7 — CIBA Core §4. `true` is **refused**: this server holds no user code to verify.
+    /// Optional.
+    std::optional<bool> backchannel_user_code_parameter = std::nullopt;
     /// X7.3 — whether an unauthenticated authorization request from this client may be answered
     /// with a redirect to the login page rather than the `401` AXIAM answers today. Accepted
     /// and stored, but **nothing reads it yet**: the login hop it gates is a later wave. Unlike
@@ -1826,6 +2344,119 @@ struct CreateWebhookRequest {
     Sensitive<std::string> secret;
     /// The HTTPS URL to deliver events to.
     std::string url;
+};
+
+/// One row of the group-mapping table (G-3, T23.3.4, D-30): a directory group, named by its
+/// distinguished name, and the AXIAM group a member of it is put into. **The table is the only
+/// way a directory group reaches an AXIAM group.** There is no match by name, no prefix or
+/// wildcard, and no AXIAM group is ever created from a directory one: a directory administrator
+/// who names a group `admins` gains nothing unless a tenant administrator mapped it here. The
+/// DN is stored as the administrator typed it and compared after RFC 4514 normalisation
+/// (`axiam_directory::dn`), so `CN=Staff, OU=Groups` and `cn=staff,ou=groups` are the same row.
+/// One DN may map to several AXIAM groups; the same (DN, group) pair twice is refused as
+/// redundant.
+struct GroupMapping {
+    /// The directory group's distinguished name.
+    std::string directory_group_dn;
+    /// The AXIAM group of the same tenant a member of that directory group is put into. Checked
+    /// to exist in the tenant when the configuration is written.
+    std::string group_id;
+};
+
+/// Which directory attribute feeds each AXIAM user field.
+struct UserAttributeMap {
+    /// The attribute holding the human-readable name.
+    std::string display_name;
+    /// The attribute holding the e-mail address.
+    std::string email;
+    /// The attribute holding the immutable entry identifier (`entryUUID`, `objectGUID`).
+    std::string external_id;
+    /// The attribute holding the login name (`uid`, `sAMAccountName`).
+    std::string username;
+};
+
+/// A tenant's directory configuration, as stored and as read back. Carries no secret: see the
+/// module documentation.
+struct DirectoryConfig {
+    /// Where users are searched for.
+    std::string base_dn;
+    /// The service account AXIAM binds as to search. It should hold read-only rights: AXIAM
+    /// never writes to a directory.
+    std::string bind_dn;
+    /// When the row was created.
+    std::string created_at;
+    /// Whether the directory is used for sign-in and sync.
+    bool enabled;
+    /// Where groups are searched for (reverse-`member` lookups, group sync). Optional.
+    std::optional<std::string> group_base_dn = std::nullopt;
+    /// Restricts which entries under [`Self::group_base_dn`] are groups. Optional.
+    std::optional<std::string> group_filter = std::nullopt;
+    /// The group-mapping table (D-30): which directory groups put a user into which AXIAM
+    /// groups. Empty means no directory group maps to anything, and a sign-in then removes
+    /// every directory-sourced membership the user held.
+    std::vector<GroupMapping> group_mappings;
+    /// `memberOf` (user-side, AD) or `member` (group-side, OpenLDAP).
+    std::string group_member_attribute;
+    /// How many levels of nested groups are followed, `0..=10`.
+    std::int64_t group_nesting_depth;
+    /// Row identifier.
+    std::string id;
+    /// Provision an AXIAM user on first successful directory sign-in.
+    bool jit_provisioning;
+    /// The kind of directory, which selects defaults.
+    DirectoryKind kind;
+    /// Upgrade an `ldap://` connection with StartTLS before any bind.
+    bool start_tls;
+    /// Seconds between incremental sync runs.
+    std::int64_t sync_interval_secs;
+    /// The owning tenant. At most one configuration exists per tenant.
+    std::string tenant_id;
+    /// PEM CA certificates that anchor trust in the directory's server certificate. Empty means
+    /// the platform roots used by the rest of the workspace's outbound TLS. An organisation
+    /// CA's PEM can be pasted here.
+    std::vector<std::string> trust_anchors_pem;
+    /// When the row was last written.
+    std::string updated_at;
+    /// `ldaps://host[:port]` or `ldap://host[:port]` together with [`Self::start_tls`]. A
+    /// plaintext URL is refused at configuration time.
+    std::string url;
+    /// Which attribute feeds which user field.
+    UserAttributeMap user_attribute_map;
+    /// The user-lookup filter template. It contains exactly one `{username}` placeholder, which
+    /// the bind path replaces with the RFC 4515-escaped login name; the template itself is
+    /// never formatted with raw input.
+    std::string user_filter;
+};
+
+/// What linking did.
+struct DirectoryLinkResult {
+    /// `User`-type certificates revoked.
+    std::int64_t certificates_revoked;
+    /// The entry's `entryUUID` or `objectGUID` as text: an identifier, not a secret.
+    std::string directory_external_id;
+    /// The account that was linked.
+    std::string user_id;
+    /// `true` when the account was already linked to that very entry and the call only re-ran
+    /// the revocations (an interrupted link completed).
+    bool was_already_linked;
+    /// Passkeys and security keys deleted.
+    std::int64_t webauthn_credentials_deleted;
+};
+
+/// A read-only view of the sync job's state for one tenant. Counts of what a run did are in its
+/// audit rows, and no account id is here.
+struct DirectorySyncStatus {
+    /// The next run must be a full reconciliation.
+    bool full_required;
+    /// An incremental run has a starting point.
+    bool has_watermark;
+    /// When the last attempt started, or null before the first run. Optional.
+    std::optional<std::string> last_attempt_at = std::nullopt;
+    /// When the last complete full run finished, or null. Optional.
+    std::optional<std::string> last_full_run_at = std::nullopt;
+    /// `ok`, `partial`, `failed` or `safety_valve` (an open set: decode another value without
+    /// failing), or null before the first run. Optional.
+    std::optional<std::string> last_result = std::nullopt;
 };
 
 /// Provider-specific connection details.
@@ -2209,10 +2840,18 @@ struct Group {
     std::string updated_at;
 };
 
-/// The `HealthResponse` schema from the server's OpenAPI document.
+/// Response body for `GET /health`. `profile` and `unavailable` are additive (G-8, D-59): a
+/// client that reads only `status` is unaffected.
 struct HealthResponse {
+    /// The messaging profile this process runs: `full` (RabbitMQ is used) or `minimal`
+    /// (`AXIAM__AMQP__ENABLED=false`, no broker).
+    std::string profile;
     /// The server's `status` field.
     std::string status;
+    /// Present only in the `minimal` profile: the capabilities it does not provide —
+    /// `reactors`, `amqp_authz`, `amqp_audit_ingestion` and `decision_cache_broadcast`. Absent
+    /// in `full`. Optional.
+    std::optional<std::vector<std::string>> unavailable = std::nullopt;
 };
 
 /// Body of `POST /api/v1/organizations/{org_id}/ca-certificates/import`. Deliberately carries
@@ -2226,6 +2865,23 @@ struct ImportCaCertificateRequest {
     std::optional<Sensitive<std::string>> private_key_pem = std::nullopt;
     /// PEM-encoded CA certificate.
     std::string public_cert_pem;
+};
+
+/// `POST …/saml/idp-credentials` body.
+struct IssueSamlIdpCredential {
+    /// An active signing CA the caller may issue from.
+    std::string issuer_ca_id;
+    /// The slot to fill; it must be empty.
+    SamlIdpSlot slot;
+    /// 1 to 730, default 365; never beyond the CA's own expiry. Optional.
+    std::optional<std::int64_t> validity_days = std::nullopt;
+};
+
+/// `POST /api/v1/tenants/{tenant_id}/directory/links` body.
+struct LinkDirectoryAccount {
+    /// The local account to link. The directory entry is found by the directory, from the
+    /// account's own username; the caller names no entry.
+    std::string user_id;
 };
 
 /// Account lockout rules.
@@ -2384,6 +3040,12 @@ struct OAuth2ClientResponse {
     /// X7.1 — echoed so an operator can audit which clients act on the OIDC
     /// authentication-request parameters, from this endpoint rather than from the database.
     AuthnRequestParamsMode authn_request_params;
+    /// The server's `backchannel_authentication_request_signing_alg` field. Optional.
+    std::optional<CibaRequestSigningAlg> backchannel_authentication_request_signing_alg = std::nullopt;
+    /// G-7 — the ping-mode notification endpoint. Optional.
+    std::optional<std::string> backchannel_client_notification_endpoint = std::nullopt;
+    /// The server's `backchannel_token_delivery_mode` field. Optional.
+    std::optional<CibaDeliveryMode> backchannel_token_delivery_mode = std::nullopt;
     /// X7.3 — echoed for the same reason.
     bool browser_sso;
     /// The server's `client_id` field.
@@ -2502,23 +3164,25 @@ struct OidcCallbackResponse {
 /// tenant may be stricter than its organization and never more permissive: *
 /// [`Self::sensitive_scopes_enabled`], validated **disable-only** — the mirror image of
 /// `mfa_enforced`, because releasing personal data is the less-restrictive direction, so a
-/// tenant can turn its organization's decision off but never on. *
-/// [`Self::dynamic_registration`], on the ladder `disabled` → `initial_access_token` →
-/// `anonymous`: a tenant may move down it and never up. * [`Self::dcr_max_clients`] and
-/// [`Self::dcr_unused_client_ttl_days`], on the ordinary `tenant <= org` rule — with the
-/// wrinkle that `0` on the second means *never sweep*, which is the longest window of all and
-/// is handled by [`dcr_ttl_strictness`]. **Not ordered**, therefore never validated against the
-/// baseline and never clamped: * [`Self::default_locale`]. A language is a presentation
-/// preference; there is no sense in which Italian is stricter than French. *
-/// [`Self::dcr_allowed_scopes`], [`Self::dcr_allowed_redirect_hosts`] and
-/// [`Self::external_client_allowed_resources`]. Each names per-tenant resources — *this*
-/// tenant's MCP servers, *this* tenant's callback hosts — and there is no sense in which one
-/// such list is stricter than another. A subset rule would force an organization to enumerate
-/// every tenant's resource servers in its own baseline before any tenant could name one. The
-/// model's rule is "a tenant may only be more restrictive", which binds every field that *has*
-/// a restrictiveness; a field that has none cannot violate it. One cross-field interlock spans
-/// both groups and is checked on the resolved policy rather than on either input: see
-/// [`validate_dcr_policy`].
+/// tenant can turn its organization's decision off but never on. * [`Self::saml_idp_enabled`],
+/// validated **disable-only** exactly like [`Self::sensitive_scopes_enabled`] (D-20): a tenant
+/// may turn its organization's `true` off and never its `false` on. * [`Self::ssf_enabled`],
+/// validated **disable-only** the same way (D-45). * [`Self::dynamic_registration`], on the
+/// ladder `disabled` → `initial_access_token` → `anonymous`: a tenant may move down it and
+/// never up. * [`Self::dcr_max_clients`] and [`Self::dcr_unused_client_ttl_days`], on the
+/// ordinary `tenant <= org` rule — with the wrinkle that `0` on the second means *never sweep*,
+/// which is the longest window of all and is handled by [`dcr_ttl_strictness`]. **Not
+/// ordered**, therefore never validated against the baseline and never clamped: *
+/// [`Self::default_locale`]. A language is a presentation preference; there is no sense in
+/// which Italian is stricter than French. * [`Self::dcr_allowed_scopes`],
+/// [`Self::dcr_allowed_redirect_hosts`] and [`Self::external_client_allowed_resources`]. Each
+/// names per-tenant resources — *this* tenant's MCP servers, *this* tenant's callback hosts —
+/// and there is no sense in which one such list is stricter than another. A subset rule would
+/// force an organization to enumerate every tenant's resource servers in its own baseline
+/// before any tenant could name one. The model's rule is "a tenant may only be more
+/// restrictive", which binds every field that *has* a restrictiveness; a field that has none
+/// cannot violate it. One cross-field interlock spans both groups and is checked on the
+/// resolved policy rather than on either input: see [`validate_dcr_policy`].
 struct OidcPolicy {
     /// T21.5 — whether a URL-shaped `client_id` is resolved by fetching the document it names,
     /// and on what terms. See [`CimdPolicy`]; off unless somebody turns it on (I1). Nested, and
@@ -2580,6 +3244,20 @@ struct OidcPolicy {
     /// registration endpoint, it is the most dangerous one. Shared with T5 (CIMD), which
     /// inherits the same list for the same reason. Optional.
     std::optional<std::vector<std::string>> external_client_allowed_resources = std::nullopt;
+    /// G-2 / D-20 — whether this tenant may act as a SAML 2.0 identity provider: publish IdP
+    /// metadata and accept `AuthnRequest`s on `/saml/v2/{tenant}/{metadata,sso,slo}`. **Off
+    /// unless an organization turns it on.** A SAML IdP issues assertions that other systems
+    /// accept as proof of identity, so a deployment that has never decided to be one issues
+    /// none, and the three endpoints answer `404` as if they did not exist. The switch lives on
+    /// this policy, beside the other OpenID Provider surface controls, because the SSO endpoint
+    /// is the same browser login hop and OP session with a different wire format.
+    /// **Disable-only**, with the shape of [`Self::sensitive_scopes_enabled`]: a tenant may
+    /// turn its organization's `true` off but never its `false` on, because the decision to
+    /// issue identity assertions on behalf of the organization's tenants is the organization's.
+    /// A deployment built without the `saml` feature answers `404` whatever this says; the
+    /// setting is a capability, not a grant (each SP must still be registered, and
+    /// `allow_idp_initiated` is its own opt-in). Optional.
+    std::optional<bool> saml_idp_enabled = std::nullopt;
     /// Whether `address` and `phone` may be registered on a client, requested at the
     /// authorization endpoint, and released at UserInfo (X7 G8). **Off unless an organization
     /// turns it on.** The two scopes release a postal address and a telephone number —
@@ -2591,6 +3269,17 @@ struct OidcPolicy {
     /// consented. It is the first of four gates, and it is the only one an operator can close
     /// for everybody at once.
     bool sensitive_scopes_enabled;
+    /// G-5 / D-45 — whether the tenant is a Shared Signals Framework transmitter: its
+    /// `/.well-known/ssf-configuration` is served, its receivers can use the stream management
+    /// API, and events are signed and transmitted on its streams. Default **`false`**.
+    /// **Disable-only**, with the shape of [`Self::saml_idp_enabled`]: sending security events
+    /// about the organization's users to third parties is the organization's decision. Streams
+    /// can be registered while it is off; they carry nothing until it is on. Optional.
+    std::optional<bool> ssf_enabled = std::nullopt;
+    /// **Read-only**, D-55: set on a settings response when `ssf_enabled` is on but the
+    /// transmitter is inactive anyway, saying why — the deployment holds more than one tenant
+    /// and serves no per-tenant issuers. Never stored. Optional.
+    std::optional<std::string> ssf_inactive_reason = std::nullopt;
 };
 
 /// Secure Remote Password policy. `suite` and `ksf` are the parameters a *new* registration
@@ -2623,6 +3312,19 @@ struct Organization {
     std::string slug;
     /// The server's `updated_at` field.
     std::string updated_at;
+};
+
+/// `POST …/saml/parse-sp-metadata` body: **exactly one** of the two members.
+///
+/// Every member is optional, so this is a SPARSE body: an engaged `std::optional` is sent and a
+/// disengaged one is OMITTED from the request entirely, rather than sent as null (§27.4 rule
+/// 5). On a sparse update those say opposite things, and only omission means "leave it alone".
+struct ParseSamlSpMetadata {
+    /// An `https` URL the server fetches the document from, once, through its SSRF guard.
+    /// Optional.
+    std::optional<std::string> metadata_url = std::nullopt;
+    /// A metadata document, at most 512 KiB. Optional.
+    std::optional<std::string> metadata_xml = std::nullopt;
 };
 
 /// Password complexity and history requirements.
@@ -2994,6 +3696,278 @@ struct RotateSecretResponse {
     Sensitive<std::string> client_secret;
 };
 
+/// The tenant's IdP signing credential, **public facts only**. There is no key on it and no
+/// field a key could be put in: the private key is generated by the server, sealed at rest,
+/// never returned by any route and destroyed on retirement (D-21).
+struct SamlIdpCredential {
+    /// The leaf certificate, PEM. Public: it is what the metadata publishes.
+    std::string certificate_pem;
+    /// When the credential was issued.
+    std::string created_at;
+    /// Lower-case hex SHA-256 of the certificate's DER — what an SP administrator compares out
+    /// of band.
+    std::string fingerprint;
+    /// Credential id.
+    std::string id;
+    /// The signing CA that issued the leaf.
+    std::string issuer_ca_id;
+    /// End of the certificate's validity (at most 730 days after the start).
+    std::string not_after;
+    /// Start of the certificate's validity.
+    std::string not_before;
+    /// When it was retired, or null. Optional.
+    std::optional<std::string> retired_at = std::nullopt;
+    /// The certificate's serial, lower-case hex.
+    std::string serial;
+    /// `active`, `next` or `retired`. At most one `active` and one `next` per tenant.
+    SamlIdpCredentialStatus status;
+    /// The tenant it signs for.
+    std::string tenant_id;
+};
+
+/// What promoting the `next` credential did.
+struct SamlIdpCredentialPromotion {
+    /// The credential that is now `active`.
+    SamlIdpCredential active;
+    /// The server's `retired` field. Optional.
+    std::optional<SamlIdpCredential> retired = std::nullopt;
+};
+
+/// The tenant's SAML IdP, as the administrator needs to see it before and while switching it
+/// on: what an SP will be given, and whether it answers yet.
+struct SamlIdpInfo {
+    /// The `active` credential, or null. Optional.
+    std::optional<std::string> active_credential_id = std::nullopt;
+    /// The IdP's entity id (the metadata URL itself).
+    std::string entity_id;
+    /// Whether `metadata_url` answers now: SAML is available, enabled for the tenant, and an
+    /// `active` or `next` credential exists (D-40).
+    bool metadata_served;
+    /// Where the IdP metadata is served.
+    std::string metadata_url;
+    /// The `next` credential, or null. Optional.
+    std::optional<std::string> next_credential_id = std::nullopt;
+    /// Whether this server build serves SAML at all (it was built with the `saml` feature).
+    bool saml_available;
+    /// The tenant's **effective** `saml_idp_enabled` setting (D-20). Written through the
+    /// `settings` operations, not here.
+    bool saml_idp_enabled;
+    /// The single-logout endpoint.
+    std::string slo_url;
+    /// The single-sign-on endpoint.
+    std::string sso_url;
+    /// The tenant.
+    std::string tenant_id;
+};
+
+/// A registered service provider, as stored.
+struct SamlServiceProvider {
+    /// See [`SamlServiceProviderInput::acs_urls`].
+    std::vector<AcsEndpoint> acs_urls;
+    /// See [`SamlServiceProviderInput::allow_idp_initiated`].
+    bool allow_idp_initiated;
+    /// See [`SamlServiceProviderInput::allowed_groups`].
+    std::vector<std::string> allowed_groups;
+    /// See [`SamlServiceProviderInput::attribute_mappings`].
+    std::vector<AttributeMapping> attribute_mappings;
+    /// When the SP was registered.
+    std::string created_at;
+    /// See [`SamlServiceProviderInput::display_name`].
+    std::string display_name;
+    /// See [`SamlServiceProviderInput::enabled`].
+    bool enabled;
+    /// See [`SamlServiceProviderInput::encrypt_assertions`].
+    bool encrypt_assertions;
+    /// See [`SamlServiceProviderInput::entity_id`].
+    std::string entity_id;
+    /// Record id.
+    std::string id;
+    /// See [`SamlServiceProviderInput::name_id_format`].
+    NameIdFormat name_id_format;
+    /// See [`SamlServiceProviderInput::sign_responses`].
+    bool sign_responses;
+    /// The server's `slo_binding` field. Optional.
+    std::optional<SamlBinding> slo_binding = std::nullopt;
+    /// See [`SamlServiceProviderInput::slo_url`]. Optional.
+    std::optional<std::string> slo_url = std::nullopt;
+    /// See [`SamlServiceProviderInput::sp_encryption_cert_pem`]. Optional.
+    std::optional<std::string> sp_encryption_cert_pem = std::nullopt;
+    /// See [`SamlServiceProviderInput::sp_signing_cert_pem`]. Optional.
+    std::optional<std::string> sp_signing_cert_pem = std::nullopt;
+    /// The owning tenant.
+    std::string tenant_id;
+    /// When it was last replaced.
+    std::string updated_at;
+    /// See [`SamlServiceProviderInput::want_authn_requests_signed`].
+    bool want_authn_requests_signed;
+};
+
+/// Everything an administrator supplies when registering or replacing a service provider
+/// (`create` and `update` both take it; `update` is a full replacement). Every field but
+/// `entity_id`, `display_name` and `acs_urls` has a default, so a client written against a
+/// later revision of this struct keeps working.
+struct SamlServiceProviderInput {
+    /// The ACS allow-list. At least one, at most one default.
+    std::vector<AcsEndpoint> acs_urls;
+    /// Whether IdP-initiated SSO is allowed for this SP (D-3). A per-SP opt-in, off by default:
+    /// an unsolicited assertion has no `InResponseTo` to bind it to a request the SP made.
+    /// Optional.
+    std::optional<bool> allow_idp_initiated = std::nullopt;
+    /// Groups whose members may sign in to this SP. **Empty means every active user of the
+    /// tenant may.** Evaluated by the SSO endpoint (T23.2.3). Optional.
+    std::optional<std::vector<std::string>> allowed_groups = std::nullopt;
+    /// Attribute mapping table, at most [`MAX_ATTRIBUTE_MAPPINGS`] entries. Optional.
+    std::optional<std::vector<AttributeMapping>> attribute_mappings = std::nullopt;
+    /// Human-readable name for the console.
+    std::string display_name;
+    /// Whether the SP may sign in at all. A disabled SP stays registered but every SSO request
+    /// for it is refused. Optional.
+    std::optional<bool> enabled = std::nullopt;
+    /// Encrypt assertions to the SP's encryption certificate (D-2). Off by default; requires
+    /// [`Self::sp_encryption_cert_pem`]. Optional.
+    std::optional<bool> encrypt_assertions = std::nullopt;
+    /// The SP's `entityID`, unique per tenant. At most [`MAX_ENTITY_ID_BYTES`].
+    std::string entity_id;
+    /// `NameID` policy. Default: persistent, pairwise. Optional.
+    std::optional<NameIdFormat> name_id_format = std::nullopt;
+    /// Sign the `<samlp:Response>` envelope as well as the assertion (which is signed always).
+    /// Default **`true`**: it costs nothing and many SPs require it. Optional.
+    std::optional<bool> sign_responses = std::nullopt;
+    /// The server's `slo_binding` field. Optional.
+    std::optional<SamlBinding> slo_binding = std::nullopt;
+    /// Single-logout endpoint, if the SP supports it. Optional.
+    std::optional<std::string> slo_url = std::nullopt;
+    /// PEM certificate assertions are encrypted to. Required when `encrypt_assertions` is set.
+    /// Optional.
+    std::optional<std::string> sp_encryption_cert_pem = std::nullopt;
+    /// PEM certificate the SP signs its `AuthnRequest`s with. Optional.
+    std::optional<std::string> sp_signing_cert_pem = std::nullopt;
+    /// Refuse an `AuthnRequest` that is not signed by `sp_signing_cert_pem`. Requires that
+    /// certificate. Optional.
+    std::optional<bool> want_authn_requests_signed = std::nullopt;
+};
+
+/// A parse of SP metadata: **a draft, not a registration**. Nothing is stored until the caller
+/// submits `service_provider` to `create_service_provider` or `update_service_provider`, and
+/// nothing in it is trusted because it came from a document (D-41).
+struct SamlSpMetadataDraft {
+    /// Lower-case hex SHA-256 of the encryption certificate's DER the draft carries, or null.
+    /// Optional.
+    std::optional<std::string> encryption_certificate_fingerprint = std::nullopt;
+    /// A body `create_service_provider` accepts unchanged (bar the rules that need the
+    /// datastore). `encrypt_assertions` is never set.
+    SamlServiceProviderInput service_provider;
+    /// Lower-case hex SHA-256 of the signing certificate's DER the draft carries, or null.
+    /// Optional.
+    std::optional<std::string> signing_certificate_fingerprint = std::nullopt;
+    /// What to know before submitting it. Human text; do not parse it.
+    std::vector<std::string> warnings;
+};
+
+/// The body of a started reconciliation's `202`.
+struct ScimReconcileAccepted {
+    /// Always `started`.
+    std::string status;
+    /// The target being reconciled.
+    std::string target_id;
+};
+
+/// How AXIAM authenticates to the downstream service provider, without the credential itself.
+struct ScimTargetAuth {
+    /// The `type` discriminator naming which variant this is.
+    std::string type;
+    /// The whole object as the server sent it, to read the variant's own fields from once
+    /// `type` says which it is.
+    std::string raw;
+};
+
+/// A target's delivery state, as `GET` projects it. Fixed vocabulary only: the failure reason
+/// is one of the deliverer's phrases, never a URL, a response body or a value.
+struct ScimTargetDeliveryState {
+    /// Failed attempts since the last success.
+    std::int64_t consecutive_failures;
+    /// Deliveries dead-lettered over the target's lifetime.
+    std::int64_t dead_lettered_total;
+    /// When a delivery attempt last failed or was dead-lettered. Optional.
+    std::optional<std::string> last_failure_at = std::nullopt;
+    /// Why, in the deliverer's fixed vocabulary. Optional.
+    std::optional<std::string> last_failure_reason = std::nullopt;
+    /// When reconciliation last ran. Optional.
+    std::optional<std::string> last_reconciled_at = std::nullopt;
+    /// When a delivery last succeeded. Optional.
+    std::optional<std::string> last_success_at = std::nullopt;
+};
+
+/// Which users a target provisions.
+struct ScimTargetScope {
+    /// The `type` discriminator naming which variant this is.
+    std::string type;
+    /// The whole object as the server sent it, to read the variant's own fields from once
+    /// `type` says which it is.
+    std::string raw;
+};
+
+/// `create` and `update` (a **replacement**) body.
+struct ScimTargetInput {
+    /// `bearer`, or `oauth2_client_credentials` with `token_url` (the same URL policy),
+    /// `client_id` (1–256 bytes) and an optional `scope`.
+    ScimTargetAuth auth;
+    /// The downstream's SCIM service root: an `https` URL under the outbound address policy (no
+    /// credentials or fragment, at most 2 048 bytes, no non-public address, no local name).
+    std::string base_url;
+    /// **Write-only.** The bearer token or the OAuth2 client secret, 1–4 096 bytes. Required on
+    /// create. On update, absent keeps the stored one — except that moving it to another URL
+    /// (`base_url` of a bearer target, `token_url` or `base_url` of a client-credentials one)
+    /// or switching `auth.type` requires it again. Optional.
+    std::optional<Sensitive<std::string>> credential = std::nullopt;
+    /// `deactivate` (default: `PATCH active=false`) or `delete`. Optional.
+    std::optional<DeprovisionPolicy> deprovision = std::nullopt;
+    /// `true` by default. A disabled target receives nothing. Optional.
+    std::optional<bool> enabled = std::nullopt;
+    /// 1–128 bytes.
+    std::string name;
+    /// Push groups too (every group for `all_users`, the listed ones for `groups`). `false` by
+    /// default. Optional.
+    std::optional<bool> push_groups = std::nullopt;
+    /// `all_users`, or `groups` with 1–100 `group_ids` of this tenant: users who are direct
+    /// members of any listed group.
+    ScimTargetScope scope;
+    /// `username` (default) or `email`. Optional.
+    std::optional<UserNameSource> user_name_from = std::nullopt;
+};
+
+/// A registered SCIM target, as the management API returns it. **The credential is never
+/// returned**, and there is no member that says anything about it.
+struct ScimTargetResponse {
+    /// How AXIAM authenticates to it (no credential).
+    ScimTargetAuth auth;
+    /// The downstream's SCIM service root.
+    std::string base_url;
+    /// When the target was registered.
+    std::string created_at;
+    /// What happens downstream to a user who leaves scope or is no longer active (erasure
+    /// always deletes).
+    DeprovisionPolicy deprovision;
+    /// Whether AXIAM pushes to it.
+    bool enabled;
+    /// The target id.
+    std::string id;
+    /// The name.
+    std::string name;
+    /// Whether groups are pushed too.
+    bool push_groups;
+    /// Which users it provisions.
+    ScimTargetScope scope;
+    /// The server's `state` field. Optional.
+    std::optional<ScimTargetDeliveryState> state = std::nullopt;
+    /// The owning tenant.
+    std::string tenant_id;
+    /// When it was last written: the version an update is conditional on.
+    std::string updated_at;
+    /// Which attribute becomes `userName`.
+    UserNameSource user_name_from;
+};
+
 /// Metadata only. The handle is never in a list response — it exists in plaintext exactly once,
 /// in [`CreateScimTokenResponse`].
 struct ScimTokenResponse {
@@ -3148,6 +4122,49 @@ struct SessionResponse {
     std::optional<std::string> user_agent = std::nullopt;
 };
 
+/// `PUT /api/v1/tenants/{tenant_id}/directory` — a **replacement**. Every `DirectoryConfig`
+/// member except `id`, `tenant_id` and the two timestamps, plus the write-only `bind_secret`.
+/// An omitted optional member is **reset to its default**, not kept.
+struct SetDirectoryConfig {
+    /// Where users are searched for.
+    std::string base_dn;
+    /// The service account the search runs as.
+    std::string bind_dn;
+    /// The service account's password: **write-only**, 1 to 4096 octets. Required when the
+    /// tenant has no configuration yet; on a replacement, absent means *keep the stored secret*
+    /// — unless the write moves the connection (`url`, `start_tls`, `bind_dn` or
+    /// `trust_anchors_pem`), which then requires it (`400`, P23W2-01). Optional.
+    std::optional<Sensitive<std::string>> bind_secret = std::nullopt;
+    /// A disabled directory serves no sign-in and is not synced.
+    bool enabled;
+    /// Defaults to null. Optional.
+    std::optional<std::string> group_base_dn = std::nullopt;
+    /// Defaults to null. Optional.
+    std::optional<std::string> group_filter = std::nullopt;
+    /// At most 500; every `group_id` a group of the tenant. Default empty. Optional.
+    std::optional<std::vector<GroupMapping>> group_mappings = std::nullopt;
+    /// Defaults by `kind`. Optional.
+    std::optional<std::string> group_member_attribute = std::nullopt;
+    /// `0..=10`, default 5. Optional.
+    std::optional<std::int64_t> group_nesting_depth = std::nullopt;
+    /// Default false. Optional.
+    std::optional<bool> jit_provisioning = std::nullopt;
+    /// Chooses defaults only.
+    DirectoryKind kind;
+    /// Upgrade an `ldap://` connection with StartTLS before any bind.
+    bool start_tls;
+    /// `300..=86400`, default 3600. Optional.
+    std::optional<std::int64_t> sync_interval_secs = std::nullopt;
+    /// At most 16 CA certificates in PEM. Default empty (the public roots). Optional.
+    std::optional<std::vector<std::string>> trust_anchors_pem = std::nullopt;
+    /// `ldaps://host[:port]`, or `ldap://host[:port]` with `start_tls`.
+    std::string url;
+    /// The server's `user_attribute_map` field. Optional.
+    std::optional<UserAttributeMap> user_attribute_map = std::nullopt;
+    /// One `{username}` placeholder in value position.
+    std::string user_filter;
+};
+
 /// Body for `PUT .../ca-certificates/{id}/mtls-trust-anchor`.
 struct SetMtlsTrustAnchor {
     /// Whether this CA should be trusted for client-certificate authentication.
@@ -3236,11 +4253,17 @@ struct SetOrgSettings {
     bool require_symbols;
     /// The server's `require_uppercase` field.
     bool require_uppercase;
+    /// G-2 / D-20 — defaulted, so an API client written before the SAML identity provider
+    /// existed lands on `false`, which is what every deployment did before (I1). Optional.
+    std::optional<bool> saml_idp_enabled = std::nullopt;
     /// The server's `sensitive_scopes_enabled` field. Optional.
     std::optional<bool> sensitive_scopes_enabled = std::nullopt;
     /// S-7 — defaulted to empty, so an API client written before the field lands on "no
     /// `Server` certificate is issued" (I1). Optional.
     std::optional<std::vector<std::string>> server_cert_allowed_names = std::nullopt;
+    /// G-5 / D-45 — defaulted, so an API client written before the SSF transmitter existed
+    /// lands on `false`, which is what every deployment did before (I1). Optional.
+    std::optional<bool> ssf_enabled = std::nullopt;
     /// The server's `webauthn_user_verification` field. Optional.
     std::optional<std::string> webauthn_user_verification = std::nullopt;
 };
@@ -3317,6 +4340,88 @@ struct SmtpConfig {
     bool starttls;
     /// The server's `username` field.
     std::string username;
+};
+
+/// A registered SSF stream, as the management API returns it. **The push `Authorization` header
+/// is never returned**; `authorization_header_set` says whether one is stored.
+struct SsfStream {
+    /// The SET `aud`. Unique across the deployment.
+    std::string audience;
+    /// Whether a push `Authorization` header is stored.
+    bool authorization_header_set;
+    /// When the stream was registered.
+    std::string created_at;
+    /// `push` (RFC 8935) or `poll` (RFC 8936).
+    SsfDeliveryMethod delivery_method;
+    /// A description. Optional.
+    std::optional<std::string> description = std::nullopt;
+    /// The push endpoint, or null for a poll stream. Optional.
+    std::optional<std::string> endpoint_url = std::nullopt;
+    /// The event types the receiver may have.
+    std::vector<SsfEventType> events_allowed;
+    /// What the stream carries: the intersection of the two.
+    std::vector<SsfEventType> events_delivered;
+    /// The event types the receiver asked for (a subset of `events_allowed`).
+    std::vector<SsfEventType> events_requested;
+    /// The stream id, also the SSF `stream_id`.
+    std::string id;
+    /// When the receiver last asked for a verification event, or null. Optional.
+    std::optional<std::string> last_verification_at = std::nullopt;
+    /// The OAuth2 `client_id` whose client-credentials token (scope `ssf.manage`) is this
+    /// stream's receiver on the stream management API.
+    std::string receiver_client_id;
+    /// `enabled`, `paused` or `disabled`.
+    SsfStreamStatus status;
+    /// Who set the status: `admin` or `receiver`.
+    SsfStatusActor status_actor;
+    /// Why, if anyone said. Optional.
+    std::optional<std::string> status_reason = std::nullopt;
+    /// `iss_sub` (default) or `email`.
+    SsfSubjectFormat subject_format;
+    /// The owning tenant.
+    std::string tenant_id;
+    /// Whether the tenant's transmitter is active: its `ssf_enabled` is on and the deployment
+    /// does not make every tenant share one issuer (D-55). A stream of an inactive transmitter
+    /// is kept, and carries nothing.
+    bool transmitter_active;
+    /// Why the transmitter is inactive, when it is. Optional.
+    std::optional<std::string> transmitter_inactive_reason = std::nullopt;
+    /// When it was last written.
+    std::string updated_at;
+};
+
+/// `create_stream` and `update_stream` (a **replacement**) body.
+struct SsfStreamInput {
+    /// 1–512 bytes; unique across the deployment.
+    std::string audience;
+    /// **Write-only.** The `Authorization` header value AXIAM sends to a push endpoint. On
+    /// update, absent keeps the stored one — except that moving the endpoint to another origin
+    /// requires it again. Optional.
+    std::optional<Sensitive<std::string>> authorization_header = std::nullopt;
+    /// On update: remove the stored header. Refused together with `authorization_header`.
+    /// Optional.
+    std::optional<bool> clear_authorization_header = std::nullopt;
+    /// `push` or `poll`.
+    SsfDeliveryMethod delivery_method;
+    /// At most 256 bytes. Optional.
+    std::optional<std::string> description = std::nullopt;
+    /// Required for `push` (an `https` URL under the outbound address policy), refused for
+    /// `poll`. Optional.
+    std::optional<std::string> endpoint_url = std::nullopt;
+    /// 1–6 event types.
+    std::vector<SsfEventType> events_allowed;
+    /// A subset of `events_allowed`; absent means all of them. The receiver may narrow it
+    /// later, never widen it. Optional.
+    std::optional<std::vector<SsfEventType>> events_requested = std::nullopt;
+    /// An OAuth2 client of the tenant with the `client_credentials` grant and the `ssf.manage`
+    /// scope.
+    std::string receiver_client_id;
+    /// `enabled` by default. Optional.
+    std::optional<SsfStreamStatus> status = std::nullopt;
+    /// At most 256 bytes. Optional.
+    std::optional<std::string> status_reason = std::nullopt;
+    /// `iss_sub` by default. Optional.
+    std::optional<SsfSubjectFormat> subject_format = std::nullopt;
 };
 
 /// A tenant is an isolated context within an organization. Each tenant has its own set of
@@ -3416,14 +4521,65 @@ struct TenantSettingsOverride {
     std::optional<bool> require_symbols = std::nullopt;
     /// The server's `require_uppercase` field. Optional.
     std::optional<bool> require_uppercase = std::nullopt;
+    /// G-2 / D-20 — disable-only, like `sensitive_scopes_enabled`; see
+    /// [`OidcPolicy::saml_idp_enabled`]. Optional.
+    std::optional<bool> saml_idp_enabled = std::nullopt;
     /// The server's `sensitive_scopes_enabled` field. Optional.
     std::optional<bool> sensitive_scopes_enabled = std::nullopt;
     /// S-7 — tighten-only: every entry must be covered by an organization entry. An empty list
     /// means this tenant issues no `Server` certificate at all, which is different from an
     /// absent field (inherit the organization's list). Optional.
     std::optional<std::vector<std::string>> server_cert_allowed_names = std::nullopt;
+    /// G-5 / D-45 — disable-only, like `saml_idp_enabled`; see [`OidcPolicy::ssf_enabled`].
+    /// Optional.
+    std::optional<bool> ssf_enabled = std::nullopt;
     /// The server's `webauthn_user_verification` field. Optional.
     std::optional<std::string> webauthn_user_verification = std::nullopt;
+};
+
+/// `PATCH /api/v1/tenants/{tenant_id}/directory` — a **sparse** update. Every member optional:
+/// absent leaves the stored value, and for the two nullable members an explicit `null` clears
+/// it.
+///
+/// Every member is optional, so this is a SPARSE body: an engaged `std::optional` is sent and a
+/// disengaged one is OMITTED from the request entirely, rather than sent as null (§27.4 rule
+/// 5). On a sparse update those say opposite things, and only omission means "leave it alone".
+struct UpdateDirectoryConfig {
+    /// See [`SetDirectoryConfig::base_dn`]. Optional.
+    std::optional<std::string> base_dn = std::nullopt;
+    /// See [`SetDirectoryConfig::bind_dn`]. Optional.
+    std::optional<std::string> bind_dn = std::nullopt;
+    /// See [`SetDirectoryConfig::bind_secret`]; absent keeps the stored secret, subject to the
+    /// same P23W2-01 rule. Optional.
+    std::optional<Sensitive<std::string>> bind_secret = std::nullopt;
+    /// See [`SetDirectoryConfig::enabled`]. Optional.
+    std::optional<bool> enabled = std::nullopt;
+    /// Explicit `null` clears it. Optional.
+    std::optional<std::string> group_base_dn = std::nullopt;
+    /// Explicit `null` clears it. Optional.
+    std::optional<std::string> group_filter = std::nullopt;
+    /// Replaces the whole table when present. Optional.
+    std::optional<std::vector<GroupMapping>> group_mappings = std::nullopt;
+    /// See [`SetDirectoryConfig::group_member_attribute`]. Optional.
+    std::optional<std::string> group_member_attribute = std::nullopt;
+    /// See [`SetDirectoryConfig::group_nesting_depth`]. Optional.
+    std::optional<std::int64_t> group_nesting_depth = std::nullopt;
+    /// See [`SetDirectoryConfig::jit_provisioning`]. Optional.
+    std::optional<bool> jit_provisioning = std::nullopt;
+    /// The server's `kind` field. Optional.
+    std::optional<DirectoryKind> kind = std::nullopt;
+    /// See [`SetDirectoryConfig::start_tls`]. Optional.
+    std::optional<bool> start_tls = std::nullopt;
+    /// See [`SetDirectoryConfig::sync_interval_secs`]. Optional.
+    std::optional<std::int64_t> sync_interval_secs = std::nullopt;
+    /// Replaces the whole list when present. Optional.
+    std::optional<std::vector<std::string>> trust_anchors_pem = std::nullopt;
+    /// See [`SetDirectoryConfig::url`]. Optional.
+    std::optional<std::string> url = std::nullopt;
+    /// The server's `user_attribute_map` field. Optional.
+    std::optional<UserAttributeMap> user_attribute_map = std::nullopt;
+    /// See [`SetDirectoryConfig::user_filter`]. Optional.
+    std::optional<std::string> user_filter = std::nullopt;
 };
 
 /// The `UpdateFederationConfigRequest` schema from the server's OpenAPI document.
@@ -3518,9 +4674,17 @@ struct UpdateOAuth2ClientRequest {
     std::optional<std::vector<std::string>> allowed_resources = std::nullopt;
     /// The server's `authn_request_params` field. Optional.
     std::optional<AuthnRequestParamsMode> authn_request_params = std::nullopt;
+    /// G-7 — see the create DTO. `""` clears. Optional.
+    std::optional<std::string> backchannel_authentication_request_signing_alg = std::nullopt;
+    /// G-7 — see the create DTO. `""` clears. Optional.
+    std::optional<std::string> backchannel_client_notification_endpoint = std::nullopt;
     /// Pass an empty string to clear a previously registered URI — the one edit an operator
     /// makes when an RP is decommissioned. Optional.
     std::optional<std::string> backchannel_logout_uri = std::nullopt;
+    /// G-7 — see the create DTO. `""` clears. Optional.
+    std::optional<std::string> backchannel_token_delivery_mode = std::nullopt;
+    /// G-7 — `true` refused, as on create. Optional.
+    std::optional<bool> backchannel_user_code_parameter = std::nullopt;
     /// X7.3 — see [`CreateOAuth2ClientRequest::browser_sso`]. Optional.
     std::optional<bool> browser_sso = std::nullopt;
     /// The server's `dpop_bound_access_tokens` field. Optional.

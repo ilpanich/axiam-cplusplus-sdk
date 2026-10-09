@@ -1774,6 +1774,344 @@ private:
     CallScope scope_;
 };
 
+/// A tenant's LDAP / Active Directory identity source (CONTRACT §30): the one configuration,
+/// the explicit act that links an existing local account to its directory entry, and a
+/// read-only view of the sync job. Signing in needs nothing new -- a directory account calls
+/// the same §1 `login`.
+///
+/// The `directory` namespace handle (§27.2), reached as `client.management().directory()`.
+/// §27.3's C++ row is `client.service_accounts().rotate_secret(id)` -- a method returning a
+/// handle, snake_case -- and that is what this is.
+///
+/// Every method goes through the one shared transport, so §3 CSRF, the §4 cookie jar, the §5
+/// tenant header, §6 TLS, §16 retry and §19 telemetry apply without this class doing anything
+/// to opt in (§27.8).
+class DirectoryApi {
+public:
+    DirectoryApi(std::shared_ptr<Transport> transport, CallScope scope);
+
+    /// A COPY of this handle scoped to `org_id` (§27.4 rule 3). Returns a new handle; the one
+    /// you called it on is untouched.
+    DirectoryApi in_org(std::string org_id) const;
+
+    /// A COPY of this handle scoped to `tenant_id` (§27.4 rule 3). See in_org().
+    DirectoryApi for_tenant(std::string tenant_id) const;
+
+    /// `GET /api/v1/tenants/{tenant_id}/directory`
+    ///
+    /// `GET /api/v1/tenants/{tenant_id}/directory`.
+    DirectoryConfig get();
+
+    /// `PUT /api/v1/tenants/{tenant_id}/directory` — create or **replace**.
+    ///
+    /// `PUT /api/v1/tenants/{tenant_id}/directory`.
+    ///
+    /// @param body The request body.
+    DirectoryConfig set(const SetDirectoryConfig& body);
+
+    /// `PATCH /api/v1/tenants/{tenant_id}/directory` — a **sparse** update.
+    ///
+    /// `PATCH /api/v1/tenants/{tenant_id}/directory`.
+    ///
+    /// @param body The request body.
+    DirectoryConfig update(const UpdateDirectoryConfig& body);
+
+    /// `DELETE /api/v1/tenants/{tenant_id}/directory`
+    ///
+    /// `DELETE /api/v1/tenants/{tenant_id}/directory`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
+    /// rather than succeeding quietly.
+    void delete_();
+
+    /// `POST /api/v1/tenants/{tenant_id}/directory/links` — link a local account to its
+    /// directory entry (D-28).
+    ///
+    /// `POST /api/v1/tenants/{tenant_id}/directory/links`.
+    ///
+    /// @param body The request body.
+    DirectoryLinkResult link_account(const LinkDirectoryAccount& body);
+
+    /// `GET /api/v1/tenants/{tenant_id}/directory/sync-status`
+    ///
+    /// `GET /api/v1/tenants/{tenant_id}/directory/sync-status`.
+    DirectorySyncStatus get_sync_status();
+
+private:
+    std::shared_ptr<Transport> transport_;
+    CallScope scope_;
+};
+
+/// A tenant's SAML 2.0 identity provider (CONTRACT §29): the registry of service providers, the
+/// import of an SP's metadata into a *draft* registration (never a write), and the lifecycle of
+/// the IdP signing credential. The protocol itself -- single sign-on, single logout, the IdP
+/// metadata document -- is browser and SP-to-IdP surface under /saml/v2/{tenant_id}, an SP's
+/// own SAML library speaks to it, and it is not in this registry.
+///
+/// The `saml` namespace handle (§27.2), reached as `client.management().saml()`. §27.3's C++
+/// row is `client.service_accounts().rotate_secret(id)` -- a method returning a handle,
+/// snake_case -- and that is what this is.
+///
+/// Every method goes through the one shared transport, so §3 CSRF, the §4 cookie jar, the §5
+/// tenant header, §6 TLS, §16 retry and §19 telemetry apply without this class doing anything
+/// to opt in (§27.8).
+class SamlApi {
+public:
+    SamlApi(std::shared_ptr<Transport> transport, CallScope scope);
+
+    /// A COPY of this handle scoped to `org_id` (§27.4 rule 3). Returns a new handle; the one
+    /// you called it on is untouched.
+    SamlApi in_org(std::string org_id) const;
+
+    /// A COPY of this handle scoped to `tenant_id` (§27.4 rule 3). See in_org().
+    SamlApi for_tenant(std::string tenant_id) const;
+
+    /// `GET /api/v1/tenants/{tenant_id}/saml/idp`
+    ///
+    /// `GET /api/v1/tenants/{tenant_id}/saml/idp`.
+    SamlIdpInfo get_idp();
+
+    /// `GET /api/v1/tenants/{tenant_id}/saml/service-providers`
+    ///
+    /// `GET /api/v1/tenants/{tenant_id}/saml/service-providers`.
+    ///
+    /// Returns ONE page. `Page::total` is the server's count across all pages and is not
+    /// `items.size()` -- see §27.4 rule 4.
+    ///
+    /// @param page Which page to fetch; defaults to the first.
+    Page<SamlServiceProvider> list_service_providers(const PageRequest& page = {});
+
+    /// `POST /api/v1/tenants/{tenant_id}/saml/service-providers`
+    ///
+    /// `POST /api/v1/tenants/{tenant_id}/saml/service-providers`.
+    ///
+    /// @param body The request body.
+    SamlServiceProvider create_service_provider(const SamlServiceProviderInput& body);
+
+    /// `GET /api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}`
+    ///
+    /// `GET /api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}`.
+    ///
+    /// @param sp_id The `{sp_id}` path parameter.
+    SamlServiceProvider get_service_provider(const std::string& sp_id);
+
+    /// `PUT /api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}` — a **replacement**:
+    /// every member the body omits takes its default, it is not kept. `entity_id` is immutable.
+    ///
+    /// `PUT /api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}`.
+    ///
+    /// @param sp_id The `{sp_id}` path parameter.
+    /// @param body The request body.
+    SamlServiceProvider update_service_provider(const std::string& sp_id, const SamlServiceProviderInput& body);
+
+    /// `DELETE /api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}`
+    ///
+    /// `DELETE /api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
+    /// rather than succeeding quietly.
+    ///
+    /// @param sp_id The `{sp_id}` path parameter.
+    void delete_service_provider(const std::string& sp_id);
+
+    /// `POST /api/v1/tenants/{tenant_id}/saml/parse-sp-metadata`
+    ///
+    /// `POST /api/v1/tenants/{tenant_id}/saml/parse-sp-metadata`.
+    ///
+    /// @param body The request body.
+    SamlSpMetadataDraft parse_sp_metadata(const ParseSamlSpMetadata& body);
+
+    /// `GET /api/v1/tenants/{tenant_id}/saml/idp-credentials`
+    ///
+    /// `GET /api/v1/tenants/{tenant_id}/saml/idp-credentials`.
+    ///
+    /// Returns the server's complete list. This endpoint is NOT paginated, so the result is a
+    /// plain vector and never a Page (§27.4 rule 4).
+    std::vector<SamlIdpCredential> list_idp_credentials();
+
+    /// `POST /api/v1/tenants/{tenant_id}/saml/idp-credentials`
+    ///
+    /// `POST /api/v1/tenants/{tenant_id}/saml/idp-credentials`.
+    ///
+    /// @param body The request body.
+    SamlIdpCredential issue_idp_credential(const IssueSamlIdpCredential& body);
+
+    /// `POST /api/v1/tenants/{tenant_id}/saml/idp-credentials/{credential_id}/promote`
+    ///
+    /// `POST /api/v1/tenants/{tenant_id}/saml/idp-credentials/{credential_id}/promote`.
+    ///
+    /// @param credential_id The `{credential_id}` path parameter.
+    SamlIdpCredentialPromotion promote_idp_credential(const std::string& credential_id);
+
+    /// `POST /api/v1/tenants/{tenant_id}/saml/idp-credentials/{credential_id}/retire`
+    ///
+    /// `POST /api/v1/tenants/{tenant_id}/saml/idp-credentials/{credential_id}/retire`.
+    ///
+    /// @param credential_id The `{credential_id}` path parameter.
+    SamlIdpCredential retire_idp_credential(const std::string& credential_id);
+
+private:
+    std::shared_ptr<Transport> transport_;
+    CallScope scope_;
+};
+
+/// A tenant's Shared Signals Framework streams (CONTRACT §32): which receiver -- an OAuth2
+/// client of the tenant -- receives which CAEP and RISC security events, as SETs pushed to its
+/// endpoint or polled. The receiver's own protocol (transmitter metadata, the SSF stream
+/// management API, polling) is not in this registry.
+///
+/// The `ssf` namespace handle (§27.2), reached as `client.management().ssf()`. §27.3's C++ row
+/// is `client.service_accounts().rotate_secret(id)` -- a method returning a handle, snake_case
+/// -- and that is what this is.
+///
+/// Every method goes through the one shared transport, so §3 CSRF, the §4 cookie jar, the §5
+/// tenant header, §6 TLS, §16 retry and §19 telemetry apply without this class doing anything
+/// to opt in (§27.8).
+class SsfApi {
+public:
+    SsfApi(std::shared_ptr<Transport> transport, CallScope scope);
+
+    /// A COPY of this handle scoped to `org_id` (§27.4 rule 3). Returns a new handle; the one
+    /// you called it on is untouched.
+    SsfApi in_org(std::string org_id) const;
+
+    /// A COPY of this handle scoped to `tenant_id` (§27.4 rule 3). See in_org().
+    SsfApi for_tenant(std::string tenant_id) const;
+
+    /// `GET /api/v1/tenants/{tenant_id}/ssf/streams`
+    ///
+    /// `GET /api/v1/tenants/{tenant_id}/ssf/streams`.
+    ///
+    /// Returns ONE page. `Page::total` is the server's count across all pages and is not
+    /// `items.size()` -- see §27.4 rule 4.
+    ///
+    /// @param page Which page to fetch; defaults to the first.
+    Page<SsfStream> list_streams(const PageRequest& page = {});
+
+    /// `POST /api/v1/tenants/{tenant_id}/ssf/streams`
+    ///
+    /// `POST /api/v1/tenants/{tenant_id}/ssf/streams`.
+    ///
+    /// @param body The request body.
+    SsfStream create_stream(const SsfStreamInput& body);
+
+    /// `GET /api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}`
+    ///
+    /// `GET /api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}`.
+    ///
+    /// @param stream_id The `{stream_id}` path parameter.
+    SsfStream get_stream(const std::string& stream_id);
+
+    /// `PUT /api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}` — a **replacement**: an
+    /// omitted optional member takes its default, except the header, which absent keeps.
+    ///
+    /// `PUT /api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}`.
+    ///
+    /// @param stream_id The `{stream_id}` path parameter.
+    /// @param body The request body.
+    SsfStream update_stream(const std::string& stream_id, const SsfStreamInput& body);
+
+    /// `DELETE /api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}` — the stream and its
+    /// buffered events.
+    ///
+    /// `DELETE /api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
+    /// rather than succeeding quietly.
+    ///
+    /// @param stream_id The `{stream_id}` path parameter.
+    void delete_stream(const std::string& stream_id);
+
+private:
+    std::shared_ptr<Transport> transport_;
+    CallScope scope_;
+};
+
+/// A tenant's outbound SCIM targets (CONTRACT §31): the downstream SCIM 2.0 service providers
+/// AXIAM pushes the tenant's users and groups to, each with its delivery state. The credential
+/// AXIAM pushes with is write-only. Deleting a target does not deprovision anything downstream.
+///
+/// The `scim_targets` namespace handle (§27.2), reached as
+/// `client.management().scim_targets()`. §27.3's C++ row is
+/// `client.service_accounts().rotate_secret(id)` -- a method returning a handle, snake_case --
+/// and that is what this is.
+///
+/// Every method goes through the one shared transport, so §3 CSRF, the §4 cookie jar, the §5
+/// tenant header, §6 TLS, §16 retry and §19 telemetry apply without this class doing anything
+/// to opt in (§27.8).
+class ScimTargetsApi {
+public:
+    ScimTargetsApi(std::shared_ptr<Transport> transport, CallScope scope);
+
+    /// A COPY of this handle scoped to `org_id` (§27.4 rule 3). Returns a new handle; the one
+    /// you called it on is untouched.
+    ScimTargetsApi in_org(std::string org_id) const;
+
+    /// A COPY of this handle scoped to `tenant_id` (§27.4 rule 3). See in_org().
+    ScimTargetsApi for_tenant(std::string tenant_id) const;
+
+    /// `GET /api/v1/scim-targets`
+    ///
+    /// `GET /api/v1/scim-targets`.
+    ///
+    /// Returns ONE page. `Page::total` is the server's count across all pages and is not
+    /// `items.size()` -- see §27.4 rule 4.
+    ///
+    /// @param page Which page to fetch; defaults to the first.
+    Page<ScimTargetResponse> list(const PageRequest& page = {});
+
+    /// `POST /api/v1/scim-targets`
+    ///
+    /// `POST /api/v1/scim-targets`.
+    ///
+    /// @param body The request body.
+    ScimTargetResponse create(const ScimTargetInput& body);
+
+    /// `GET /api/v1/scim-targets/{id}`
+    ///
+    /// `GET /api/v1/scim-targets/{id}`.
+    ///
+    /// @param id The `{id}` path parameter.
+    ScimTargetResponse get(const std::string& id);
+
+    /// `PUT /api/v1/scim-targets/{id}`
+    ///
+    /// `PUT /api/v1/scim-targets/{id}`.
+    ///
+    /// @param id The `{id}` path parameter.
+    /// @param body The request body.
+    ScimTargetResponse update(const std::string& id, const ScimTargetInput& body);
+
+    /// `DELETE /api/v1/scim-targets/{id}`
+    ///
+    /// `DELETE /api/v1/scim-targets/{id}`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
+    /// rather than succeeding quietly.
+    ///
+    /// @param id The `{id}` path parameter.
+    void delete_(const std::string& id);
+
+    /// `POST /api/v1/scim-targets/{id}/reconcile`
+    ///
+    /// `POST /api/v1/scim-targets/{id}/reconcile`.
+    ///
+    /// @param id The `{id}` path parameter.
+    ScimReconcileAccepted reconcile(const std::string& id);
+
+private:
+    std::shared_ptr<Transport> transport_;
+    CallScope scope_;
+};
+
 /// Effective settings, and the organization/tenant layers they resolve from.
 ///
 /// The `settings` namespace handle (§27.2), reached as `client.management().settings()`.
@@ -2215,7 +2553,7 @@ private:
     CallScope scope_;
 };
 
-/// The CONTRACT.md §27 management surface: 162 operations across 24 namespaces.
+/// The CONTRACT.md §27 management surface: 190 operations across 28 namespaces.
 ///
 /// Reached as `client.management()`. Each accessor hands back a namespace handle (§27.2) that
 /// can be re-scoped per call with `in_org()` / `for_tenant()`.
@@ -2284,6 +2622,32 @@ public:
     /// Transactional-mail transport, configurable at organization level and overridable per
     /// tenant.
     EmailConfigApi email_config() const;
+
+    /// A tenant's LDAP / Active Directory identity source (CONTRACT §30): the one
+    /// configuration, the explicit act that links an existing local account to its directory
+    /// entry, and a read-only view of the sync job. Signing in needs nothing new -- a directory
+    /// account calls the same §1 `login`.
+    DirectoryApi directory() const;
+
+    /// A tenant's SAML 2.0 identity provider (CONTRACT §29): the registry of service providers,
+    /// the import of an SP's metadata into a *draft* registration (never a write), and the
+    /// lifecycle of the IdP signing credential. The protocol itself -- single sign-on, single
+    /// logout, the IdP metadata document -- is browser and SP-to-IdP surface under
+    /// /saml/v2/{tenant_id}, an SP's own SAML library speaks to it, and it is not in this
+    /// registry.
+    SamlApi saml() const;
+
+    /// A tenant's Shared Signals Framework streams (CONTRACT §32): which receiver -- an OAuth2
+    /// client of the tenant -- receives which CAEP and RISC security events, as SETs pushed to
+    /// its endpoint or polled. The receiver's own protocol (transmitter metadata, the SSF
+    /// stream management API, polling) is not in this registry.
+    SsfApi ssf() const;
+
+    /// A tenant's outbound SCIM targets (CONTRACT §31): the downstream SCIM 2.0 service
+    /// providers AXIAM pushes the tenant's users and groups to, each with its delivery state.
+    /// The credential AXIAM pushes with is write-only. Deleting a target does not deprovision
+    /// anything downstream.
+    ScimTargetsApi scim_targets() const;
 
     /// Effective settings, and the organization/tenant layers they resolve from.
     SettingsApi settings() const;

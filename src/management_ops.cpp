@@ -1569,6 +1569,354 @@ EmailTestResult EmailConfigApi::test_tenant() {
     return Transport::decode<EmailTestResult>(response, "email_config.test_tenant");
 }
 
+DirectoryApi::DirectoryApi(std::shared_ptr<Transport> transport, CallScope scope)
+    : transport_(std::move(transport)), scope_(std::move(scope)) {}
+
+// A COPY, not a mutation. §27.4 rule 3: an administrator holding a handle to their own tenant
+// should not find it repointed at someone else's because an unrelated code path re-scoped a
+// shared object -- and on a management surface that failure mode writes to the wrong tenant
+// rather than merely reading.
+DirectoryApi DirectoryApi::in_org(std::string org) const {
+    CallScope next = scope_;
+    next.org_id = std::move(org);
+    return DirectoryApi(transport_, std::move(next));
+}
+
+DirectoryApi DirectoryApi::for_tenant(std::string tenant) const {
+    CallScope next = scope_;
+    next.tenant_id = std::move(tenant);
+    return DirectoryApi(transport_, std::move(next));
+}
+
+DirectoryConfig DirectoryApi::get() {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("directory.get", "GET", "/api/v1/tenants/{tenant_id}/directory",
+                                            values, query, payload);
+
+    return Transport::decode<DirectoryConfig>(response, "directory.get");
+}
+
+DirectoryConfig DirectoryApi::set(const SetDirectoryConfig& body) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("directory.set", "PUT", "/api/v1/tenants/{tenant_id}/directory",
+                                            values, query, payload);
+
+    return Transport::decode<DirectoryConfig>(response, "directory.set");
+}
+
+DirectoryConfig DirectoryApi::update(const UpdateDirectoryConfig& body) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("directory.update", "PATCH", "/api/v1/tenants/{tenant_id}/directory",
+                                            values, query, payload);
+
+    return Transport::decode<DirectoryConfig>(response, "directory.update");
+}
+
+void DirectoryApi::delete_() {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    transport_->send("directory.delete", "DELETE", "/api/v1/tenants/{tenant_id}/directory",
+                                            values, query, payload);
+}
+
+DirectoryLinkResult DirectoryApi::link_account(const LinkDirectoryAccount& body) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("directory.link_account", "POST", "/api/v1/tenants/{tenant_id}/directory/links",
+                                            values, query, payload);
+
+    return Transport::decode<DirectoryLinkResult>(response, "directory.link_account");
+}
+
+DirectorySyncStatus DirectoryApi::get_sync_status() {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("directory.get_sync_status", "GET", "/api/v1/tenants/{tenant_id}/directory/sync-status",
+                                            values, query, payload);
+
+    return Transport::decode<DirectorySyncStatus>(response, "directory.get_sync_status");
+}
+
+SamlApi::SamlApi(std::shared_ptr<Transport> transport, CallScope scope)
+    : transport_(std::move(transport)), scope_(std::move(scope)) {}
+
+// A COPY, not a mutation. §27.4 rule 3: an administrator holding a handle to their own tenant
+// should not find it repointed at someone else's because an unrelated code path re-scoped a
+// shared object -- and on a management surface that failure mode writes to the wrong tenant
+// rather than merely reading.
+SamlApi SamlApi::in_org(std::string org) const {
+    CallScope next = scope_;
+    next.org_id = std::move(org);
+    return SamlApi(transport_, std::move(next));
+}
+
+SamlApi SamlApi::for_tenant(std::string tenant) const {
+    CallScope next = scope_;
+    next.tenant_id = std::move(tenant);
+    return SamlApi(transport_, std::move(next));
+}
+
+SamlIdpInfo SamlApi::get_idp() {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("saml.get_idp", "GET", "/api/v1/tenants/{tenant_id}/saml/idp",
+                                            values, query, payload);
+
+    return Transport::decode<SamlIdpInfo>(response, "saml.get_idp");
+}
+
+Page<SamlServiceProvider> SamlApi::list_service_providers(const PageRequest& page) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    auto query = Transport::paging(page);
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("saml.list_service_providers", "GET", "/api/v1/tenants/{tenant_id}/saml/service-providers",
+                                            values, query, payload);
+
+    return Transport::to_page<SamlServiceProvider>(response, page, "saml.list_service_providers");
+}
+
+SamlServiceProvider SamlApi::create_service_provider(const SamlServiceProviderInput& body) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("saml.create_service_provider", "POST", "/api/v1/tenants/{tenant_id}/saml/service-providers",
+                                            values, query, payload);
+
+    return Transport::decode<SamlServiceProvider>(response, "saml.create_service_provider");
+}
+
+SamlServiceProvider SamlApi::get_service_provider(const std::string& sp_id) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}, {"sp_id", sp_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("saml.get_service_provider", "GET", "/api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}",
+                                            values, query, payload);
+
+    return Transport::decode<SamlServiceProvider>(response, "saml.get_service_provider");
+}
+
+SamlServiceProvider SamlApi::update_service_provider(const std::string& sp_id, const SamlServiceProviderInput& body) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}, {"sp_id", sp_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("saml.update_service_provider", "PUT", "/api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}",
+                                            values, query, payload);
+
+    return Transport::decode<SamlServiceProvider>(response, "saml.update_service_provider");
+}
+
+void SamlApi::delete_service_provider(const std::string& sp_id) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}, {"sp_id", sp_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    transport_->send("saml.delete_service_provider", "DELETE", "/api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}",
+                                            values, query, payload);
+}
+
+SamlSpMetadataDraft SamlApi::parse_sp_metadata(const ParseSamlSpMetadata& body) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("saml.parse_sp_metadata", "POST", "/api/v1/tenants/{tenant_id}/saml/parse-sp-metadata",
+                                            values, query, payload);
+
+    return Transport::decode<SamlSpMetadataDraft>(response, "saml.parse_sp_metadata");
+}
+
+std::vector<SamlIdpCredential> SamlApi::list_idp_credentials() {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("saml.list_idp_credentials", "GET", "/api/v1/tenants/{tenant_id}/saml/idp-credentials",
+                                            values, query, payload);
+
+    return Transport::decode<std::vector<SamlIdpCredential>>(response, "saml.list_idp_credentials");
+}
+
+SamlIdpCredential SamlApi::issue_idp_credential(const IssueSamlIdpCredential& body) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("saml.issue_idp_credential", "POST", "/api/v1/tenants/{tenant_id}/saml/idp-credentials",
+                                            values, query, payload);
+
+    return Transport::decode<SamlIdpCredential>(response, "saml.issue_idp_credential");
+}
+
+SamlIdpCredentialPromotion SamlApi::promote_idp_credential(const std::string& credential_id) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}, {"credential_id", credential_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("saml.promote_idp_credential", "POST", "/api/v1/tenants/{tenant_id}/saml/idp-credentials/{credential_id}/promote",
+                                            values, query, payload);
+
+    return Transport::decode<SamlIdpCredentialPromotion>(response, "saml.promote_idp_credential");
+}
+
+SamlIdpCredential SamlApi::retire_idp_credential(const std::string& credential_id) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}, {"credential_id", credential_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("saml.retire_idp_credential", "POST", "/api/v1/tenants/{tenant_id}/saml/idp-credentials/{credential_id}/retire",
+                                            values, query, payload);
+
+    return Transport::decode<SamlIdpCredential>(response, "saml.retire_idp_credential");
+}
+
+SsfApi::SsfApi(std::shared_ptr<Transport> transport, CallScope scope)
+    : transport_(std::move(transport)), scope_(std::move(scope)) {}
+
+// A COPY, not a mutation. §27.4 rule 3: an administrator holding a handle to their own tenant
+// should not find it repointed at someone else's because an unrelated code path re-scoped a
+// shared object -- and on a management surface that failure mode writes to the wrong tenant
+// rather than merely reading.
+SsfApi SsfApi::in_org(std::string org) const {
+    CallScope next = scope_;
+    next.org_id = std::move(org);
+    return SsfApi(transport_, std::move(next));
+}
+
+SsfApi SsfApi::for_tenant(std::string tenant) const {
+    CallScope next = scope_;
+    next.tenant_id = std::move(tenant);
+    return SsfApi(transport_, std::move(next));
+}
+
+Page<SsfStream> SsfApi::list_streams(const PageRequest& page) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    auto query = Transport::paging(page);
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("ssf.list_streams", "GET", "/api/v1/tenants/{tenant_id}/ssf/streams",
+                                            values, query, payload);
+
+    return Transport::to_page<SsfStream>(response, page, "ssf.list_streams");
+}
+
+SsfStream SsfApi::create_stream(const SsfStreamInput& body) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("ssf.create_stream", "POST", "/api/v1/tenants/{tenant_id}/ssf/streams",
+                                            values, query, payload);
+
+    return Transport::decode<SsfStream>(response, "ssf.create_stream");
+}
+
+SsfStream SsfApi::get_stream(const std::string& stream_id) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}, {"stream_id", stream_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("ssf.get_stream", "GET", "/api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}",
+                                            values, query, payload);
+
+    return Transport::decode<SsfStream>(response, "ssf.get_stream");
+}
+
+SsfStream SsfApi::update_stream(const std::string& stream_id, const SsfStreamInput& body) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}, {"stream_id", stream_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("ssf.update_stream", "PUT", "/api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}",
+                                            values, query, payload);
+
+    return Transport::decode<SsfStream>(response, "ssf.update_stream");
+}
+
+void SsfApi::delete_stream(const std::string& stream_id) {
+    const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}, {"stream_id", stream_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    transport_->send("ssf.delete_stream", "DELETE", "/api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}",
+                                            values, query, payload);
+}
+
+ScimTargetsApi::ScimTargetsApi(std::shared_ptr<Transport> transport, CallScope scope)
+    : transport_(std::move(transport)), scope_(std::move(scope)) {}
+
+// A COPY, not a mutation. §27.4 rule 3: an administrator holding a handle to their own tenant
+// should not find it repointed at someone else's because an unrelated code path re-scoped a
+// shared object -- and on a management surface that failure mode writes to the wrong tenant
+// rather than merely reading.
+ScimTargetsApi ScimTargetsApi::in_org(std::string org) const {
+    CallScope next = scope_;
+    next.org_id = std::move(org);
+    return ScimTargetsApi(transport_, std::move(next));
+}
+
+ScimTargetsApi ScimTargetsApi::for_tenant(std::string tenant) const {
+    CallScope next = scope_;
+    next.tenant_id = std::move(tenant);
+    return ScimTargetsApi(transport_, std::move(next));
+}
+
+Page<ScimTargetResponse> ScimTargetsApi::list(const PageRequest& page) {
+    const std::vector<PathValue> values{};
+    auto query = Transport::paging(page);
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("scim_targets.list", "GET", "/api/v1/scim-targets",
+                                            values, query, payload);
+
+    return Transport::to_page<ScimTargetResponse>(response, page, "scim_targets.list");
+}
+
+ScimTargetResponse ScimTargetsApi::create(const ScimTargetInput& body) {
+    const std::vector<PathValue> values{};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("scim_targets.create", "POST", "/api/v1/scim-targets",
+                                            values, query, payload);
+
+    return Transport::decode<ScimTargetResponse>(response, "scim_targets.create");
+}
+
+ScimTargetResponse ScimTargetsApi::get(const std::string& id) {
+    const std::vector<PathValue> values{{"id", id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("scim_targets.get", "GET", "/api/v1/scim-targets/{id}",
+                                            values, query, payload);
+
+    return Transport::decode<ScimTargetResponse>(response, "scim_targets.get");
+}
+
+ScimTargetResponse ScimTargetsApi::update(const std::string& id, const ScimTargetInput& body) {
+    const std::vector<PathValue> values{{"id", id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("scim_targets.update", "PUT", "/api/v1/scim-targets/{id}",
+                                            values, query, payload);
+
+    return Transport::decode<ScimTargetResponse>(response, "scim_targets.update");
+}
+
+void ScimTargetsApi::delete_(const std::string& id) {
+    const std::vector<PathValue> values{{"id", id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    transport_->send("scim_targets.delete", "DELETE", "/api/v1/scim-targets/{id}",
+                                            values, query, payload);
+}
+
+ScimReconcileAccepted ScimTargetsApi::reconcile(const std::string& id) {
+    const std::vector<PathValue> values{{"id", id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("scim_targets.reconcile", "POST", "/api/v1/scim-targets/{id}/reconcile",
+                                            values, query, payload);
+
+    return Transport::decode<ScimReconcileAccepted>(response, "scim_targets.reconcile");
+}
+
 SettingsApi::SettingsApi(std::shared_ptr<Transport> transport, CallScope scope)
     : transport_(std::move(transport)), scope_(std::move(scope)) {}
 
@@ -2087,6 +2435,22 @@ EmailConfigApi ManagementApi::email_config() const {
     return EmailConfigApi(transport_, scope_);
 }
 
+DirectoryApi ManagementApi::directory() const {
+    return DirectoryApi(transport_, scope_);
+}
+
+SamlApi ManagementApi::saml() const {
+    return SamlApi(transport_, scope_);
+}
+
+SsfApi ManagementApi::ssf() const {
+    return SsfApi(transport_, scope_);
+}
+
+ScimTargetsApi ManagementApi::scim_targets() const {
+    return ScimTargetsApi(transport_, scope_);
+}
+
 SettingsApi ManagementApi::settings() const {
     return SettingsApi(transport_, scope_);
 }
@@ -2120,7 +2484,7 @@ PlatformApi ManagementApi::platform() const {
 namespace axiam {
 
 // The one place the §27 surface is attached to a Client. Defined here rather than in client.cpp
-// so that translation unit keeps knowing nothing about the 162 generated operations.
+// so that translation unit keeps knowing nothing about the 190 generated operations.
 management::ManagementApi Client::management() {
     p_->ensure_open();
     management::CallScope scope;
@@ -2198,6 +2562,22 @@ management::NotificationRulesApi Client::notification_rules() {
 
 management::EmailConfigApi Client::email_config() {
     return management().email_config();
+}
+
+management::DirectoryApi Client::directory() {
+    return management().directory();
+}
+
+management::SamlApi Client::saml() {
+    return management().saml();
+}
+
+management::SsfApi Client::ssf() {
+    return management().ssf();
+}
+
+management::ScimTargetsApi Client::scim_targets() {
+    return management().scim_targets();
 }
 
 management::SettingsApi Client::settings() {
