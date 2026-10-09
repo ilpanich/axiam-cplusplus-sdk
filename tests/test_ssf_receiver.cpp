@@ -380,12 +380,19 @@ AXIAM_TEST("§32.7: a JWKS fetch failure is a NetworkError, not a verdict on the
     auto client = rig.client();
     ssf::SsfReceiver receiver(client, rig.config());
     const std::string set = set_for(rig.key, claims(axtest::random_secret("jti-", 16)));
+    // Each failed fetch holds the next one off for a minute (§34.2 P6): step past it.
+    auto clock = std::chrono::steady_clock::now();
+    receiver._set_clock_for_testing([&clock] { return clock; });
     AXIAM_REQUIRE_THROWS_AS(receiver.verify_set(set), NetworkError);
     rig.jwks_status = 200;
     rig.jwks_body = "not json";
+    clock += std::chrono::seconds(61);
     AXIAM_REQUIRE_THROWS_AS(receiver.verify_set(set), NetworkError);
+    AXIAM_CHECK(rig.jwks_fetches() == 2);
     rig.jwks_body = R"({"keys":"nope"})";
+    clock += std::chrono::seconds(61);
     AXIAM_CHECK(refusal(receiver, set) == SetFailureReason::kInvalidKey);  // fetched, no keys
+    AXIAM_CHECK(rig.jwks_fetches() == 4);  // the (empty) fill, then the kid miss's one refetch
 
     // A transport failure, and the fetch is session-free.
     Rig dropped;
@@ -398,6 +405,44 @@ AXIAM_TEST("§32.7: a JWKS fetch failure is a NetworkError, not a verdict on the
     ssf::SsfReceiver r2(c2, dropped.config());
     AXIAM_REQUIRE_THROWS_AS(r2.verify_set(set), NetworkError);
     AXIAM_CHECK(dropped.st->last().sessionless);
+}
+
+AXIAM_TEST("§32.7 step 4, contract 1.59 P6: a failed first JWKS fetch is rate-limited too, so an outage is not one fetch per SET") {
+    Rig rig;
+    rig.jwks_status = 503;
+    auto client = rig.client();
+    ssf::SsfReceiver receiver(client, rig.config());
+    AXIAM_REQUIRE_THROWS_AS(receiver.verify_set(set_for(rig.key, claims(axtest::random_secret("jti-", 16)))),
+                            NetworkError);
+    AXIAM_CHECK(rig.jwks_fetches() == 1);
+
+    // Inside the minute: no fetch, and still no verdict (NetworkError, not invalid_key).
+    rig.jwks_status = 200;
+    for (int i = 0; i < 3; ++i) {
+        AXIAM_REQUIRE_THROWS_AS(
+            receiver.verify_set(set_for(rig.key, claims(axtest::random_secret("jti-", 16)))),
+            NetworkError);
+    }
+    AXIAM_CHECK(rig.jwks_fetches() == 1);
+
+    // Once the minute has passed, the cache is filled and the SET verifies.
+    const auto later = std::chrono::steady_clock::now() + std::chrono::seconds(61);
+    receiver._set_clock_for_testing([later] { return later; });
+    AXIAM_CHECK(receiver.verify_set(set_for(rig.key, claims(axtest::random_secret("jti-", 16))))
+                    .event_type == ssf::event_types::kSessionRevoked);
+    AXIAM_CHECK(rig.jwks_fetches() == 2);
+
+    // A successful fill is not "the refetch": an unknown kid right after it still
+    // gets its one refetch (§34.2 P6), and a failed refetch also waits the minute.
+    Rig cold;
+    auto c2 = cold.client();
+    ssf::SsfReceiver r2(c2, cold.config());
+    axtest::TestKey stranger;
+    stranger.kid = axtest::random_secret("kid-", 4);
+    cold.jwks_status = 200;
+    AXIAM_CHECK(refusal(r2, set_for(stranger, claims(axtest::random_secret("jti-", 16)))) ==
+                SetFailureReason::kInvalidKey);
+    AXIAM_CHECK(cold.jwks_fetches() == 2);  // the fill, then the one refetch
 }
 
 AXIAM_TEST("§32.7: a discovery URL is used for its jwks_uri when its issuer matches") {

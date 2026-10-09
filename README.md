@@ -2336,7 +2336,9 @@ for (;;) {
 or `replayed`. Only `EdDSA`, only keys from the configured JWKS (or from a discovery
 document whose `issuer` matches) — a `jwk` / `x5c` header is never read; an unknown
 `kid` triggers one refetch at most once a minute; a JWKS fetch failure is a
-`NetworkError`, not a verdict. **A verified SET is recorded**, so one re-offered unacked
+`NetworkError`, not a verdict, and — the first fill of an empty cache included — holds
+the next fetch off for that same minute, so a JWKS outage is not one fetch per SET
+(§34.2 P6). **A verified SET is recorded**, so one re-offered unacked
 reads `replayed`: acknowledge what you processed, and acknowledge a `replayed` refusal
 too rather than reporting it (contract 1.59, §34.2 P2). `poll` sends only the members you set,
 acknowledges nothing itself, is retried per §16 on transport/408/429/5xx only, and

@@ -245,7 +245,10 @@ public:
     ///  2. `typ` `secevent+jwt` or `application/secevent+jwt`, any case [invalid_type];
     ///  3. `alg` exactly `EdDSA` [invalid_key];
     ///  4. the `kid` in the configured JWKS — on a miss, ONE refetch, at most once
-    ///     a minute [invalid_key];
+    ///     a minute [invalid_key]. A FAILED fetch, the one that fills an empty
+    ///     cache included, also waits out the minute: until it has passed, a SET
+    ///     needing that fetch raises NetworkError without a request (contract
+    ///     1.59, §34.2 P6), so a JWKS outage is not one fetch per SET;
     ///  5. the Ed25519 signature [invalid_key];
     ///  6. `iss` equal to the configured issuer [invalid_issuer];
     ///  7. `aud` equal to, or an array containing, the audience [invalid_audience];
@@ -285,6 +288,11 @@ public:
     ///
     /// @throws AuthError, with no request sent, when no access_token_provider is set.
     SsfPollResult poll(const std::string& stream_id, const SsfPollOptions& options = {});
+
+    /// TEST SEAM — the monotonic clock the once-a-minute JWKS fetch limit reads
+    /// (§32.7 step 4), so a test can step past the minute without sleeping.
+    /// NEVER called in production; nothing in src/ writes it.
+    void _set_clock_for_testing(std::function<std::chrono::steady_clock::time_point()> now);
 
     struct State;
 
