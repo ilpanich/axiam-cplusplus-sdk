@@ -2133,6 +2133,9 @@ public:
     ///
     /// `POST /api/v1/scim-targets`.
     ///
+    /// `credential` is required here (§31.3 rule 2). It is write-only: no response ever carries
+    /// it, and the SDK keeps no copy.
+    ///
     /// @param body The request body.
     ScimTargetResponse create(const ScimTargetInput& body);
 
@@ -2147,6 +2150,14 @@ public:
     ///
     /// `PUT /api/v1/scim-targets/{id}`.
     ///
+    /// **The credential is bound to its URL** (§31.3 rule 2): absent `credential` keeps the
+    /// stored one -- except that changing `base_url` of a bearer target, `auth.token_url` or
+    /// `base_url` of a client-credentials target, or `auth.type`, without `credential` in the
+    /// same write is refused `400` and changes nothing. The SDK holds no credential to re-send.
+    /// Every other member left out takes its default (start from
+    /// `ScimTargetResponse::to_input()`). An update overtaken by another administrator's write
+    /// is `409` (§31.3 rule 4): reload, then retry yourself.
+    ///
     /// @param id The `{id}` path parameter.
     /// @param body The request body.
     ScimTargetResponse update(const std::string& id, const ScimTargetInput& body);
@@ -2160,12 +2171,20 @@ public:
     /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
     /// rather than succeeding quietly.
     ///
+    /// **Deprovisions nothing downstream** (§31.3 rule 8): the users and groups AXIAM created
+    /// in the service provider stay there, and AXIAM no longer knows them. To remove them, set
+    /// `deprovision` to `delete`, let AXIAM push, and only then delete the target.
+    ///
     /// @param id The `{id}` path parameter.
     void delete_(const std::string& id);
 
     /// `POST /api/v1/scim-targets/{id}/reconcile`
     ///
     /// `POST /api/v1/scim-targets/{id}/reconcile`.
+    ///
+    /// Starts a reconciliation in the background and answers `202`; its outcome is on the
+    /// target's `state` (§31.3 rule 7). `409` while a run holds the claim, within five minutes
+    /// of the last one, or for a disabled target.
     ///
     /// @param id The `{id}` path parameter.
     ScimReconcileAccepted reconcile(const std::string& id);

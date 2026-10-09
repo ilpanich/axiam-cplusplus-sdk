@@ -4268,7 +4268,11 @@ void to_json(nlohmann::json& j, const ScimTargetAuth& value) {
 
 void from_json(const nlohmann::json& j, ScimTargetAuth& value) {
     value.type = j.at("type").get<std::string>();
-    value.raw = j.dump();
+    // A secret is on no response (§31.2): one a server wrongly sent inside the union is dropped
+    // rather than kept in `raw`.
+    nlohmann::json kept = j;
+    for (const char* secret : {"credential", "bind_secret", "authorization_header", "private_key_pem"}) kept.erase(secret);
+    value.raw = kept.dump();
 }
 
 void to_json(nlohmann::json& j, const ScimTargetDeliveryState& value) {
@@ -4322,7 +4326,11 @@ void to_json(nlohmann::json& j, const ScimTargetScope& value) {
 
 void from_json(const nlohmann::json& j, ScimTargetScope& value) {
     value.type = j.at("type").get<std::string>();
-    value.raw = j.dump();
+    // A secret is on no response (§31.2): one a server wrongly sent inside the union is dropped
+    // rather than kept in `raw`.
+    nlohmann::json kept = j;
+    for (const char* secret : {"credential", "bind_secret", "authorization_header", "private_key_pem"}) kept.erase(secret);
+    value.raw = kept.dump();
 }
 
 void to_json(nlohmann::json& j, const ScimTargetInput& value) {

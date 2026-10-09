@@ -29,6 +29,7 @@ add_executable(axiam_cpp_tests
   # §31.8, §32.8 management).
   test_directory.cpp
   test_saml.cpp
+  test_scim_targets.cpp
   # CONTRACT.md §27.13 (contract 1.51): the model-level pins C-1's EXECUTED block
   # calls out by name -- SubjectAltName's externally-tagged shape, a subject-side
   # inherit's open-default decode, and CertificateType's open-enum successor value.

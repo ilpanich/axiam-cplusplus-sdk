@@ -5,6 +5,8 @@
 
 #include <stdexcept>
 
+#include <nlohmann/json.hpp>
+
 #include "axiam/management_models.hpp"
 #include "management_checks.hpp"
 
@@ -70,6 +72,55 @@ SamlServiceProviderInput SamlServiceProvider::to_input() const {
     out.sp_encryption_cert_pem = sp_encryption_cert_pem;
     out.sp_signing_cert_pem = sp_signing_cert_pem;
     out.want_authn_requests_signed = want_authn_requests_signed;
+    return out;
+}
+
+// ---- §31 scim_targets --------------------------------------------------------
+
+ScimTargetInput ScimTargetResponse::to_input() const {
+    // `credential` absent: no read carries it, and absent keeps the stored one.
+    ScimTargetInput out;
+    out.auth = auth;
+    out.base_url = base_url;
+    out.deprovision = deprovision;
+    out.enabled = enabled;
+    out.name = name;
+    out.push_groups = push_groups;
+    out.scope = scope;
+    out.user_name_from = user_name_from;
+    return out;
+}
+
+ScimTargetAuth ScimTargetAuth::bearer() {
+    ScimTargetAuth out;
+    out.type = "bearer";
+    out.raw = nlohmann::json{{"type", out.type}}.dump();
+    return out;
+}
+
+ScimTargetAuth ScimTargetAuth::oauth2_client_credentials(std::string token_url,
+                                                         std::string client_id,
+                                                         std::optional<std::string> scope) {
+    ScimTargetAuth out;
+    out.type = "oauth2_client_credentials";
+    nlohmann::json j{{"type", out.type}, {"token_url", std::move(token_url)},
+                     {"client_id", std::move(client_id)}};
+    if (scope) j["scope"] = std::move(*scope);
+    out.raw = j.dump();
+    return out;
+}
+
+ScimTargetScope ScimTargetScope::all_users() {
+    ScimTargetScope out;
+    out.type = "all_users";
+    out.raw = nlohmann::json{{"type", out.type}}.dump();
+    return out;
+}
+
+ScimTargetScope ScimTargetScope::groups(std::vector<std::string> group_ids) {
+    ScimTargetScope out;
+    out.type = "groups";
+    out.raw = nlohmann::json{{"type", out.type}, {"group_ids", std::move(group_ids)}}.dump();
     return out;
 }
 

@@ -3900,6 +3900,13 @@ struct ScimTargetAuth {
     /// The whole object as the server sent it, to read the variant's own fields from once
     /// `type` says which it is.
     std::string raw;
+
+    /// `{ "type": "bearer" }` -- the credential is a static bearer token.
+    static ScimTargetAuth bearer();
+
+    /// `{ "type": "oauth2_client_credentials", "token_url", "client_id", "scope"? }` -- the
+    /// credential is the OAuth2 client secret.
+    static ScimTargetAuth oauth2_client_credentials(std::string token_url, std::string client_id, std::optional<std::string> scope = std::nullopt);
 };
 
 /// A target's delivery state, as `GET` projects it. Fixed vocabulary only: the failure reason
@@ -3926,6 +3933,13 @@ struct ScimTargetScope {
     /// The whole object as the server sent it, to read the variant's own fields from once
     /// `type` says which it is.
     std::string raw;
+
+    /// `{ "type": "all_users" }` -- every user of the tenant.
+    static ScimTargetScope all_users();
+
+    /// `{ "type": "groups", "group_ids": [...] }` -- users who are direct members of any listed
+    /// group.
+    static ScimTargetScope groups(std::vector<std::string> group_ids);
 };
 
 /// `create` and `update` (a **replacement**) body.
@@ -3987,6 +4001,11 @@ struct ScimTargetResponse {
     std::string updated_at;
     /// Which attribute becomes `userName`.
     UserNameSource user_name_from;
+
+    /// The replacement body for `scim_targets.update` holding every member of this read.
+    /// `credential` is absent: no read carries it, and absent keeps the stored one -- unless
+    /// the update moves the URL (§31.3 rule 2).
+    ScimTargetInput to_input() const;
 };
 
 /// Metadata only. The handle is never in a list response — it exists in plaintext exactly once,

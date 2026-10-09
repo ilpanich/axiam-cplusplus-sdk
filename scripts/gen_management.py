@@ -174,6 +174,30 @@ CALL_SITE_NOTES: dict[str, str] = {
         "key. The key is destroyed. The safe rotation is: issue into `next`, wait until "
         "every SP has refreshed the metadata, then promote."
     ),
+    "scim_targets.create": (
+        "`credential` is required here (§31.3 rule 2). It is write-only: no response "
+        "ever carries it, and the SDK keeps no copy."
+    ),
+    "scim_targets.update": (
+        "**The credential is bound to its URL** (§31.3 rule 2): absent `credential` keeps "
+        "the stored one -- except that changing `base_url` of a bearer target, "
+        "`auth.token_url` or `base_url` of a client-credentials target, or `auth.type`, "
+        "without `credential` in the same write is refused `400` and changes nothing. The "
+        "SDK holds no credential to re-send. Every other member left out takes its default "
+        "(start from `ScimTargetResponse::to_input()`). An update overtaken by another "
+        "administrator's write is `409` (§31.3 rule 4): reload, then retry yourself."
+    ),
+    "scim_targets.delete": (
+        "**Deprovisions nothing downstream** (§31.3 rule 8): the users and groups AXIAM "
+        "created in the service provider stay there, and AXIAM no longer knows them. To "
+        "remove them, set `deprovision` to `delete`, let AXIAM push, and only then delete "
+        "the target."
+    ),
+    "scim_targets.reconcile": (
+        "Starts a reconciliation in the background and answers `202`; its outcome is on "
+        "the target's `state` (§31.3 rule 7). `409` while a run holds the claim, within "
+        "five minutes of the last one, or for a disabled target."
+    ),
 }
 
 # Local checks a generated operation runs before any I/O: the name of a function
@@ -211,7 +235,33 @@ MODEL_MEMBERS: dict[str, list[tuple[str, str]]] = {
         "member takes its DEFAULT on an update.",
         "SamlServiceProviderInput to_input() const;",
     )],
+    "ScimTargetResponse": [(
+        "The replacement body for `scim_targets.update` holding every member of this "
+        "read. `credential` is absent: no read carries it, and absent keeps the stored "
+        "one -- unless the update moves the URL (§31.3 rule 2).",
+        "ScimTargetInput to_input() const;",
+    )],
+    "ScimTargetAuth": [
+        ("`{ \"type\": \"bearer\" }` -- the credential is a static bearer token.",
+         "static ScimTargetAuth bearer();"),
+        ("`{ \"type\": \"oauth2_client_credentials\", \"token_url\", \"client_id\", "
+         "\"scope\"? }` -- the credential is the OAuth2 client secret.",
+         "static ScimTargetAuth oauth2_client_credentials(std::string token_url, "
+         "std::string client_id, std::optional<std::string> scope = std::nullopt);"),
+    ],
+    "ScimTargetScope": [
+        ("`{ \"type\": \"all_users\" }` -- every user of the tenant.",
+         "static ScimTargetScope all_users();"),
+        ("`{ \"type\": \"groups\", \"group_ids\": [...] }` -- users who are direct "
+         "members of any listed group.",
+         "static ScimTargetScope groups(std::vector<std::string> group_ids);"),
+    ],
 }
+
+# Members no RESPONSE may surface (§29.5, §30.2, §31.2, §32.5). The structs declare
+# none of them and keep no unknown member, so only a union's raw object could carry
+# one through; an OPEN_UNIONS decoder strips them from it.
+RESPONSE_SECRET_MEMBERS = ("credential", "bind_secret", "authorization_header", "private_key_pem")
 
 EXAMPLE_UUID = "11111111-1111-4111-8111-111111111111"
 
@@ -1227,6 +1277,15 @@ def emit_models_source() -> str:
             out.append("")
             out.append(f"void from_json(const nlohmann::json& j, {rendered}& value) {{")
             for f in fields:
+                if f["kind"] == "union_raw" and name in OPEN_UNIONS:
+                    names = ", ".join(f'"{m}"' for m in RESPONSE_SECRET_MEMBERS)
+                    out.extend(comment(
+                        "A secret is on no response (§31.2): one a server wrongly sent "
+                        "inside the union is dropped rather than kept in `raw`.", "    "))
+                    out.append("    nlohmann::json kept = j;")
+                    out.append(f"    for (const char* secret : {{{names}}}) kept.erase(secret);")
+                    out.append("    value.raw = kept.dump();")
+                    continue
                 out.extend(emit_from_json_member(f))
             out.append("}")
             out.append("")
