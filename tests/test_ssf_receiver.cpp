@@ -7,6 +7,7 @@
 // verify.
 
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -525,6 +526,86 @@ AXIAM_TEST("§32.8 helper (8): poll sends ack and setErrs exactly as given and r
     AXIAM_CHECK(empty.events.empty() && empty.refused.empty() && !empty.more_available);
 }
 
+/// A store that remembers what it recorded, so a test can ask whether a jti is
+/// in it — and that can be told to fail (a store that cannot answer, §34.2 P3).
+struct RecordingStore : ssf::ReplayStore {
+    std::set<std::string> recorded;
+    std::set<std::string> fail_on;
+    bool check_and_record(const std::string& jti, std::chrono::seconds) override {
+        if (fail_on.count(jti)) throw std::runtime_error("replay store unavailable");
+        return recorded.insert(jti).second;
+    }
+};
+
+AXIAM_TEST("§32.8 helper (8), contract 1.59 P1: a two-SET batch whose second SET's key refetch fails leaves no unreturned jti recorded") {
+    Rig rig;
+    const std::string first = axtest::random_secret("jti-", 16);
+    const std::string second = axtest::random_secret("jti-", 16);
+    axtest::TestKey stranger;  // a kid the JWKS does not hold
+    stranger.kid = axtest::random_secret("kid-", 4);
+    rig.poll = [&](const HttpRequest&) {
+        return json_response(200, json{{"sets",
+                                        {{first, set_for(rig.key, claims(first))},
+                                         {second, set_for(stranger, claims(second))}}}}
+                                      .dump());
+    };
+    auto client = rig.client();
+    auto store = std::make_shared<RecordingStore>();
+    auto cfg = rig.config();
+    cfg.replay_store = store;
+    ssf::SsfReceiver receiver(client, cfg);
+    // Prime the key cache, then take the JWKS down: the second SET's refetch fails.
+    receiver.verify_set(set_for(rig.key, claims(axtest::random_secret("jti-", 16))));
+    rig.jwks_status = 503;
+
+    bool first_returned = false;
+    std::optional<ssf::SsfPollResult> result;
+    try {
+        result = receiver.poll("s-1");
+        for (const auto& e : result->events) first_returned = first_returned || e.jti == first;
+    } catch (const NetworkError&) {
+    }
+    // The contract's assertion, either form (§34.2 P1).
+    AXIAM_CHECK(first_returned || store->recorded.count(first) == 0);
+    // And this SDK's form: what was judged is returned, the unjudged SET is in
+    // neither list, is not recorded, and is named so the caller can tell.
+    AXIAM_REQUIRE(result.has_value());
+    AXIAM_CHECK(first_returned && store->recorded.count(first) == 1);
+    AXIAM_CHECK(store->recorded.count(second) == 0);
+    AXIAM_CHECK(result->refused.empty());
+    AXIAM_REQUIRE(result->unjudged.size() == 1);
+    AXIAM_CHECK(result->unjudged[0].jti == second);
+    AXIAM_CHECK(!result->unjudged[0].error.empty());
+}
+
+AXIAM_TEST("§32.7 contract 1.59 P1/P3: a store that cannot answer leaves that SET unjudged, and the earlier ones returned") {
+    Rig rig;
+    const std::string first = axtest::random_secret("jti-", 16);
+    const std::string second = axtest::random_secret("jti-", 16);
+    rig.poll = [&](const HttpRequest&) {
+        return json_response(200, json{{"sets",
+                                        {{first, set_for(rig.key, claims(first))},
+                                         {second, set_for(rig.key, claims(second))}}}}
+                                      .dump());
+    };
+    auto client = rig.client();
+    auto store = std::make_shared<RecordingStore>();
+    store->fail_on.insert(second);
+    auto cfg = rig.config();
+    cfg.replay_store = store;
+    ssf::SsfReceiver receiver(client, cfg);
+    const auto result = receiver.poll("s-1");
+    AXIAM_REQUIRE(result.events.size() == 1);
+    AXIAM_CHECK(result.events[0].jti == first);
+    AXIAM_CHECK(result.refused.empty());  // a store failure is no verdict: never `refused`
+    AXIAM_REQUIRE(result.unjudged.size() == 1);
+    AXIAM_CHECK(result.unjudged[0].jti == second);
+    AXIAM_CHECK(store->recorded.count(second) == 0);
+
+    // verify_set alone still raises the failure: it fails closed, never accepts.
+    AXIAM_REQUIRE_THROWS_AS(receiver.verify_set(set_for(rig.key, claims(second))), std::runtime_error);
+}
+
 AXIAM_TEST("§32.7: poll is never retried on a 400, and is on a 503 (retry enabled)") {
     Rig rig;
     rig.poll = [](const HttpRequest&) {
@@ -565,7 +646,7 @@ AXIAM_TEST("§32.7: poll is never retried on a 400, and is on a 503 (retry enabl
     AXIAM_REQUIRE_THROWS_AS(receiver.poll("s-1"), NetworkError);
 }
 
-AXIAM_TEST("§32.7: poll without a provider is a local AuthError; a JWKS failure aborts it") {
+AXIAM_TEST("§32.7: poll without a provider is a local AuthError; a JWKS failure leaves the SET unjudged") {
     Rig rig;
     auto client = rig.client();
     auto cfg = rig.config();
@@ -578,8 +659,15 @@ AXIAM_TEST("§32.7: poll without a provider is a local AuthError; a JWKS failure
     rig.poll = [&rig](const HttpRequest&) {
         return json_response(200, json{{"sets", {{"j1", set_for(rig.key, claims("j1"))}}}}.dump());
     };
-    ssf::SsfReceiver receiver(client, rig.config());
-    AXIAM_REQUIRE_THROWS_AS(receiver.poll("s-1"), NetworkError);
+    auto store = std::make_shared<RecordingStore>();
+    auto with_store = rig.config();
+    with_store.replay_store = store;
+    ssf::SsfReceiver receiver(client, with_store);
+    const auto result = receiver.poll("s-1");  // §34.2 P1: no throw, no verdict
+    AXIAM_CHECK(result.events.empty() && result.refused.empty());
+    AXIAM_REQUIRE(result.unjudged.size() == 1);
+    AXIAM_CHECK(result.unjudged[0].jti == "j1");
+    AXIAM_CHECK(store->recorded.empty());
 }
 
 AXIAM_TEST("§32.7: the origin helper splits what it can and refuses the rest") {

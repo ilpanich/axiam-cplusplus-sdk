@@ -2320,8 +2320,13 @@ for (;;) {
     next.set_errs.emplace();
     for (const auto& e : batch.events) { process(e); next.ack->push_back(e.jti); }
     for (const auto& r : batch.refused) {
-        (*next.set_errs)[r.jti] = axiam::ssf::SetErr::from_reason(r.reason);
+        if (r.reason == axiam::ssf::SetFailureReason::kReplayed) {
+            next.ack->push_back(r.jti);   // accepted earlier: acknowledge, never report (§34.2 P2)
+        } else {
+            (*next.set_errs)[r.jti] = axiam::ssf::SetErr::from_reason(r.reason);
+        }
     }
+    // batch.unjudged: neither acked nor refused — the transmitter offers them again.
 }
 ```
 
@@ -2332,10 +2337,17 @@ or `replayed`. Only `EdDSA`, only keys from the configured JWKS (or from a disco
 document whose `issuer` matches) — a `jwk` / `x5c` header is never read; an unknown
 `kid` triggers one refetch at most once a minute; a JWKS fetch failure is a
 `NetworkError`, not a verdict. **A verified SET is recorded**, so one re-offered unacked
-reads `replayed`: acknowledge what you processed. `poll` sends only the members you set,
+reads `replayed`: acknowledge what you processed, and acknowledge a `replayed` refusal
+too rather than reporting it (contract 1.59, §34.2 P2). `poll` sends only the members you set,
 acknowledges nothing itself, is retried per §16 on transport/408/429/5xx only, and
-never carries the client's session. The replay store is pluggable
-(`ReplayStore::check_and_record`, atomic) for a receiver running several instances.
+never carries the client's session. **`poll` never keeps a `jti` it does not return**
+(§34.2 P1): a SET it could not judge — its key fetch or the replay store failed — is
+listed in `unjudged`, in neither `events` nor `refused`, and its `jti` is not recorded,
+so the transmitter offers it again; the rest of the batch is still returned. The replay
+store is pluggable (`ReplayStore::check_and_record`, atomic) for a receiver running
+several instances; a store that cannot answer throws, which `verify_set` raises (fail
+closed) and `poll` reports as unjudged. The default `MemoryReplayStore` is bounded in
+time by the replay window and **unbounded in count** (§34.2 P4).
 
 ## CIBA (§33)
 

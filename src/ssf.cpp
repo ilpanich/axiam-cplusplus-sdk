@@ -372,10 +372,19 @@ SsfPollResult SsfReceiver::poll(const std::string& stream_id, const SsfPollOptio
                 out.refused.push_back({jti, SetFailureReason::kMalformed});
                 continue;
             }
+            // §34.2 P1: a verdict is `events` or `refused`; anything else — a key
+            // fetch or a replay store that failed — leaves the SET unjudged and
+            // its jti unrecorded (verify() records only at step 9, and a store
+            // that throws has recorded nothing), so the transmitter offers it
+            // again instead of the next poll reading it `replayed`.
             try {
                 out.events.push_back(state_->verify(it.value().get<std::string>(), &jti));
             } catch (const SetVerificationError& e) {
                 out.refused.push_back({jti, e.reason()});
+            } catch (const std::exception& e) {
+                out.unjudged.push_back({jti, e.what()});
+            } catch (...) {
+                out.unjudged.push_back({jti, "unknown failure"});
             }
         }
     }

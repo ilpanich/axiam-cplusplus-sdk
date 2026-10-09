@@ -116,12 +116,15 @@ public:
     virtual ~ReplayStore() = default;
     /// Record `jti` for `window` and return true, or return false WITHOUT
     /// recording when it is already held. Must be atomic: two concurrent calls
-    /// with one `jti` must not both see true.
+    /// with one `jti` must not both see true. When the store cannot answer,
+    /// THROW, having recorded nothing: verify_set() then fails closed, and
+    /// poll() leaves the SET unjudged (contract 1.59, §34.2 P1, P4).
     virtual bool check_and_record(const std::string& jti, std::chrono::seconds window) = 0;
 };
 
 /// The default ReplayStore: one process, lost on restart; expired entries are
-/// dropped as new ones arrive.
+/// dropped as new ones arrive. Bounded in time by the replay window and
+/// unbounded in count (§34.2 P4).
 class MemoryReplayStore final : public ReplayStore {
 public:
     bool check_and_record(const std::string& jti, std::chrono::seconds window) override;
@@ -200,11 +203,23 @@ struct SsfPollOptions {
     std::optional<std::map<std::string, SetErr>> set_errs;
 };
 
+/// A SET a poll returned that the helper could not judge: its key fetch, the
+/// discovery document or the replay store failed, which is no verdict on the
+/// SET (contract 1.59, §34.2 P1 and P3). Its `jti` is NOT recorded.
+struct UnjudgedSet {
+    std::string jti;    ///< the key the transmitter returned it under
+    std::string error;  ///< what failed (the exception's message), for a log line
+};
+
 /// What poll() returns.
 struct SsfPollResult {
     std::vector<SecurityEvent> events;  ///< the SETs that verified
     bool more_available = false;        ///< the transmitter holds more
     std::vector<RefusedSet> refused;    ///< the SETs that did not
+    /// The SETs neither verified nor refused (§34.2 P1). Neither acknowledge them
+    /// nor pass them in `set_errs`: left alone, the transmitter offers them again
+    /// and the next poll judges them.
+    std::vector<UnjudgedSet> unjudged;
 };
 
 /// The receiver helper (§32.7).
@@ -258,8 +273,15 @@ public:
     ///
     /// Retried per §16 on a transport failure, 408, 429 or 5xx; never on another
     /// 4xx, which maps as on the management surface (400 ValidationError, 404
-    /// NotFoundError, 409 ConflictError, else §2). A NetworkError while verifying
-    /// (the JWKS) aborts the poll rather than refusing SETs it could not judge.
+    /// NotFoundError, 409 ConflictError, else §2).
+    ///
+    /// **poll never keeps a `jti` it does not return** (contract 1.59, §34.2 P1,
+    /// the second of its two forms). A failure that is not a verdict on a SET —
+    /// the JWKS or discovery fetch, a replay store that cannot answer — leaves
+    /// that SET in SsfPollResult::unjudged, in neither `events` nor `refused`,
+    /// with its `jti` unrecorded; the rest of the batch is still judged and
+    /// returned. Do not acknowledge an unjudged SET: the transmitter offers it
+    /// again.
     ///
     /// @throws AuthError, with no request sent, when no access_token_provider is set.
     SsfPollResult poll(const std::string& stream_id, const SsfPollOptions& options = {});
