@@ -25,6 +25,9 @@ add_executable(axiam_cpp_tests
   # does not parse are never exercised. Hand-written, not a generator output.
   test_management_models_optional.cpp
   test_management_semantics.cpp
+  # Contract 1.54–1.57: the four new namespaces' required tests (§29.8, §30.8,
+  # §31.8, §32.8 management).
+  test_directory.cpp
   # CONTRACT.md §27.13 (contract 1.51): the model-level pins C-1's EXECUTED block
   # calls out by name -- SubjectAltName's externally-tagged shape, a subject-side
   # inherit's open-default decode, and CertificateType's open-enum successor value.

@@ -1806,12 +1806,29 @@ public:
     ///
     /// `PUT /api/v1/tenants/{tenant_id}/directory`.
     ///
+    /// **Moving the connection requires the secret again** (§30.3 rule 2): a `set` that changes
+    /// `url`, `start_tls`, `bind_dn` or `trust_anchors_pem` without `bind_secret` is refused
+    /// `400` and changes nothing. The SDK holds no copy of the secret and cannot re-send one
+    /// for you. `bind_secret` is required while the tenant has no configuration; otherwise
+    /// absent keeps the stored secret. Every other optional member left out is **reset to its
+    /// default** (start from `DirectoryConfig::to_input()`). An enabled directory and an
+    /// effective `opaque_mode = required` never coexist (`409`); without the deployment's
+    /// directory key a write carrying a secret is `503`.
+    ///
     /// @param body The request body.
     DirectoryConfig set(const SetDirectoryConfig& body);
 
     /// `PATCH /api/v1/tenants/{tenant_id}/directory` — a **sparse** update.
     ///
     /// `PATCH /api/v1/tenants/{tenant_id}/directory`.
+    ///
+    /// **Moving the connection requires the secret again** (§30.3 rule 2): an `update` that
+    /// changes `url`, `start_tls`, `bind_dn` or `trust_anchors_pem` without `bind_secret` is
+    /// refused `400` and changes nothing; the SDK holds no copy of the secret to re-send. A
+    /// member left `std::nullopt` is not sent and stays as stored; `group_base_dn` /
+    /// `group_filter` engaged with an inner `std::nullopt` are sent as `null` and clear the
+    /// value. An enabled directory and an effective `opaque_mode = required` never coexist
+    /// (`409`).
     ///
     /// @param body The request body.
     DirectoryConfig update(const UpdateDirectoryConfig& body);
@@ -1824,12 +1841,24 @@ public:
     ///
     /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
     /// rather than succeeding quietly.
+    ///
+    /// **Deleting stops the directory, and only that** (§30.3 rule 5): directory accounts can
+    /// no longer sign in with a password -- there is no fallback to a local hash -- and the
+    /// sync stops. Sessions, refresh tokens and passkeys those accounts already hold keep
+    /// working until they expire or the accounts are deactivated. There is no unlink: a linked
+    /// account stays a directory account.
     void delete_();
 
     /// `POST /api/v1/tenants/{tenant_id}/directory/links` — link a local account to its
     /// directory entry (D-28).
     ///
     /// `POST /api/v1/tenants/{tenant_id}/directory/links`.
+    ///
+    /// **Signs the account's owner out everywhere** (§30.3 rule 6): linking deletes the
+    /// account's WebAuthn credentials and federation links, revokes its `User` certificates,
+    /// all its sessions and its OAuth2 refresh tokens (TOTP is kept). The entry is found by the
+    /// account's own username; a repeat on an already-linked account answers
+    /// `was_already_linked` and repeats the revocations.
     ///
     /// @param body The request body.
     DirectoryLinkResult link_account(const LinkDirectoryAccount& body);

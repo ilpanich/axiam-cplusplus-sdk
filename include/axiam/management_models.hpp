@@ -2426,6 +2426,11 @@ struct DirectoryConfig {
     /// the bind path replaces with the RFC 4515-escaped login name; the template itself is
     /// never formatted with raw input.
     std::string user_filter;
+
+    /// The replacement body for `directory.set` holding every member of this read -- the
+    /// read-modify-write form (§27.4 rule 5). `bind_secret` is absent: no read carries it, and
+    /// absent keeps the stored one (§30.2).
+    SetDirectoryConfig to_input() const;
 };
 
 /// What linking did.
@@ -4554,10 +4559,14 @@ struct UpdateDirectoryConfig {
     std::optional<Sensitive<std::string>> bind_secret = std::nullopt;
     /// See [`SetDirectoryConfig::enabled`]. Optional.
     std::optional<bool> enabled = std::nullopt;
-    /// Explicit `null` clears it. Optional.
-    std::optional<std::string> group_base_dn = std::nullopt;
-    /// Explicit `null` clears it. Optional.
-    std::optional<std::string> group_filter = std::nullopt;
+    /// Explicit `null` clears it. Tri-state (§27.4 rule 5, null is not absent): `std::nullopt`
+    /// omits the member; an engaged value holding `std::nullopt` is JSON `null`; a value is a
+    /// value.
+    std::optional<std::optional<std::string>> group_base_dn = std::nullopt;
+    /// Explicit `null` clears it. Tri-state (§27.4 rule 5, null is not absent): `std::nullopt`
+    /// omits the member; an engaged value holding `std::nullopt` is JSON `null`; a value is a
+    /// value.
+    std::optional<std::optional<std::string>> group_filter = std::nullopt;
     /// Replaces the whole table when present. Optional.
     std::optional<std::vector<GroupMapping>> group_mappings = std::nullopt;
     /// See [`SetDirectoryConfig::group_member_attribute`]. Optional.

@@ -64,6 +64,9 @@ add_library(axiam_cpp
   src/management_models.cpp
   src/management_ops.cpp
   src/management_manifest.cpp
+  # Hand-written members the generator declares inside generated models (the
+  # read-modify-write helpers and factories of §29–§32) and its PRECHECKS.
+  src/management_helpers.cpp
 )
 add_library(axiam::axiam_cpp ALIAS axiam_cpp)
 

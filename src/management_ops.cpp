@@ -5,6 +5,7 @@
 
 #include "axiam/management.hpp"
 
+#include "management_checks.hpp"
 #include "management_json.hpp"
 #include "management_transport.hpp"
 

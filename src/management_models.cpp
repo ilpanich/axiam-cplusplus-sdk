@@ -5335,10 +5335,12 @@ void to_json(nlohmann::json& j, const UpdateDirectoryConfig& value) {
         j["enabled"] = *value.enabled;
     }
     if (value.group_base_dn) {
-        j["group_base_dn"] = *value.group_base_dn;
+        if (*value.group_base_dn) j["group_base_dn"] = **value.group_base_dn;
+        else j["group_base_dn"] = nullptr;
     }
     if (value.group_filter) {
-        j["group_filter"] = *value.group_filter;
+        if (*value.group_filter) j["group_filter"] = **value.group_filter;
+        else j["group_filter"] = nullptr;
     }
     if (value.group_mappings) {
         j["group_mappings"] = *value.group_mappings;
@@ -5388,11 +5390,13 @@ void from_json(const nlohmann::json& j, UpdateDirectoryConfig& value) {
     if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
         value.enabled = it->get<bool>();
     }
-    if (auto it = j.find("group_base_dn"); it != j.end() && !it->is_null()) {
-        value.group_base_dn = it->get<std::string>();
+    if (auto it = j.find("group_base_dn"); it != j.end()) {
+        if (it->is_null()) value.group_base_dn.emplace(std::nullopt);
+        else value.group_base_dn.emplace(it->get<std::string>());
     }
-    if (auto it = j.find("group_filter"); it != j.end() && !it->is_null()) {
-        value.group_filter = it->get<std::string>();
+    if (auto it = j.find("group_filter"); it != j.end()) {
+        if (it->is_null()) value.group_filter.emplace(std::nullopt);
+        else value.group_filter.emplace(it->get<std::string>());
     }
     if (auto it = j.find("group_mappings"); it != j.end() && !it->is_null()) {
         value.group_mappings = it->get<std::vector<GroupMapping>>();

@@ -72,6 +72,81 @@ RENAMED_SCHEMAS: dict[str, str] = {}
 # which arm it is.
 OPEN_UNIONS = {"ScimTargetAuth", "ScimTargetScope"}
 
+# Members where an explicit JSON `null` is a different statement from an absent
+# member (§27.4 rule 5, "null is not absent"). §30.2 names two on a request:
+# `UpdateDirectoryConfig.group_base_dn` / `.group_filter`, where `null` CLEARS the
+# stored value and absence keeps it. A name list rather than a schema rule,
+# because the export spells every optional member `["string", "null"]` and cannot
+# say which ones `null` clears.
+#
+# Generated as `std::optional<std::optional<T>>`: disengaged omits the key; engaged
+# with an inner `std::nullopt` sends (or, decoding, records) `null`.
+EXPLICIT_NULL_FIELDS: set[tuple[str, str]] = {
+    ("UpdateDirectoryConfig", "group_base_dn"),
+    ("UpdateDirectoryConfig", "group_filter"),
+}
+
+# Call-site documentation the contract makes an SDK repeat (§29.3, §30.3, §31.3,
+# §32.2), appended to the generated operation's Doxygen block. Keyed by the
+# registry's namespace-qualified operation name.
+CALL_SITE_NOTES: dict[str, str] = {
+    "directory.set": (
+        "**Moving the connection requires the secret again** (§30.3 rule 2): a `set` "
+        "that changes `url`, `start_tls`, `bind_dn` or `trust_anchors_pem` without "
+        "`bind_secret` is refused `400` and changes nothing. The SDK holds no copy of "
+        "the secret and cannot re-send one for you. `bind_secret` is required while the "
+        "tenant has no configuration; otherwise absent keeps the stored secret. Every "
+        "other optional member left out is **reset to its default** (start from "
+        "`DirectoryConfig::to_input()`). An enabled directory and an effective "
+        "`opaque_mode = required` never coexist (`409`); without the deployment's "
+        "directory key a write carrying a secret is `503`."
+    ),
+    "directory.update": (
+        "**Moving the connection requires the secret again** (§30.3 rule 2): an "
+        "`update` that changes `url`, `start_tls`, `bind_dn` or `trust_anchors_pem` "
+        "without `bind_secret` is refused `400` and changes nothing; the SDK holds no "
+        "copy of the secret to re-send. A member left `std::nullopt` is not sent and "
+        "stays as stored; `group_base_dn` / `group_filter` engaged with an inner "
+        "`std::nullopt` are sent as `null` and clear the value. An enabled directory "
+        "and an effective `opaque_mode = required` never coexist (`409`)."
+    ),
+    "directory.delete": (
+        "**Deleting stops the directory, and only that** (§30.3 rule 5): directory "
+        "accounts can no longer sign in with a password -- there is no fallback to a "
+        "local hash -- and the sync stops. Sessions, refresh tokens and passkeys those "
+        "accounts already hold keep working until they expire or the accounts are "
+        "deactivated. There is no unlink: a linked account stays a directory account."
+    ),
+    "directory.link_account": (
+        "**Signs the account's owner out everywhere** (§30.3 rule 6): linking deletes "
+        "the account's WebAuthn credentials and federation links, revokes its `User` "
+        "certificates, all its sessions and its OAuth2 refresh tokens (TOTP is kept). "
+        "The entry is found by the account's own username; a repeat on an "
+        "already-linked account answers `was_already_linked` and repeats the "
+        "revocations."
+    ),
+}
+
+# Local checks a generated operation runs before any I/O: the name of a function
+# in src/management_checks.hpp taking the request body.
+PRECHECKS: dict[str, str] = {}
+
+# Statements that make the generated conformance case's default body pass its
+# PRECHECK (the defaulted body every other case sends would be refused locally).
+PRECHECK_TEST_SETUP: dict[str, list[str]] = {}
+
+# Hand-written members declared inside a generated model (defined in
+# src/management_helpers.cpp): the read-modify-write helpers §27.4 rule 5
+# recommends and the factories that make a §29/§31 body hard to get wrong.
+MODEL_MEMBERS: dict[str, list[tuple[str, str]]] = {
+    "DirectoryConfig": [(
+        "The replacement body for `directory.set` holding every member of this read "
+        "-- the read-modify-write form (§27.4 rule 5). `bind_secret` is absent: no "
+        "read carries it, and absent keeps the stored one (§30.2).",
+        "SetDirectoryConfig to_input() const;",
+    )],
+}
+
 EXAMPLE_UUID = "11111111-1111-4111-8111-111111111111"
 
 # Deliberately different from EXAMPLE_UUID and from the fixture client's own scope, so a
@@ -594,6 +669,7 @@ def fields_of(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]]
             "wire": wire, "name": member(wire), "decl": info["decl"], "kind": info["kind"],
             "ref": info["ref"], "required": wire in required, "schema": sub,
             "secret": wire in secrets,
+            "explicit_null": (schema_name, wire) in EXPLICIT_NULL_FIELDS,
             "description": sub.get("description") if isinstance(sub, dict) else None,
         })
     return out, description
@@ -606,11 +682,18 @@ def declared(f: dict[str, Any]) -> str:
     "absent" in the type, so §27.4 rule 5's "an unset field is OMITTED, not null" is
     something the serializer can act on without a convention to remember.
     """
+    if f.get("explicit_null"):
+        return f"std::optional<std::optional<{f['decl']}>>"
     return f["decl"] if f["required"] else f"std::optional<{f['decl']}>"
 
 
 def field_doc(f: dict[str, Any]) -> str:
     """The one-line description for a member."""
+    if f.get("explicit_null"):
+        lead = escape(f["description"]) + " " if f["description"] else ""
+        return (lead + "Tri-state (§27.4 rule 5, null is not absent): `std::nullopt` "
+                "omits the member; an engaged value holding `std::nullopt` is JSON "
+                "`null`; a value is a value.")
     if f["description"]:
         return escape(f["description"])
     if f["secret"]:
@@ -811,9 +894,14 @@ def emit_models_header() -> str:
         out.extend(doc(summary))
         out.append(f"struct {rendered} {{")
         for f in fields:
-            out.extend(doc(field_doc(f) + ("" if f["required"] else " Optional."), "    "))
+            optional_note = "" if f["required"] or f.get("explicit_null") else " Optional."
+            out.extend(doc(field_doc(f) + optional_note, "    "))
             default = "" if f["required"] else " = std::nullopt"
             out.append(f"    {declared(f)} {f['name']}{default};")
+        for text, decl in MODEL_MEMBERS.get(name, []):
+            out.append("")
+            out.extend(doc(text, "    "))
+            out.append(f"    {decl}")
         # CONTRACT.md §27.13 S-10 rule 3: on a SUBJECT-side role listing, `inherit` is
         # optional and absence means the assignment INHERITS -- true for a server that
         # sends the field and stayed silent, and equally true for one that predates the
@@ -882,6 +970,15 @@ def emit_to_json_member(f: dict[str, Any]) -> list[str]:
     if kind == "union_raw":
         return []
 
+    if f.get("explicit_null"):
+        # §27.4 rule 5: disengaged omits; engaged-with-nullopt is JSON null.
+        return [
+            f"    if (value.{n}) {{",
+            f'        if (*value.{n}) j["{w}"] = **value.{n};',
+            f'        else j["{w}"] = nullptr;',
+            "    }",
+        ]
+
     if kind == "json_text":
         parse = f"nlohmann::json::parse(value.{n}, nullptr, false)"
         if f["required"]:
@@ -922,6 +1019,15 @@ def emit_from_json_member(f: dict[str, Any]) -> list[str]:
 
     if kind == "union_raw":
         return ["    value.raw = j.dump();"]
+
+    if f.get("explicit_null"):
+        # An explicit null is KEPT, distinct from an absent member.
+        return [
+            f'    if (auto it = j.find("{w}"); it != j.end()) {{',
+            f"        if (it->is_null()) value.{n}.emplace(std::nullopt);",
+            f"        else value.{n}.emplace(it->get<{f['decl']}>());",
+            "    }",
+        ]
 
     if kind == "json_text":
         if f["required"]:
@@ -1186,6 +1292,9 @@ def op_doc(namespace: str, opname: str, op: dict[str, Any]) -> str:
         lead += (f"\n\nThe response carries a ONE-TIME secret ({fields}): the server will "
                  "not return it again, so a caller that does not persist it here cannot "
                  "recover it (§27.5).")
+    note = CALL_SITE_NOTES.get(f"{namespace}.{opname}")
+    if note:
+        lead += "\n\n" + note
     return lead
 
 
@@ -1517,6 +1626,9 @@ def emit_op_body(namespace: str, opname: str, op: dict[str, Any]) -> list[str]:
         out.append("    const std::vector<QueryValue> query{};")
 
     body_param = next((p for p in params if p["kind"] == "body"), None)
+    if canonical in PRECHECKS:
+        # A local refusal, before the request is built (see management_checks.hpp).
+        out.append(f"    checks::{PRECHECKS[canonical]}(body);")
     body_expr = "nlohmann::json(body)" if body_param else "std::nullopt"
     if body_param:
         out.append("    const std::optional<nlohmann::json> payload = nlohmann::json(body);")
@@ -1548,6 +1660,7 @@ def emit_ops_source() -> str:
     out = [BANNER, ""]
     out.append('#include "axiam/management.hpp"')
     out.append("")
+    out.append('#include "management_checks.hpp"')
     out.append('#include "management_json.hpp"')
     out.append('#include "management_transport.hpp"')
     out.append("")
@@ -1811,6 +1924,8 @@ def emit_test() -> str:
                     bmodel = model_type(op["request_schema"].lstrip("[]"))
                     out.append(f"    {bmodel} body{{}};")
                     out.extend(test_body_setup(op["request_schema"].lstrip("[]")))
+                    out.extend(f"    {line}" for line in
+                               PRECHECK_TEST_SETUP.get(f"{namespace}.{opname}", []))
                     args.append("body")
             call = (f"fixture.client.management().{method(namespace)}()."
                     f"{method(opname)}(" + ", ".join(args) + ")")
