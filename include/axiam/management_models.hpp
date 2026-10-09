@@ -31,11 +31,11 @@ enum class ActorType {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a ActorType.
+/// The wire spelling of a ActorType, for display and logs; never fails.
 ///
-/// `ActorType::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `ActorType::Unknown` spells as the empty string, which no server value is -- and it is never
+/// SENT: a request carrying it is refused locally with NetworkError before any request, never
+/// written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(ActorType value);
 
 /// Parse a wire value into a ActorType.
@@ -63,11 +63,11 @@ enum class AttestationMode {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a AttestationMode.
+/// The wire spelling of a AttestationMode, for display and logs; never fails.
 ///
-/// `AttestationMode::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `AttestationMode::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(AttestationMode value);
 
 /// Parse a wire value into a AttestationMode.
@@ -99,11 +99,11 @@ enum class AttributeSource {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a AttributeSource.
+/// The wire spelling of a AttributeSource, for display and logs; never fails.
 ///
-/// `AttributeSource::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `AttributeSource::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(AttributeSource value);
 
 /// Parse a wire value into a AttributeSource.
@@ -127,11 +127,11 @@ enum class AuditOutcome {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a AuditOutcome.
+/// The wire spelling of a AuditOutcome, for display and logs; never fails.
 ///
-/// `AuditOutcome::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `AuditOutcome::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(AuditOutcome value);
 
 /// Parse a wire value into a AuditOutcome.
@@ -166,11 +166,12 @@ enum class AuthnRequestParamsMode {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a AuthnRequestParamsMode.
+/// The wire spelling of a AuthnRequestParamsMode, for display and logs; never fails.
 ///
-/// `AuthnRequestParamsMode::Unknown` spells as the empty string, which no server value is:
-/// carrying an unrecognised value back into an update is refused by the server rather than
-/// written as a spelling it never used.
+/// `AuthnRequestParamsMode::Unknown` spells as the empty string, which no server value is --
+/// and it is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(AuthnRequestParamsMode value);
 
 /// Parse a wire value into a AuthnRequestParamsMode.
@@ -194,11 +195,12 @@ enum class CertificateStatus {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a CertificateStatus.
+/// The wire spelling of a CertificateStatus, for display and logs; never fails.
 ///
-/// `CertificateStatus::Unknown` spells as the empty string, which no server value is: carrying
-/// an unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `CertificateStatus::Unknown` spells as the empty string, which no server value is -- and it
+/// is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(CertificateStatus value);
 
 /// Parse a wire value into a CertificateStatus.
@@ -223,11 +225,11 @@ enum class CertificateType {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a CertificateType.
+/// The wire spelling of a CertificateType, for display and logs; never fails.
 ///
-/// `CertificateType::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `CertificateType::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(CertificateType value);
 
 /// Parse a wire value into a CertificateType.
@@ -259,11 +261,12 @@ enum class CertificationLevel {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a CertificationLevel.
+/// The wire spelling of a CertificationLevel, for display and logs; never fails.
 ///
-/// `CertificationLevel::Unknown` spells as the empty string, which no server value is: carrying
-/// an unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `CertificationLevel::Unknown` spells as the empty string, which no server value is -- and it
+/// is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(CertificationLevel value);
 
 /// Parse a wire value into a CertificationLevel.
@@ -290,11 +293,12 @@ enum class CibaDeliveryMode {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a CibaDeliveryMode.
+/// The wire spelling of a CibaDeliveryMode, for display and logs; never fails.
 ///
-/// `CibaDeliveryMode::Unknown` spells as the empty string, which no server value is: carrying
-/// an unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `CibaDeliveryMode::Unknown` spells as the empty string, which no server value is -- and it
+/// is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(CibaDeliveryMode value);
 
 /// Parse a wire value into a CibaDeliveryMode.
@@ -324,11 +328,12 @@ enum class CibaRequestSigningAlg {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a CibaRequestSigningAlg.
+/// The wire spelling of a CibaRequestSigningAlg, for display and logs; never fails.
 ///
-/// `CibaRequestSigningAlg::Unknown` spells as the empty string, which no server value is:
-/// carrying an unrecognised value back into an update is refused by the server rather than
-/// written as a spelling it never used.
+/// `CibaRequestSigningAlg::Unknown` spells as the empty string, which no server value is -- and
+/// it is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(CibaRequestSigningAlg value);
 
 /// Parse a wire value into a CibaRequestSigningAlg.
@@ -364,11 +369,12 @@ enum class ClientAuthMethod {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a ClientAuthMethod.
+/// The wire spelling of a ClientAuthMethod, for display and logs; never fails.
 ///
-/// `ClientAuthMethod::Unknown` spells as the empty string, which no server value is: carrying
-/// an unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `ClientAuthMethod::Unknown` spells as the empty string, which no server value is -- and it
+/// is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(ClientAuthMethod value);
 
 /// Parse a wire value into a ClientAuthMethod.
@@ -402,11 +408,11 @@ enum class ClientProfile {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a ClientProfile.
+/// The wire spelling of a ClientProfile, for display and logs; never fails.
 ///
-/// `ClientProfile::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `ClientProfile::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(ClientProfile value);
 
 /// Parse a wire value into a ClientProfile.
@@ -430,11 +436,12 @@ enum class DeprovisionPolicy {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a DeprovisionPolicy.
+/// The wire spelling of a DeprovisionPolicy, for display and logs; never fails.
 ///
-/// `DeprovisionPolicy::Unknown` spells as the empty string, which no server value is: carrying
-/// an unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `DeprovisionPolicy::Unknown` spells as the empty string, which no server value is -- and it
+/// is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(DeprovisionPolicy value);
 
 /// Parse a wire value into a DeprovisionPolicy.
@@ -462,11 +469,11 @@ enum class DirectoryKind {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a DirectoryKind.
+/// The wire spelling of a DirectoryKind, for display and logs; never fails.
 ///
-/// `DirectoryKind::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `DirectoryKind::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(DirectoryKind value);
 
 /// Parse a wire value into a DirectoryKind.
@@ -490,11 +497,11 @@ enum class FailurePolicy {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a FailurePolicy.
+/// The wire spelling of a FailurePolicy, for display and logs; never fails.
 ///
-/// `FailurePolicy::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `FailurePolicy::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(FailurePolicy value);
 
 /// Parse a wire value into a FailurePolicy.
@@ -517,11 +524,11 @@ enum class KeyAlgorithm {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a KeyAlgorithm.
+/// The wire spelling of a KeyAlgorithm, for display and logs; never fails.
 ///
-/// `KeyAlgorithm::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `KeyAlgorithm::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(KeyAlgorithm value);
 
 /// Parse a wire value into a KeyAlgorithm.
@@ -559,11 +566,11 @@ enum class ManagedBy {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a ManagedBy.
+/// The wire spelling of a ManagedBy, for display and logs; never fails.
 ///
-/// `ManagedBy::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `ManagedBy::Unknown` spells as the empty string, which no server value is -- and it is never
+/// SENT: a request carrying it is refused locally with NetworkError before any request, never
+/// written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(ManagedBy value);
 
 /// Parse a wire value into a ManagedBy.
@@ -587,11 +594,11 @@ enum class MfaMethodType {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a MfaMethodType.
+/// The wire spelling of a MfaMethodType, for display and logs; never fails.
 ///
-/// `MfaMethodType::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `MfaMethodType::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(MfaMethodType value);
 
 /// Parse a wire value into a MfaMethodType.
@@ -614,11 +621,11 @@ enum class NameIdFormat {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a NameIdFormat.
+/// The wire spelling of a NameIdFormat, for display and logs; never fails.
 ///
-/// `NameIdFormat::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `NameIdFormat::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(NameIdFormat value);
 
 /// Parse a wire value into a NameIdFormat.
@@ -657,11 +664,12 @@ enum class NotificationEventType {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a NotificationEventType.
+/// The wire spelling of a NotificationEventType, for display and logs; never fails.
 ///
-/// `NotificationEventType::Unknown` spells as the empty string, which no server value is:
-/// carrying an unrecognised value back into an update is refused by the server rather than
-/// written as a spelling it never used.
+/// `NotificationEventType::Unknown` spells as the empty string, which no server value is -- and
+/// it is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(NotificationEventType value);
 
 /// Parse a wire value into a NotificationEventType.
@@ -699,11 +707,12 @@ enum class PermissionEffect {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a PermissionEffect.
+/// The wire spelling of a PermissionEffect, for display and logs; never fails.
 ///
-/// `PermissionEffect::Unknown` spells as the empty string, which no server value is: carrying
-/// an unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `PermissionEffect::Unknown` spells as the empty string, which no server value is -- and it
+/// is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(PermissionEffect value);
 
 /// Parse a wire value into a PermissionEffect.
@@ -726,11 +735,11 @@ enum class PgpKeyAlgorithm {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a PgpKeyAlgorithm.
+/// The wire spelling of a PgpKeyAlgorithm, for display and logs; never fails.
 ///
-/// `PgpKeyAlgorithm::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `PgpKeyAlgorithm::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(PgpKeyAlgorithm value);
 
 /// Parse a wire value into a PgpKeyAlgorithm.
@@ -753,11 +762,11 @@ enum class PgpKeyPurpose {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a PgpKeyPurpose.
+/// The wire spelling of a PgpKeyPurpose, for display and logs; never fails.
 ///
-/// `PgpKeyPurpose::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `PgpKeyPurpose::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(PgpKeyPurpose value);
 
 /// Parse a wire value into a PgpKeyPurpose.
@@ -780,11 +789,11 @@ enum class PgpKeyStatus {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a PgpKeyStatus.
+/// The wire spelling of a PgpKeyStatus, for display and logs; never fails.
 ///
-/// `PgpKeyStatus::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `PgpKeyStatus::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(PgpKeyStatus value);
 
 /// Parse a wire value into a PgpKeyStatus.
@@ -807,11 +816,11 @@ enum class ReactorMode {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a ReactorMode.
+/// The wire spelling of a ReactorMode, for display and logs; never fails.
 ///
-/// `ReactorMode::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `ReactorMode::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(ReactorMode value);
 
 /// Parse a wire value into a ReactorMode.
@@ -837,11 +846,11 @@ enum class SamlBinding {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a SamlBinding.
+/// The wire spelling of a SamlBinding, for display and logs; never fails.
 ///
-/// `SamlBinding::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `SamlBinding::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(SamlBinding value);
 
 /// Parse a wire value into a SamlBinding.
@@ -866,11 +875,12 @@ enum class SamlIdpCredentialStatus {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a SamlIdpCredentialStatus.
+/// The wire spelling of a SamlIdpCredentialStatus, for display and logs; never fails.
 ///
-/// `SamlIdpCredentialStatus::Unknown` spells as the empty string, which no server value is:
-/// carrying an unrecognised value back into an update is refused by the server rather than
-/// written as a spelling it never used.
+/// `SamlIdpCredentialStatus::Unknown` spells as the empty string, which no server value is --
+/// and it is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(SamlIdpCredentialStatus value);
 
 /// Parse a wire value into a SamlIdpCredentialStatus.
@@ -893,11 +903,11 @@ enum class SamlIdpSlot {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a SamlIdpSlot.
+/// The wire spelling of a SamlIdpSlot, for display and logs; never fails.
 ///
-/// `SamlIdpSlot::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `SamlIdpSlot::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(SamlIdpSlot value);
 
 /// Parse a wire value into a SamlIdpSlot.
@@ -922,11 +932,11 @@ enum class ScimTokenStatus {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a ScimTokenStatus.
+/// The wire spelling of a ScimTokenStatus, for display and logs; never fails.
 ///
-/// `ScimTokenStatus::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `ScimTokenStatus::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(ScimTokenStatus value);
 
 /// Parse a wire value into a ScimTokenStatus.
@@ -949,11 +959,11 @@ enum class SettingsScope {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a SettingsScope.
+/// The wire spelling of a SettingsScope, for display and logs; never fails.
 ///
-/// `SettingsScope::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `SettingsScope::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(SettingsScope value);
 
 /// Parse a wire value into a SettingsScope.
@@ -976,11 +986,12 @@ enum class SsfDeliveryMethod {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a SsfDeliveryMethod.
+/// The wire spelling of a SsfDeliveryMethod, for display and logs; never fails.
 ///
-/// `SsfDeliveryMethod::Unknown` spells as the empty string, which no server value is: carrying
-/// an unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `SsfDeliveryMethod::Unknown` spells as the empty string, which no server value is -- and it
+/// is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(SsfDeliveryMethod value);
 
 /// Parse a wire value into a SsfDeliveryMethod.
@@ -1000,35 +1011,27 @@ SsfDeliveryMethod ssf_delivery_method_from_wire(const std::string& value);
 ///
 /// Stored and sent as their event-type URIs; [`Self::ALL`] is the canonical order every list
 /// AXIAM returns is sorted in.
-enum class SsfEventType {
-    SessionRevoked,  ///< Wire value `https://schemas.openid.net/secevent/caep/event-type/session-revoked`.
-    CredentialChange,  ///< Wire value `https://schemas.openid.net/secevent/caep/event-type/credential-change`.
-    AssuranceLevelChange,  ///< Wire value `https://schemas.openid.net/secevent/caep/event-type/assurance-level-change`.
-    AccountDisabled,  ///< Wire value `https://schemas.openid.net/secevent/risc/event-type/account-disabled`.
-    AccountEnabled,  ///< Wire value `https://schemas.openid.net/secevent/risc/event-type/account-enabled`.
-    AccountPurged,  ///< Wire value `https://schemas.openid.net/secevent/risc/event-type/account-purged`.
-    Unknown,  ///< A value this SDK's copy of the spec does not list.
-};
+///
+/// Modelled as a **string**, with the values this SDK's spec copy lists as named constants in
+/// `ssf_event_type` (CONTRACT.md §32.2): a value the server sends that is not listed decodes as
+/// itself, never as a lossy `Unknown`. It is still never SENT: a request carrying a value
+/// is_known_ssf_event_type() rejects is refused locally with NetworkError before any request
+/// (§34.2 P12.2).
+using SsfEventType = std::string;
 
-/// The wire spelling of a SsfEventType.
-///
-/// `SsfEventType::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
-std::string to_wire(SsfEventType value);
+/// The 6 `SsfEventType` values this SDK's spec copy lists.
+namespace ssf_event_type {
+inline constexpr const char kSessionRevoked[] = "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
+inline constexpr const char kCredentialChange[] = "https://schemas.openid.net/secevent/caep/event-type/credential-change";
+inline constexpr const char kAssuranceLevelChange[] = "https://schemas.openid.net/secevent/caep/event-type/assurance-level-change";
+inline constexpr const char kAccountDisabled[] = "https://schemas.openid.net/secevent/risc/event-type/account-disabled";
+inline constexpr const char kAccountEnabled[] = "https://schemas.openid.net/secevent/risc/event-type/account-enabled";
+inline constexpr const char kAccountPurged[] = "https://schemas.openid.net/secevent/risc/event-type/account-purged";
+}  // namespace ssf_event_type
 
-/// Parse a wire value into a SsfEventType.
-///
-/// An **open** enum: a value this SDK's copy of the spec does not list becomes
-/// `SsfEventType::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing fails the
-/// WHOLE response, so one field of one record would take down the page it arrived on --
-/// including the records the caller did ask for.
-///
-/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
-/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
-/// turns a new server state into a wrong one, and on this surface these values gate access. A
-/// `switch` over this enum needs an `Unknown` arm.
-SsfEventType ssf_event_type_from_wire(const std::string& value);
+/// True when `value` is one of the `ssf_event_type` constants -- the only values a request may
+/// carry.
+bool is_known_ssf_event_type(const std::string& value);
 
 /// Who set a stream's current status. A status an administrator set to anything but `enabled`
 /// cannot be changed by the receiver (D-51).
@@ -1038,11 +1041,11 @@ enum class SsfStatusActor {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a SsfStatusActor.
+/// The wire spelling of a SsfStatusActor, for display and logs; never fails.
 ///
-/// `SsfStatusActor::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `SsfStatusActor::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(SsfStatusActor value);
 
 /// Parse a wire value into a SsfStatusActor.
@@ -1066,11 +1069,11 @@ enum class SsfStreamStatus {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a SsfStreamStatus.
+/// The wire spelling of a SsfStreamStatus, for display and logs; never fails.
 ///
-/// `SsfStreamStatus::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `SsfStreamStatus::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(SsfStreamStatus value);
 
 /// Parse a wire value into a SsfStreamStatus.
@@ -1093,11 +1096,12 @@ enum class SsfSubjectFormat {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a SsfSubjectFormat.
+/// The wire spelling of a SsfSubjectFormat, for display and logs; never fails.
 ///
-/// `SsfSubjectFormat::Unknown` spells as the empty string, which no server value is: carrying
-/// an unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `SsfSubjectFormat::Unknown` spells as the empty string, which no server value is -- and it
+/// is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(SsfSubjectFormat value);
 
 /// Parse a wire value into a SsfSubjectFormat.
@@ -1125,11 +1129,11 @@ enum class TenantKind {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a TenantKind.
+/// The wire spelling of a TenantKind, for display and logs; never fails.
 ///
-/// `TenantKind::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `TenantKind::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(TenantKind value);
 
 /// Parse a wire value into a TenantKind.
@@ -1155,11 +1159,11 @@ enum class TenantStatus {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a TenantStatus.
+/// The wire spelling of a TenantStatus, for display and logs; never fails.
 ///
-/// `TenantStatus::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `TenantStatus::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(TenantStatus value);
 
 /// Parse a wire value into a TenantStatus.
@@ -1183,11 +1187,12 @@ enum class UnknownAaguidAction {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a UnknownAaguidAction.
+/// The wire spelling of a UnknownAaguidAction, for display and logs; never fails.
 ///
-/// `UnknownAaguidAction::Unknown` spells as the empty string, which no server value is:
-/// carrying an unrecognised value back into an update is refused by the server rather than
-/// written as a spelling it never used.
+/// `UnknownAaguidAction::Unknown` spells as the empty string, which no server value is -- and
+/// it is never SENT: a request carrying it is refused locally with NetworkError before any
+/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
+/// 1.59).
 std::string to_wire(UnknownAaguidAction value);
 
 /// Parse a wire value into a UnknownAaguidAction.
@@ -1211,11 +1216,11 @@ enum class UserNameSource {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a UserNameSource.
+/// The wire spelling of a UserNameSource, for display and logs; never fails.
 ///
-/// `UserNameSource::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `UserNameSource::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(UserNameSource value);
 
 /// Parse a wire value into a UserNameSource.
@@ -1242,11 +1247,11 @@ enum class UserStatus {
     Unknown,  ///< A value this SDK's copy of the spec does not list.
 };
 
-/// The wire spelling of a UserStatus.
+/// The wire spelling of a UserStatus, for display and logs; never fails.
 ///
-/// `UserStatus::Unknown` spells as the empty string, which no server value is: carrying an
-/// unrecognised value back into an update is refused by the server rather than written as a
-/// spelling it never used.
+/// `UserStatus::Unknown` spells as the empty string, which no server value is -- and it is
+/// never SENT: a request carrying it is refused locally with NetworkError before any request,
+/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(UserStatus value);
 
 /// Parse a wire value into a UserStatus.

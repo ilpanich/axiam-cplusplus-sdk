@@ -535,6 +535,16 @@ def _classify() -> tuple[set[str], set[str]]:
 
 ENUMS, UNIONS = _classify()
 
+#: Enums modelled as STRINGS with the spec's values as named constants, rather than
+#: as an ``enum class``. CONTRACT.md §32.2: "An SDK SHOULD model event types as
+#: strings with the six URIs as named constants" -- an enumerator per URI loses the
+#: value of a URI this SDK's spec copy does not list (it decodes to ``Unknown``), so a
+#: stream carrying a newer event type cannot be read, shown or reasoned about. As a
+#: string the value survives decoding; it is still never SENT unless it is one of the
+#: listed values (§32.2, contract 1.59 §34.2 P12.2) -- the generated serializer
+#: refuses it locally.
+STRING_ENUMS = {"SsfEventType"}
+
 
 # ---------------------------------------------------------------------------
 # C++ naming and types
@@ -643,6 +653,13 @@ def enum_value(value: str) -> str:
     return f"{rendered}_" if rendered.lower() in CPP_KEYWORDS else rendered
 
 
+def ref_kind(name: str) -> str:
+    """The member kind of a ``$ref`` to the schema rendered ``name``."""
+    if name in STRING_ENUMS:
+        return "open_string"
+    return "enum" if name in ENUMS else "model"
+
+
 def cpp_field(schema: Any, secret: bool = False) -> dict[str, str]:
     """Map a schema to ``(type, kind)`` for one struct member."""
     if secret:
@@ -652,12 +669,12 @@ def cpp_field(schema: Any, secret: bool = False) -> dict[str, str]:
 
     if "$ref" in schema:
         name = pascal(schema["$ref"].split("/")[-1])
-        return {"decl": name, "kind": "enum" if name in ENUMS else "model", "ref": name}
+        return {"decl": name, "kind": ref_kind(name), "ref": name}
 
     inner = nullable_ref(schema)
     if inner:
         name = pascal(inner)
-        return {"decl": name, "kind": "enum" if name in ENUMS else "model", "ref": name}
+        return {"decl": name, "kind": ref_kind(name), "ref": name}
 
     if isinstance(schema.get("allOf"), list) and len(schema["allOf"]) == 1:
         return cpp_field(schema["allOf"][0])
@@ -668,7 +685,7 @@ def cpp_field(schema: Any, secret: bool = False) -> dict[str, str]:
 
     if kind == "array":
         item = cpp_field(schema.get("items") or {})
-        if item["kind"] in {"string", "model", "enum"}:
+        if item["kind"] in {"string", "model", "enum", "open_string"}:
             return {"decl": f"std::vector<{item['decl']}>", "kind": "vector",
                     "ref": item["ref"] or "std::string"}
         # Anything else keeps its JSON shape rather than getting a bespoke C++ type.
@@ -913,6 +930,65 @@ def enum_values(name: str) -> list[str]:
     return [str(v) for v in ((SCHEMAS.get(name) or {}).get("enum") or [])]
 
 
+def emit_string_enum_header(name: str, rendered: str, values: list[str]) -> list[str]:
+    """A STRING_ENUMS member: a string alias, its values as named constants, and a test.
+
+    CONTRACT.md \u00a732.2's SHOULD. The alias keeps the spec's type name on every member
+    that carries one, so a field still reads ``std::vector<SsfEventType>``.
+    """
+    out: list[str] = []
+    out.extend(doc(
+        ((SCHEMAS.get(name) or {}).get("description") or f"The `{rendered}` values.")
+        + "\n\n"
+        f"Modelled as a **string**, with the values this SDK's spec copy lists as named "
+        f"constants in `{snake(rendered)}` (CONTRACT.md \u00a732.2): a value the server "
+        "sends that is not listed decodes as itself, never as a lossy `Unknown`. It is "
+        f"still never SENT: a request carrying a value is_known_{snake(rendered)}() "
+        "rejects is refused locally with NetworkError before any request (\u00a734.2 "
+        "P12.2)."))
+    out.append(f"using {rendered} = std::string;")
+    out.append("")
+    out.extend(doc(f"The {len(values)} `{rendered}` values this SDK's spec copy lists."))
+    out.append(f"namespace {snake(rendered)} {{")
+    for v in values:
+        out.append(f'inline constexpr const char k{enum_value(v)}[] = "{v}";')
+    out.append(f"}}  // namespace {snake(rendered)}")
+    out.append("")
+    out.extend(doc(
+        f"True when `value` is one of the `{snake(rendered)}` constants -- the only values "
+        "a request may carry."))
+    out.append(f"bool is_known_{snake(rendered)}(const std::string& value);")
+    out.append("")
+    return out
+
+
+def emit_string_enum_source(name: str, rendered: str, values: list[str]) -> list[str]:
+    """``is_known_*`` and the request-path refusal for a STRING_ENUMS member."""
+    fn = snake(rendered)
+    out = [f"bool is_known_{fn}(const std::string& value) {{"]
+    for v in values:
+        out.append(f"    if (value == {fn}::k{enum_value(v)}) return true;")
+    out.append("    return false;")
+    out.append("}")
+    out.append("")
+    out.extend(comment(
+        "CONTRACT.md \u00a732.2 / contract 1.59 \u00a734.2 P12.2: decoded as itself, but "
+        "a value this SDK does not know is refused LOCALLY, before any request.", ""))
+    out.append(f"static const std::string& send_{fn}(const std::string& value) {{")
+    out.append(f"    if (!is_known_{fn}(value)) {{")
+    out.append(f'        throw NetworkError("{rendered}: a value this SDK does not know is never '
+               'sent (CONTRACT.md \u00a732.2, \u00a734.2 P12.2)", "sdk_programming_error");')
+    out.append("    }")
+    out.append("    return value;")
+    out.append("}")
+    out.append(f"static const std::vector<std::string>& send_{fn}(const std::vector<std::string>& values) {{")
+    out.append(f"    for (const auto& value : values) send_{fn}(value);")
+    out.append("    return values;")
+    out.append("}")
+    out.append("")
+    return out
+
+
 def emit_models_header() -> str:
     """The model structs, enums and page/list aliases."""
     secrets = sensitive_map()
@@ -949,6 +1025,9 @@ def emit_models_header() -> str:
         values = enum_values(name)
         if not values:
             continue
+        if rendered in STRING_ENUMS:
+            out.extend(emit_string_enum_header(name, rendered, values))
+            continue
         out.extend(doc((SCHEMAS.get(name) or {}).get("description")
                        or f"The `{rendered}` enumeration from the server's OpenAPI document."))
         if any(enum_value(v) == enum_value("unknown") for v in values):
@@ -964,10 +1043,11 @@ def emit_models_header() -> str:
         out.append("};")
         out.append("")
         out.extend(doc(
-            f"The wire spelling of a {rendered}.\n\n"
+            f"The wire spelling of a {rendered}, for display and logs; never fails.\n\n"
             f"`{rendered}::{enum_value('unknown')}` spells as the empty string, which no "
-            "server value is: carrying an unrecognised value back into an update is refused "
-            "by the server rather than written as a spelling it never used."))
+            "server value is -- and it is never SENT: a request carrying it is refused "
+            "locally with NetworkError before any request, never written as `\"\"` for the "
+            "server to refuse (CONTRACT.md \u00a734.2 P12.2, contract 1.59)."))
         out.append(f"std::string to_wire({rendered} value);")
         out.append("")
         out.extend(doc(
@@ -1103,9 +1183,11 @@ def emit_to_json_member(f: dict[str, Any]) -> list[str]:
 
     if f.get("explicit_null"):
         # §27.4 rule 5: disengaged omits; engaged-with-nullopt is JSON null.
+        engaged = (f"send_{snake(f['ref'])}(**value.{n})" if f.get("ref") in STRING_ENUMS
+                   else f"**value.{n}")
         return [
             f"    if (value.{n}) {{",
-            f'        if (*value.{n}) j["{w}"] = **value.{n};',
+            f'        if (*value.{n}) j["{w}"] = {engaged};',
             f'        else j["{w}"] = nullptr;',
             "    }",
         ]
@@ -1125,7 +1207,10 @@ def emit_to_json_member(f: dict[str, Any]) -> list[str]:
         # §27.5: this is the one place a secret is revealed, on the way to the wire.
         expr = f"detail::reveal({ref})"
     elif kind == "enum":
-        expr = f"to_wire({ref})"
+        expr = f"send_wire({ref})"
+    elif f.get("ref") in STRING_ENUMS:
+        # A string-modelled enum, alone or in a list: only a listed value is sent.
+        expr = f"send_{snake(f['ref'])}({ref})"
     else:
         expr = ref
 
@@ -1210,14 +1295,16 @@ def emit_models_source() -> str:
         values = enum_values(name)
         if not values:
             continue
+        if rendered in STRING_ENUMS:
+            out.extend(emit_string_enum_source(name, rendered, values))
+            continue
         out.append(f"std::string to_wire({rendered} value) {{")
         out.append("    switch (value) {")
         for v in values:
             out.append(f'        case {rendered}::{enum_value(v)}: return "{v}";')
         out.extend(comment(
-            "The empty string, which no server value is: an unrecognised value carried "
-            "back into an update is refused by the server rather than written as a "
-            "spelling it never used.", "        "))
+            "The empty string, which no server value is. For display only: send_wire() "
+            "below refuses to put it on the wire.", "        "))
         out.append(f'        case {rendered}::{enum_value("unknown")}: return "";')
         out.append("    }")
         out.extend(comment(
@@ -1238,7 +1325,21 @@ def emit_models_source() -> str:
         out.append(f"    return {rendered}::{enum_value('unknown')};")
         out.append("}")
         out.append("")
-        out.append(f"void to_json(nlohmann::json& j, const {rendered}& value) {{ j = to_wire(value); }}")
+        out.extend(comment(
+            "CONTRACT.md \u00a734.2 P12.2 (contract 1.59): a value this SDK does "
+            "not know is refused LOCALLY, before any request -- never sent as \"\", never "
+            "left for the server to refuse. Every request-path serialization of this enum "
+            "goes through here.", ""))
+        out.append(f"static std::string send_wire({rendered} value) {{")
+        out.append(f"    if (value == {rendered}::{enum_value('unknown')}) {{")
+        out.append(f'        throw NetworkError("{rendered}: a value this SDK does not know is '
+                   'never sent (CONTRACT.md \u00a734.2 P12.2)", '
+                   '"sdk_programming_error");')
+        out.append("    }")
+        out.append("    return to_wire(value);")
+        out.append("}")
+        out.append("")
+        out.append(f"void to_json(nlohmann::json& j, const {rendered}& value) {{ j = send_wire(value); }}")
         out.append(f"void from_json(const nlohmann::json& j, {rendered}& value) {{")
         out.append(f"    value = {snake(rendered)}_from_wire(j.get<std::string>());")
         out.append("}")
@@ -1706,7 +1807,7 @@ def emit_json_header() -> str:
     out.append("")
     for name in schema_closure():
         rendered = pascal(name)
-        if rendered not in ENUMS or not enum_values(name):
+        if rendered not in ENUMS or rendered in STRING_ENUMS or not enum_values(name):
             continue
         out.append(f"void to_json(nlohmann::json& j, const {rendered}& value);")
         out.append(f"void from_json(const nlohmann::json& j, {rendered}& value);")
@@ -2193,6 +2294,21 @@ def emit_models_test() -> str:
         values = enum_values(name)
         if not values:
             continue
+        if rendered in STRING_ENUMS:
+            ns = snake(rendered)
+            out.append(f'AXIAM_TEST("management string enum {rendered} names every value, '
+                       'and knows only those") {')
+            for v in values:
+                out.append(f'    AXIAM_CHECK(std::string({ns}::k{enum_value(v)}) == "{v}");')
+                out.append(f'    AXIAM_CHECK(is_known_{ns}({ns}::k{enum_value(v)}));')
+            out.extend(comment(
+                "A value the spec copy does not list, and the empty string, are not known: "
+                "they decode as themselves and are never sent (\u00a734.2 P12.2).", "    "))
+            out.append(f'    AXIAM_CHECK(!is_known_{ns}("__not_a_{ns}__"));')
+            out.append(f'    AXIAM_CHECK(!is_known_{ns}(""));')
+            out.append("}")
+            out.append("")
+            continue
         enums += 1
         fn = f"{snake(rendered)}_from_wire"
         out.append(f'AXIAM_TEST("management enum {rendered} maps every value both ways") {{')
@@ -2212,10 +2328,11 @@ def emit_models_test() -> str:
         for v in values:
             out.append(f'    AXIAM_CHECK({unknown} != {rendered}::{enum_value(v)});')
         out.extend(comment(
-            "The empty string, which no server value is: an unrecognised value carried "
-            "back into an update is refused by the server rather than written as a "
-            "spelling it never used.", "    "))
+            "The empty string, which no server value is -- for display only. Sending it "
+            "is refused locally, with no request (\u00a732.2, contract 1.59 \u00a734.2 "
+            "P12.2): the JSON hook every request body goes through throws.", "    "))
         out.append(f'    AXIAM_CHECK(to_wire({unknown}).empty());')
+        out.append(f'    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json({unknown}), axiam::NetworkError);')
         out.append("")
         out.extend(comment(
             "The JSON hooks must agree with the wire functions, or a model carrying "

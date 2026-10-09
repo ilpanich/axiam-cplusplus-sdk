@@ -54,7 +54,7 @@ SsfStreamInput input() {
     in.receiver_client_id = "rp-1";
     in.audience = "https://rp.example.com/ssf";
     in.delivery_method = SsfDeliveryMethod::Push;
-    in.events_allowed = {SsfEventType::SessionRevoked};
+    in.events_allowed = {ssf_event_type::kSessionRevoked};
     in.endpoint_url = "https://rp.example.com/ssf/push";
     return in;
 }
@@ -141,12 +141,14 @@ AXIAM_TEST("§32.8 management (3): unknown values and an inactive transmitter de
     AXIAM_CHECK(odd.delivery_method == SsfDeliveryMethod::Unknown);
     AXIAM_CHECK(odd.subject_format == SsfSubjectFormat::Unknown);
     AXIAM_CHECK(odd.status_actor == SsfStatusActor::Unknown);
-    AXIAM_CHECK(odd.events_allowed.at(1) == SsfEventType::Unknown);
+    // §32.2: event types are strings, so an unlisted URI decodes as ITSELF.
+    AXIAM_CHECK(odd.events_allowed.at(1) == "https://example.com/event/new");
+    AXIAM_CHECK(!is_known_ssf_event_type(odd.events_allowed.at(1)));
     AXIAM_CHECK(!odd.transmitter_active &&
                 odd.transmitter_inactive_reason == std::optional<std::string>("shared issuer"));
     const auto plain = fixture.client.ssf().get_stream("s-1");
     AXIAM_CHECK(!plain.transmitter_active && !plain.transmitter_inactive_reason);
-    AXIAM_CHECK(to_wire(SsfEventType::SessionRevoked) == kRevoked);
+    AXIAM_CHECK(std::string(ssf_event_type::kSessionRevoked) == kRevoked);
 }
 
 // ── 4. Pagination ───────────────────────────────────────────────────────────
@@ -198,6 +200,35 @@ AXIAM_TEST("§32.8 management (6): 400 with the message, 409, 404 and 401 map pe
     AXIAM_CHECK(what_of<ConflictError>([&] { s.create_stream(input()); }).rfind("caught:", 0) == 0);
     AXIAM_CHECK(what_of<NotFoundError>([&] { s.get_stream("s-1"); }).rfind("caught:", 0) == 0);
     AXIAM_CHECK(what_of<AuthError>([&] { s.list_streams(); }).rfind("caught:", 0) == 0);
+}
+
+// Contract 1.59 §34.2 P12.2 (R-22): "MUST NOT send a value it does not know"
+// binds the request path. A value decoded as unknown — an open enum's Unknown, an
+// event-type URI this SDK's spec copy does not list — is refused LOCALLY, before
+// any request, never sent as "" for the server to refuse.
+AXIAM_TEST("§32.2 / P12.2 (R-22): a read-modify-write carrying a value this SDK does not know is refused locally") {
+    auto fixture = axtest::mgmt::signed_in(200, stream_body().dump());
+    const auto before = fixture.state->count();
+    auto s = fixture.client.ssf();
+
+    const auto new_event =
+        stream_body({{"events_allowed", {kRevoked, "https://example.com/event/new"}}})
+            .get<SsfStream>()
+            .to_input();
+    AXIAM_CHECK(what_of<NetworkError>([&] { s.update_stream("s-1", new_event); })
+                    .rfind("caught:", 0) == 0);
+    AXIAM_CHECK(fixture.state->count() == before);  // no request reached the wire
+    const auto new_method =
+        stream_body({{"delivery_method", "websocket"}}).get<SsfStream>().to_input();
+    AXIAM_CHECK(what_of<NetworkError>([&] { s.update_stream("s-1", new_method); })
+                    .rfind("caught:", 0) == 0);
+    AXIAM_CHECK(fixture.state->count() == before);
+    const auto new_status = stream_body({{"status", "suspended"}}).get<SsfStream>().to_input();
+    AXIAM_CHECK(what_of<NetworkError>([&] { s.create_stream(new_status); }).rfind("caught:", 0) == 0);
+    AXIAM_CHECK(fixture.state->count() == before);
+
+    // Rendering an unknown value for a log line never fails.
+    AXIAM_REQUIRE_NOTHROW(to_wire(SsfDeliveryMethod::Unknown));
 }
 
 AXIAM_TEST("§32.2: SsfStream::to_input() keeps every member but the header") {

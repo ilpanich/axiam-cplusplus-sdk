@@ -1759,9 +1759,10 @@ including the records the caller did ask for.
 It is never mapped to one of the **known** enumerators: reading a new value as
 whichever enumerator happens to be first turns a new server state into a wrong
 one, and on this surface these values gate access. `to_wire(Unknown)` is the
-empty string — which no server value is, so carrying an unrecognised value back
-into an update is refused by the server rather than written as a spelling it
-never used. **A `switch` over one of these enums needs an `Unknown` arm:**
+empty string, for display only: **`Unknown` is never sent** — a request carrying it
+is refused locally with `NetworkError`, before any request, rather than written as
+`""` for the server to refuse (contract 1.59, §34.2 P12.2). **A `switch` over one of
+these enums needs an `Unknown` arm:**
 
 ```cpp
 switch (*tenant.kind) {
@@ -2292,8 +2293,12 @@ client.ssf().update_stream(stream_id, stream);
 
 `ScimTargetAuth` / `ScimTargetScope` are open unions: an unknown `type` decodes, and
 sending one is refused locally (`NetworkError`, before any request). Open enums decode
-an unknown value as `Unknown`, which spells as the empty string — replace it before
-writing a read back.
+an unknown value as `Unknown`, and a request carrying `Unknown` is refused the same way
+(§34.2 P12.2) — replace it before writing a read back. SSF event types are **strings**
+(`SsfEventType` is `std::string`, the six URIs named in
+`axiam::management::ssf_event_type::k…`, §32.2): an event type this SDK does not list
+decodes as itself, and `is_known_ssf_event_type()` tells you whether a value may be sent
+— one that may not is refused locally too.
 
 ## SSF receiver (§32.7)
 

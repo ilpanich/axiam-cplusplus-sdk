@@ -74,8 +74,6 @@ void to_json(nlohmann::json& j, const SettingsScope& value);
 void from_json(const nlohmann::json& j, SettingsScope& value);
 void to_json(nlohmann::json& j, const SsfDeliveryMethod& value);
 void from_json(const nlohmann::json& j, SsfDeliveryMethod& value);
-void to_json(nlohmann::json& j, const SsfEventType& value);
-void from_json(const nlohmann::json& j, SsfEventType& value);
 void to_json(nlohmann::json& j, const SsfStatusActor& value);
 void from_json(const nlohmann::json& j, SsfStatusActor& value);
 void to_json(nlohmann::json& j, const SsfStreamStatus& value);
