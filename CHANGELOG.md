@@ -6,6 +6,50 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+Contract 1.58 (re-vendored `CONTRACT.md`, `openapi.json`, `management-registry.json`;
+190 operations across 28 namespaces).
+
+### Added
+
+- **RFC 7592 client configuration (CONTRACT §28.12)** — `Client::read_client_registration`,
+  `update_client_registration`, `delete_client_registration` and `ClientRegistration`
+  (tolerant decoding with `extra_json`, `Sensitive` token and secret). The URI must be
+  at the client's origin (`std::invalid_argument` otherwise, before any request); the
+  requests carry only the registration bearer, on a new `sessionless` `HttpRequest`
+  (no cookie read or adopted); writes are never retried; an `error` body is an
+  `OAuthProtocolError` at any status.
+- **Management namespaces `directory` (§30), `saml` (§29), `scim_targets` (§31) and
+  `ssf` (§32)** — `client.directory()`, `client.saml()`, `client.scim_targets()`,
+  `client.ssf()` (and under `management()`), with the contract's call-site warnings in
+  the generated Doxygen. `UpdateDirectoryConfig::group_base_dn` / `group_filter` and
+  `SamlIdpInfo::active_credential_id` / `next_credential_id` are tri-state
+  (`std::optional<std::optional<std::string>>`). Read-modify-write helpers
+  `DirectoryConfig::to_input()`, `SamlServiceProvider::to_input()`,
+  `ScimTargetResponse::to_input()`, `SsfStream::to_input()` (secret absent);
+  `ParseSamlSpMetadata::from_url()` / `from_xml()` (both or neither is refused
+  locally); `ScimTargetAuth::bearer()` / `oauth2_client_credentials()` and
+  `ScimTargetScope::all_users()` / `groups()`. An unknown `auth.type` / `scope.type`
+  decodes and is refused locally if sent.
+- **SSF receiver helper (§32.7)** — `axiam::ssf::SsfReceiver` (`<axiam/ssf.hpp>`):
+  `verify_set` (the nine steps; `SetVerificationError` with `SetFailureReason`,
+  `push_error_code()`, `SetErr::from_reason`), `poll` (only the members set, nothing
+  acknowledged, §16 on transport/408/429/5xx only), pluggable `ReplayStore`
+  (`MemoryReplayStore`), seven-day replay window floor, `event_types` constants.
+- **CIBA (§33)** — `Client::ciba_initiate` (never retried), `ciba_poll`, `ciba_await`
+  (injectable `CibaClock`), `ciba_handle_ping` (constant-time bearer check), the signed
+  request form via `CibaRequestSigner::from_pem` for PS256, ES256 and EdDSA, and
+  `OAuthProtocolError::is_access_denied()` / `is_expired_token()`.
+- **§21.3.1's seventh alias** — `MtlsEndpointAliases::backchannel_authentication_endpoint`,
+  and the four CIBA members on `OidcConfiguration`.
+
+### Changed
+
+- A management `400`/`422` `ValidationError` now carries the server's `message`.
+- `Sensitive<std::string>` overwrites its bytes on destruction, reassignment and move.
+- The generator (`scripts/gen_management.py`) gained the re-sync fixes (implicit
+  tenant for `directory`/`saml`/`ssf`, URI-valued enum names, open unions) and the
+  `EXPLICIT_NULL_FIELDS`, `CALL_SITE_NOTES`, `PRECHECKS` and `MODEL_MEMBERS` tables.
+
 ## [1.0.0-beta17] - 2026-09-25
 
 ### Added

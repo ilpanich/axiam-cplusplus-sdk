@@ -12,7 +12,9 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27 and §28 at contract 1.52 (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32 and §33 at contract 1.58, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+
+Contract 1.53–1.58 ships here **without a carve-out**: [§28.12](#2812-rfc-7592-client-configuration)'s RFC 7592 client configuration; the four management namespaces [`saml` (§29), `directory` (§30), `scim_targets` (§31) and `ssf` (§32)](#directory-saml-ssf-and-scim-targets-29--32); the [SSF receiver helper (§32.7)](#ssf-receiver-327) and [CIBA (§33)](#ciba-33) — both MAY for C++ — including the signed request form under all three algorithms (PS256, ES256, EdDSA) over the OpenSSL this SDK already links; and §21.3.1's seventh `mtls_endpoint_aliases` member. The management surface is **190 operations across 28 namespaces**.
 
 Sections are named individually rather than folded into ranges: widening a
 range silently turns a statement that was true when written into a different
@@ -511,11 +513,12 @@ entry of the same name wherever the document publishes one:
 
 | Operation | Endpoint aliased |
 |---|---|
-| `oidc_exchange`, `oidc_refresh`, `login_client_credentials`, `device_poll`, `token_exchange` | `token_endpoint` |
+| `oidc_exchange`, `oidc_refresh`, `login_client_credentials`, `device_poll`, `token_exchange`, `ciba_poll` | `token_endpoint` |
 | `introspect` | `introspection_endpoint` |
 | `revoke` | `revocation_endpoint` |
 | `device_authorize` | `device_authorization_endpoint` |
 | `oidc_par` | `pushed_authorization_request_endpoint` |
+| `ciba_initiate` | `backchannel_authentication_endpoint` (the seventh alias, contract 1.58) |
 
 The parsed document exposes them as `OidcConfiguration::mtls_endpoint_aliases`,
 an `std::optional<MtlsEndpointAliases>`. Three things this deliberately does
@@ -528,8 +531,8 @@ an `std::optional<MtlsEndpointAliases>`. Three things this deliberately does
   correctly publishes nothing. The same holds one level in: every member of
   `MtlsEndpointAliases` is itself optional, and an endpoint the object does not
   name falls back rather than failing the document.
-- **No alias is ever synthesised.** Only the six endpoints RFC 8705 §5 lists
-  can be aliased — never `authorization_endpoint`, `end_session_endpoint` or
+- **No alias is ever synthesised.** Only the seven endpoints §21.3.1 lists (RFC
+  8705 §5's six plus CIBA's `backchannel_authentication_endpoint`) can be aliased — never `authorization_endpoint`, `end_session_endpoint` or
   `jwks_uri`. The first two are front-channel and the third is public key
   material; sending a browser to an mTLS host raises a native
   certificate-chooser dialog most users cannot answer.
@@ -2168,6 +2171,222 @@ and its validation negatives, the challenge's quoting and its refusals, a
 401 carrying the challenge, a 403 `insufficient_scope`, and a token whose
 `aud` is not this resource — plus the regression proving that, unconfigured,
 nothing about `AxiamGuard` or `require_access` changed at all.
+
+## §28.12 RFC 7592 client configuration
+
+A client that registered itself through `POST /oauth2/register` (RFC 7591) received,
+once, a `registration_client_uri` and a `registration_access_token`. With the two it
+reads, replaces and deletes **its own** registration:
+
+```cpp
+// Persisted from the registration response — the token is a bearer credential.
+const std::string uri = stored.registration_client_uri;
+axiam::Sensitive<std::string> token = stored.registration_access_token;
+
+axiam::ClientRegistration reg = client.read_client_registration(uri, token);
+reg.client_name = "Agent v2";                 // change what you mean to change …
+axiam::ClientRegistration updated =
+    client.update_client_registration(uri, token, reg);   // … the rest round-trips
+token = *updated.registration_access_token;   // PERSIST THIS FIRST: the old one is dead
+
+client.delete_client_registration(uri, token);            // 204 returns normally
+```
+
+- **The URI is used verbatim, and only at this client's origin.** A URI whose scheme,
+  host or port differs from the base URL — or an `http` URI unless the base URL is
+  `http` on a loopback host — is refused before any request with
+  `std::invalid_argument` (C++'s local ValidationError mapping, §28.7), naming no
+  part of the URI.
+- **It is not the SDK's session.** The bearer goes in `Authorization` and nowhere
+  else; the request is `sessionless` — no access token, no cookie read or adopted, no
+  CSRF or tenant header, no redirect followed — and a `401` never reaches the §9
+  refresh guard.
+- **An update is a full replacement.** `ClientRegistration` keeps every member it does
+  not name in `extra_json` (the CIBA `backchannel_*` members included), so a read
+  passed to an update sends them back; the five server-stated members are dropped and
+  `client_id` is set from `metadata.client_id`.
+- **Neither write is retried**, on any status or transport error: an update that
+  lost its answer has already rotated the token. The read follows §16, never on a 4xx
+  other than 408/429.
+- A body with an `error` member is an `OAuthProtocolError` at any status (`401
+  invalid_token`, `400 invalid_client_metadata`); otherwise §2 by status.
+  `registration_access_token` and `client_secret` are `Sensitive`.
+
+## Directory, SAML, SSF and SCIM targets (§29 – §32)
+
+Four §27 namespaces, generated from the registry like every other and reached the same
+two ways (`client.directory()` or `client.management().directory()`). The `directory`,
+`saml` and `ssf` routes take the tenant from the client (`for_tenant()` overrides it);
+`scim_targets` is the token's tenant. Writes are never retried; a `400` is a
+`management::ValidationError` whose `what()` carries the server's `message` (for a
+human — never parse it), `404` `NotFoundError`, `409` `ConflictError`. Each operation's
+Doxygen repeats the contract's call-site warnings. Secrets on the way in are `Sensitive`
+(`bind_secret`, `authorization_header`, `credential`); no response type declares one,
+and a decoder meeting one drops it.
+
+**Directory (§30)** — `update` is a sparse `PATCH`; `group_base_dn` / `group_filter` are
+tri-state (`std::optional<std::optional<std::string>>`), so "clear" is expressible:
+
+```cpp
+using namespace axiam::management;
+UpdateDirectoryConfig patch;
+patch.enabled = false;                       // sends exactly {"enabled":false} …
+patch.group_filter.emplace(std::nullopt);    // … plus "group_filter":null, which clears it
+client.directory().update(patch);
+
+// Moving the connection (url, start_tls, bind_dn, trust anchors) requires the secret
+// again — the SDK holds no copy to re-send (§30.3 rule 2).
+SetDirectoryConfig set = client.directory().get().to_input();   // bind_secret absent
+set.url = "ldaps://dc2.corp.example";
+set.bind_secret = axiam::Sensitive<std::string>(secret_from_your_vault);
+client.directory().set(set);
+```
+
+**SAML (§29)** — parse SP metadata into a **draft** (nothing is stored), review it,
+create it. Exactly one of the two sources: the factories make both or neither
+unwritable, and a hand-built body with both or neither is `std::invalid_argument`
+before any request.
+
+```cpp
+auto draft = client.saml().parse_sp_metadata(
+    ParseSamlSpMetadata::from_url("https://payroll.example.com/saml/metadata"));
+for (const auto& w : draft.warnings) std::cerr << w << '\n';   // human text
+SamlServiceProvider sp = client.saml().create_service_provider(draft.service_provider);
+
+auto replacement = client.saml().get_service_provider(sp.id).to_input();  // omitted = default!
+replacement.allow_idp_initiated = true;
+client.saml().update_service_provider(sp.id, replacement);
+```
+
+`SamlIdpInfo::active_credential_id` / `next_credential_id` keep JSON `null` (an empty
+slot) apart from an absent member.
+
+**SCIM targets (§31) and SSF streams (§32)** — replacements, so start from the read;
+the write-only secret is absent from it and absent keeps the stored one, unless the
+write moves the URL:
+
+```cpp
+ScimTargetInput target;
+target.name = "Downstream";
+target.base_url = "https://idp.example.com/scim/v2";
+target.auth = ScimTargetAuth::oauth2_client_credentials("https://idp.example.com/token", "axiam");
+target.scope = ScimTargetScope::groups({engineering_group_id});
+target.credential = axiam::Sensitive<std::string>(client_secret_from_your_vault);
+auto created = client.scim_targets().create(target);
+
+auto edit = client.scim_targets().get(created.id).to_input();   // credential absent: kept
+edit.push_groups = true;
+client.scim_targets().update(created.id, edit);
+
+auto stream = client.ssf().get_stream(stream_id).to_input();     // header absent: kept
+stream.status = SsfStreamStatus::Paused;
+client.ssf().update_stream(stream_id, stream);
+```
+
+`ScimTargetAuth` / `ScimTargetScope` are open unions: an unknown `type` decodes, and
+sending one is refused locally (`NetworkError`, before any request). Open enums decode
+an unknown value as `Unknown`, which spells as the empty string — replace it before
+writing a read back.
+
+## SSF receiver (§32.7)
+
+`axiam::ssf::SsfReceiver` (`#include <axiam/ssf.hpp>`) is for the **relying party**
+that receives AXIAM's CAEP / RISC Security Event Tokens:
+
+```cpp
+axiam::ssf::SsfReceiverConfig cfg;
+cfg.issuer = "https://iam.example.com/t/" + tenant_id;
+cfg.audience = "https://rp.example.com/ssf";
+cfg.keys = axiam::ssf::SsfKeySource::jwks_uri("https://iam.example.com/oauth2/jwks");
+cfg.access_token_provider = [&] {   // poll only: a client-credentials token with ssf.manage
+    return client.login_client_credentials("ssf.manage").access_token;
+};
+axiam::ssf::SsfReceiver receiver(client, cfg);   // replay window: 7 days, the floor
+
+// Push (RFC 8935): verify, then answer 202 — or 400 {"err": e.push_error_code()}.
+try {
+    const auto event = receiver.verify_set(request_body);
+    if (event.event_type == axiam::ssf::event_types::kSessionRevoked) end_session(event);
+} catch (const axiam::ssf::SetVerificationError& e) {
+    respond(400, std::string(R"({"err":")") + e.push_error_code() + "\"}");
+}
+
+// Poll (RFC 8936): acknowledge what you processed, refuse what you refused.
+axiam::ssf::SsfPollOptions next;
+for (;;) {
+    const auto batch = receiver.poll(stream_id, next);
+    next = {};
+    next.ack.emplace();
+    next.set_errs.emplace();
+    for (const auto& e : batch.events) { process(e); next.ack->push_back(e.jti); }
+    for (const auto& r : batch.refused) {
+        (*next.set_errs)[r.jti] = axiam::ssf::SetErr::from_reason(r.reason);
+    }
+}
+```
+
+`verify_set` runs the nine steps in §32.7's order and refuses at the first with a
+`SetVerificationError` (an `AuthError`) whose `reason_code()` is `malformed`,
+`invalid_type`, `invalid_key`, `invalid_issuer`, `invalid_audience`, `invalid_request`
+or `replayed`. Only `EdDSA`, only keys from the configured JWKS (or from a discovery
+document whose `issuer` matches) — a `jwk` / `x5c` header is never read; an unknown
+`kid` triggers one refetch at most once a minute; a JWKS fetch failure is a
+`NetworkError`, not a verdict. **A verified SET is recorded**, so one re-offered unacked
+reads `replayed`: acknowledge what you processed. `poll` sends only the members you set,
+acknowledges nothing itself, is retried per §16 on transport/408/429/5xx only, and
+never carries the client's session. The replay store is pluggable
+(`ReplayStore::check_and_record`, atomic) for a receiver running several instances.
+
+## CIBA (§33)
+
+Client-initiated backchannel authentication, poll and ping modes. The client always
+authenticates — `oidc_client_secret()` (client_secret_post), or the §6.1 certificate
+(`tls_client_auth`, `client_id` alone) — and a client with neither is refused locally.
+
+```cpp
+axiam::CibaInitiateParams req{"openid", axiam::CibaUserHint::login_hint("alice")};
+req.binding_message = "W4SCT";            // shown on the approval page
+auto initiated = client.ciba_initiate(req);   // NEVER retried; proves nothing about alice
+
+try {
+    axiam::OidcTokenSet tokens = client.ciba_await(initiated);   // interval, slow_down, deadline
+    store(tokens);                                                // redeemed once: keep them
+} catch (const axiam::OAuthProtocolError& e) {
+    if (e.is_access_denied()) { /* the user said no */ }
+    else if (e.is_expired_token()) { /* nobody answered in time */ }
+    else throw;
+}
+```
+
+**Ping mode** — send a notification token, check the ping, answer `204`, then poll once:
+
+```cpp
+const axiam::Sensitive<std::string> notify(random_token());   // keep it for the ping
+req.delivery = axiam::CibaDelivery::ping(notify);
+auto initiated = client.ciba_initiate(req);
+
+// In your notification endpoint (no I/O; constant-time bearer check):
+const auto id = client.ciba_handle_ping(request_headers, request_body, notify);
+respond(204);
+auto tokens = client.ciba_poll(id);   // pending/slow_down: again at the interval;
+                                      // no ping after expires_in/2: fall back to ciba_await
+```
+
+**Signed request (§33.2)** — for a client registered with
+`backchannel_authentication_request_signing_alg`. Key and algorithm are the caller's;
+nothing is defaulted, and a key that cannot sign under the algorithm is refused at
+construction (`std::invalid_argument`):
+
+```cpp
+req.signer = axiam::CibaRequestSigner::from_pem(
+    axiam::CibaSigningAlg::kES256,                 // or kPS256, kEdDSA
+    axiam::Sensitive<std::string>(pem_from_your_key_store), "sig-key-1");
+client.ciba_initiate(req);   // the form carries only client auth + one signed `request`
+```
+
+`ciba_await` takes an injectable `CibaClock` (`CibaAwaitOptions::clock`). The
+`auth_req_id`, the notification token, the key and the `request` string are never
+printed (`Sensitive`, or held only as an OpenSSL key).
 
 ## Deferred / follow-ups
 
