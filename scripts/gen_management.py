@@ -185,7 +185,12 @@ CALL_SITE_NOTES: dict[str, str] = {
     ),
     "scim_targets.create": (
         "`credential` is required here (§31.3 rule 2). It is write-only: no response "
-        "ever carries it, and the SDK keeps no copy."
+        "ever carries it, and the SDK keeps no copy. **The credential is bound to its "
+        "URL** (§31.3 rule 2, D-57): a later `update` that changes `base_url` of a bearer "
+        "target, `auth.token_url` or `base_url` of a client-credentials target, or "
+        "`auth.type`, must carry `credential` again or is refused `400` and changes "
+        "nothing -- a kept credential sent to a new host would be handed to whoever runs "
+        "it. Keep the credential where you can supply it again; the SDK holds no copy."
     ),
     "scim_targets.update": (
         "**The credential is bound to its URL** (§31.3 rule 2): absent `credential` keeps "
@@ -874,8 +879,27 @@ def declared(f: dict[str, Any]) -> str:
     return f["decl"] if f["required"] else f"std::optional<{f['decl']}>"
 
 
+# Field documentation the contract makes an SDK carry ON THE FIELD, appended to the
+# spec's own description wherever a model declares a member of that wire name.
+# §29.3 rule 2: "an SDK MUST say so where it documents the field" (contract 1.59 R-29).
+FIELD_NOTES: dict[str, str] = {
+    "sp_signing_cert_pem": (
+        "RSA (2048 bits or more) or ECDSA on P-256, P-384 or P-521; anything else is "
+        "refused `400`. An **ECDSA certificate verifies HTTP-POST requests only**: the "
+        "HTTP-Redirect binding is RSA-only (CONTRACT.md §29.3 rule 2)."
+    ),
+}
+
+
 def field_doc(f: dict[str, Any]) -> str:
-    """The one-line description for a member."""
+    """The one-line description for a member, plus any FIELD_NOTES entry."""
+    base = _field_doc(f)
+    note = FIELD_NOTES.get(f["wire"])
+    return f"{base} {note}" if note else base
+
+
+def _field_doc(f: dict[str, Any]) -> str:
+    """The spec's description for a member, or a fallback."""
     if f.get("explicit_null"):
         lead = escape(f["description"]) + " " if f["description"] else ""
         return (lead + "Tri-state (§27.4 rule 5, null is not absent): `std::nullopt` "

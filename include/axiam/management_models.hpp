@@ -3813,7 +3813,10 @@ struct SamlServiceProvider {
     std::optional<std::string> slo_url = std::nullopt;
     /// See [`SamlServiceProviderInput::sp_encryption_cert_pem`]. Optional.
     std::optional<std::string> sp_encryption_cert_pem = std::nullopt;
-    /// See [`SamlServiceProviderInput::sp_signing_cert_pem`]. Optional.
+    /// See [`SamlServiceProviderInput::sp_signing_cert_pem`]. RSA (2048 bits or more) or ECDSA
+    /// on P-256, P-384 or P-521; anything else is refused `400`. An **ECDSA certificate
+    /// verifies HTTP-POST requests only**: the HTTP-Redirect binding is RSA-only (CONTRACT.md
+    /// §29.3 rule 2). Optional.
     std::optional<std::string> sp_signing_cert_pem = std::nullopt;
     /// The owning tenant.
     std::string tenant_id;
@@ -3866,7 +3869,10 @@ struct SamlServiceProviderInput {
     /// PEM certificate assertions are encrypted to. Required when `encrypt_assertions` is set.
     /// Optional.
     std::optional<std::string> sp_encryption_cert_pem = std::nullopt;
-    /// PEM certificate the SP signs its `AuthnRequest`s with. Optional.
+    /// PEM certificate the SP signs its `AuthnRequest`s with. RSA (2048 bits or more) or ECDSA
+    /// on P-256, P-384 or P-521; anything else is refused `400`. An **ECDSA certificate
+    /// verifies HTTP-POST requests only**: the HTTP-Redirect binding is RSA-only (CONTRACT.md
+    /// §29.3 rule 2). Optional.
     std::optional<std::string> sp_signing_cert_pem = std::nullopt;
     /// Refuse an `AuthnRequest` that is not signed by `sp_signing_cert_pem`. Requires that
     /// certificate. Optional.

@@ -4,6 +4,8 @@
 // run time.
 
 #include <sstream>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <type_traits>
 
@@ -261,4 +263,53 @@ AXIAM_TEST("§31.8 (3) (R-27): ScimTargetInput cannot be built without name, bas
     AXIAM_CHECK((std::is_constructible<ScimTargetInput, std::string, std::string, ScimTargetAuth, ScimTargetScope>::value));
 }
 
+}  // namespace
+
+// Contract 1.59 R-29: the call-site documentation the contract makes an SDK repeat,
+// checked in the installed headers (generated from scripts/gen_management.py, so the
+// generator is what this pins). §31.3 rule 2: "An SDK MUST document the rule at both
+// call sites" -- create as well as update. §29.3 rule 2: the ECDSA/HTTP-POST-only note
+// "where it documents the field", i.e. on `sp_signing_cert_pem` itself.
+namespace {
+std::string header_text(const char* rel) {
+    std::ifstream in(std::string(AXIAM_REPO_ROOT) + "/include/axiam/" + rel, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+/// The `///` block immediately above the first line containing `marker` at or after `from`.
+std::string doc_above(const std::string& text, const std::string& marker, std::size_t from = 0) {
+    const auto at = text.find(marker, from);
+    if (at == std::string::npos) return {};
+    std::size_t line_start = text.rfind('\n', at);
+    std::string block;
+    while (line_start != std::string::npos && line_start > 0) {
+        const auto prev = text.rfind('\n', line_start - 1);
+        const std::string line = text.substr(prev + 1, line_start - prev - 1);
+        if (line.find("///") == std::string::npos) break;
+        block = line + "\n" + block;
+        if (prev == std::string::npos) break;
+        line_start = prev;
+    }
+    return block;
+}
+}  // namespace
+
+AXIAM_TEST("§31.3 rule 2 / §29.3 rule 2 (R-29): the call-site and field documentation the contract requires") {
+    const std::string api = header_text("management.hpp");
+    const std::string create = doc_above(api, "ScimTargetResponse create(");
+    AXIAM_CHECK(create.find("bound to its URL") != std::string::npos);
+    AXIAM_CHECK(create.find("base_url") != std::string::npos);
+    AXIAM_CHECK(create.find("auth.token_url") != std::string::npos);
+
+    const std::string models = header_text("management_models.hpp");
+    for (const char* owner : {"struct SamlServiceProviderInput {", "struct SamlServiceProvider {"}) {
+        const auto start = models.find(owner);
+        AXIAM_REQUIRE(start != std::string::npos);
+        const std::string field = doc_above(models, " sp_signing_cert_pem = ", start);
+        AXIAM_CHECK(field.find("HTTP-POST") != std::string::npos);
+        AXIAM_CHECK(field.find("RSA-only") != std::string::npos);
+    }
+}
+
+namespace {
 }  // namespace
