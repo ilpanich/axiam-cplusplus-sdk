@@ -39,8 +39,8 @@ std::string read_the_code_the_user_typed() { return env_or("AXIAM_TOTP_CODE", "0
 void enrol_a_totp_factor(axiam::Client& client) {
     const auto enrollment = client.mfa_enroll();
 
-    // Both halves are Sensitive (§25.3). axiam::detail::reveal is the module
-    // accessor §7 rule 3 permits — call it at the point of use, hand the string
+    // Both halves are Sensitive (§25.3). expose() is the one public
+    // accessor §7 rule 3 names — call it at the point of use, hand the string
     // straight to the QR renderer, and let the value die there. It must never
     // reach a log, a trace or an error message.
     //
@@ -48,7 +48,7 @@ void enrol_a_totp_factor(axiam::Client& client) {
     // memo (§25.2 rule 3). The subject has not changed — offering a factor is a
     // profile action — and discarding a warm memo over it costs a round trip on
     // every authorization check that follows.
-    std::cout << "  scan this: " << axiam::detail::reveal(enrollment.totp_uri) << "\n";
+    std::cout << "  scan this: " << enrollment.totp_uri.expose() << "\n";
     std::cout << "  (in a log it would read: " << enrollment.totp_uri << ")\n";
 
     // The factor is NOT active yet. Two calls, with a human in between.
@@ -67,7 +67,7 @@ void enrol_a_totp_factor(axiam::Client& client) {
 void complete_forced_enrolment(axiam::Client& client,
                                const axiam::Sensitive<std::string>& setup_token) {
     const auto enrollment = client.mfa_setup_enroll(setup_token);
-    std::cout << "  scan this: " << axiam::detail::reveal(enrollment.totp_uri) << "\n";
+    std::cout << "  scan this: " << enrollment.totp_uri.expose() << "\n";
 
     const auto result = client.mfa_setup_confirm(setup_token, read_the_code_the_user_typed());
     std::cout << "  enrolled and signed in, session " << result.session_id << "\n";

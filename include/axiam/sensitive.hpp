@@ -13,23 +13,24 @@ template <typename T>
 class Sensitive;  // primary template, defined below
 
 namespace detail {
-// Module-private reveal. Not part of the public API surface — SDK internals that
-// genuinely need the raw value call this; application code cannot reach it without
-// naming the axiam::detail namespace, and it is documented as internal-only.
+// The SDK's module-private equivalent of Sensitive::expose() (CONTRACT.md §7
+// rule 4). Not part of the public API surface: SDK internals call it at the
+// point of use; application code calls expose().
 template <typename T>
 const T& reveal(const Sensitive<T>& s) noexcept;
 }  // namespace detail
 
 /// Wraps secret material (access tokens, mTLS private keys). Its string / stream
 /// representation is always the redacted placeholder "[SENSITIVE]"; the raw value
-/// is reachable only through the friend accessor axiam::detail::reveal().
+/// is reachable only through the one explicit, named accessor expose()
+/// (CONTRACT.md §7 rule 3 and its C++ row).
 ///
 /// **Wiped on destruction and on reassignment** (contract 1.53–1.58: §28.12.4,
 /// §30.5, §31.5, §32.5 and §33.5 each say an SDK must not keep a secret after
 /// the request that carried it). The bytes a `Sensitive<std::string>` holds are
 /// overwritten through a volatile pointer — which the optimiser may not elide —
 /// before the buffer is released. Best effort by construction: a copy a caller
-/// took with detail::reveal(), or a buffer std::string reallocated away from
+/// took with expose(), or a buffer std::string reallocated away from
 /// earlier, is outside this object's reach.
 template <typename T>
 class Sensitive {
@@ -60,6 +61,15 @@ public:
 
     /// Redacted textual form. Never emits the wrapped value.
     std::string to_string() const { return "[SENSITIVE]"; }
+
+    /// **The single public accessor** (CONTRACT.md §7 rule 3): the raw value,
+    /// for the one point where your application must use it — persisting the
+    /// rotated §28.12 `registration_access_token`, storing a §12 token set,
+    /// writing a one-time `private_key_pem` to its key store. Deliberate and
+    /// greppable; never pass the result to a log, trace or serialization sink
+    /// (rule 4). The reference lives as long as this object, which wipes the
+    /// bytes when it is destroyed or reassigned.
+    const T& expose() const noexcept { return value_; }
 
     /// True when no secret is held (default-constructed / empty string).
     bool empty() const { return is_empty(value_); }

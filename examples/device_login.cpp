@@ -79,7 +79,7 @@ int main() {
                   << "  token_type   " << tokens.token_type << " (expires in "
                   << tokens.expires_in << "s)\n"
                   // §7: the token streams redacted, always. Reach it with
-                  // axiam::detail::reveal() at the point of use — building one
+                  // expose() at the point of use — building one
                   // outbound Authorization header — and let the result die there.
                   << "  access_token " << tokens.access_token << "\n";
         if (tokens.refresh_token) {

@@ -1285,7 +1285,7 @@ may have no session at all.
 
 ```cpp
 const auto enrollment = client.mfa_enroll();
-render_qr(axiam::detail::reveal(enrollment.totp_uri));   // BOTH halves are Sensitive
+render_qr(enrollment.totp_uri.expose());   // BOTH halves are Sensitive
 const bool enabled = client.mfa_confirm(code_the_user_typed);
 ```
 
@@ -1806,7 +1806,8 @@ first two.
 `GeneratedCertificate::private_key_pem` and the rest are `Sensitive<T>`. They
 render **redacted** everywhere — every stream insertion, every log line — and
 still reach the wire. Getting the bytes out is deliberate and narrow:
-`axiam::detail::reveal()`, at the one point of use. The server returns them once
+`Sensitive<T>::expose()`, the single public accessor (§7 rule 3), at the one point of
+use. The server returns them once
 and stores nothing, so if you do not persist one when it goes past, nobody can
 recover it.
 
@@ -2187,7 +2188,9 @@ axiam::ClientRegistration reg = client.read_client_registration(uri, token);
 reg.client_name = "Agent v2";                 // change what you mean to change …
 axiam::ClientRegistration updated =
     client.update_client_registration(uri, token, reg);   // … the rest round-trips
-token = *updated.registration_access_token;   // PERSIST THIS FIRST: the old one is dead
+// PERSIST THIS FIRST: the old token is dead from this moment (§28.12.2 rule 5).
+save_registration_token(updated.registration_access_token->expose());
+token = *updated.registration_access_token;
 
 client.delete_client_registration(uri, token);            // 204 returns normally
 ```
@@ -2210,7 +2213,8 @@ client.delete_client_registration(uri, token);            // 204 returns normall
   other than 408/429.
 - A body with an `error` member is an `OAuthProtocolError` at any status (`401
   invalid_token`, `400 invalid_client_metadata`); otherwise §2 by status.
-  `registration_access_token` and `client_secret` are `Sensitive`.
+  `registration_access_token` and `client_secret` are `Sensitive`; read the rotated
+  token with `expose()`, the one public accessor, to persist it.
 
 ## Directory, SAML, SSF and SCIM targets (§29 – §32)
 

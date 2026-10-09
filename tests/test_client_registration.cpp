@@ -229,7 +229,9 @@ AXIAM_TEST("§28.12.6 (3): update drops the five server-stated members and retur
     const ClientRegistration updated = client.update_client_registration(
         registration_uri(), Sensitive<std::string>(axtest::random_secret("rat-")), metadata);
     AXIAM_REQUIRE(updated.registration_access_token.has_value());
-    AXIAM_CHECK(detail::reveal(*updated.registration_access_token) == rotated);
+    // §28.12.2 rule 5 / §7 rule 3 (R-19): the caller reads the rotated token
+    // through the public accessor, to persist it.
+    AXIAM_CHECK(updated.registration_access_token->expose() == rotated);
 
     AXIAM_REQUIRE(rig.registration_calls() == 1);
     const auto last = rig.st->last();

@@ -19,7 +19,7 @@
 // being lost the OTHER way: it renders redacted everywhere — every stream
 // insertion, every log line, every debugger-friendly dump — so the way to get
 // the bytes out is to ask for them, at the one point of use, with
-// axiam::detail::reveal(). It still reaches the wire; it just does not reach
+// expose(), the one public accessor. It still reaches the wire; it just does not reach
 // your log aggregator by accident.
 //
 // Set AXIAM_PROVISION=1 to run part 1 (it writes). Part 2 runs whenever
@@ -126,7 +126,7 @@ int provision(axiam::Client& client) {
     const std::string cert_path = env_or("AXIAM_DEVICE_CERT", serial + ".crt.pem");
     const std::string key_path = env_or("AXIAM_DEVICE_KEY", serial + ".key.pem");
     write_file(cert_path, issued.public_cert_pem);
-    write_file(key_path, axiam::detail::reveal(issued.private_key_pem));
+    write_file(key_path, issued.private_key_pem.expose());
     std::cout << "wrote " << cert_path << " and " << key_path
               << " — the key is unrecoverable if these are lost\n";
 
