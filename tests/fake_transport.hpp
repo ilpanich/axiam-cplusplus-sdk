@@ -18,6 +18,8 @@ struct RecordedReq {
     std::string url;
     std::string body;
     axiam::HeaderMap headers;
+    bool no_stored_cookies = false;
+    bool sessionless = false;
 };
 
 struct FakeState {
@@ -48,7 +50,8 @@ inline axiam::Transport make_fake(std::shared_ptr<FakeState> st) {
     return [st](const axiam::HttpRequest& req) -> axiam::HttpResponse {
         {
             std::lock_guard<std::mutex> lock(st->mtx);
-            st->requests.push_back({req.method, req.url, req.body, req.headers});
+            st->requests.push_back(
+                {req.method, req.url, req.body, req.headers, req.no_stored_cookies, req.sessionless});
         }
         return st->router(req, *st);
     };

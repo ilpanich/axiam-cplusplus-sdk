@@ -595,6 +595,55 @@ struct TokenExchangeParams {
     std::optional<std::string> tenant_id;
 };
 
+/// An RFC 7591 §3.2.1 / RFC 7592 §3 client information response (§28.12).
+///
+/// `registration_access_token` and `client_secret` are Sensitive (§28.12.4):
+/// they print as `[SENSITIVE]`, and nothing in this type renders them.
+///
+/// **Every member the server sent that this type does not name is kept** in
+/// `extra_json` — RFC 7591 §3.2.1 lets a server add members, and an update is a
+/// FULL REPLACEMENT: a member a read returned and an update left out is a member
+/// the server deletes. Passing a read's result straight to
+/// Client::update_client_registration() therefore sends it back intact,
+/// including the CIBA `backchannel_*` members.
+struct ClientRegistration {
+    std::string client_id;
+    /// Never sent on an update.
+    std::optional<std::int64_t> client_id_issued_at;
+    std::optional<std::string> client_name;
+    std::vector<std::string> redirect_uris;
+    std::vector<std::string> grant_types;
+    std::vector<std::string> response_types;
+    /// The server refuses an update that changes it.
+    std::optional<std::string> token_endpoint_auth_method;
+    /// Space-separated.
+    std::optional<std::string> scope;
+    /// Where this registration is read, replaced and deleted. Never sent on an update.
+    std::optional<std::string> registration_client_uri;
+    /// `0` means never. Never sent on an update.
+    std::optional<std::int64_t> client_secret_expires_at;
+    /// The client's JWK Set (for `private_key_jwt`), as raw JSON text.
+    std::optional<std::string> jwks_json;
+    std::optional<std::string> jwks_uri;
+    /// Present only on the registration response itself; never sent back.
+    std::optional<Sensitive<std::string>> client_secret;
+    /// Present on the registration response and — ROTATED — on every update
+    /// response; absent on a read. Never sent in a body.
+    std::optional<Sensitive<std::string>> registration_access_token;
+    /// Every other member, as a JSON object's text (`{}` when there is none).
+    /// A member of an unexpected type is kept here too, rather than dropped.
+    std::string extra_json = "{}";
+
+    /// Decode a client information response, tolerating unknown members.
+    /// @throws NetworkError when `json_text` is not an object with a `client_id`.
+    static ClientRegistration from_json(const std::string& json_text);
+
+    /// The RFC 7592 §2.2 replacement body update_client_registration() sends:
+    /// every member but the five the server states (§28.12.2 rule 4), with
+    /// `client_id` set to this registration's own. Carries no secret.
+    std::string update_body() const;
+};
+
 /// Build the RP-Initiated Logout 1.0 URL (§12.7.1). **Pure local computation.**
 ///
 /// @param config   An already-fetched document. `end_session_endpoint` comes

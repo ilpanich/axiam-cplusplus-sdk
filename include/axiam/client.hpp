@@ -877,6 +877,66 @@ public:
     /// signal.
     ExchangedToken token_exchange(const TokenExchangeParams& params);
 
+    // ---- §28.12 RFC 7592 client configuration (contract 1.53) ----
+    //
+    // A client that registered itself through `POST /oauth2/register` received,
+    // once, a `registration_client_uri` and a `registration_access_token`. With the
+    // two it reads, replaces and deletes ITS OWN registration. The four rules
+    // (§28.12.2) shape all three:
+    //
+    //  1. The URI is used verbatim — query included — and only at THIS client's
+    //     base URL origin (scheme, host, port; http only for a loopback base). Any
+    //     other is refused before any request with std::invalid_argument (C++'s
+    //     local ValidationError mapping, §28.7), naming no part of the URI.
+    //  2. The token travels in `Authorization: Bearer` only.
+    //  3. It is not the SDK's session: no access token, no cookie (read or
+    //     adopted), no CSRF or tenant header, no redirect followed, and a 401
+    //     never reaches the §9 refresh guard.
+    //  4. Neither write is retried, on any status or transport error.
+    //
+    // A body with an `error` member is an OAuthProtocolError at any status (401
+    // `invalid_token`, 400 `invalid_client_metadata`, …); otherwise §2 by status.
+
+    /// `GET registration_client_uri` (RFC 7592 §2.1) — read this client's
+    /// registration. The result carries neither the token nor the secret (the
+    /// server never returns them on a read), and every member an update needs.
+    ///
+    /// Retried per §16 on a transport failure, 408, 429 or 5xx — never on another
+    /// 4xx: an answer the server has given is not repeated.
+    ClientRegistration read_client_registration(
+        const std::string& registration_client_uri,
+        const Sensitive<std::string>& registration_access_token);
+
+    /// `PUT registration_client_uri` (RFC 7592 §2.2) — REPLACE this client's
+    /// registration, and receive a ROTATED token.
+    ///
+    /// `metadata` is the **whole** registration: a member it omits is a member the
+    /// server deletes. Start from read_client_registration()'s result, which keeps
+    /// every member (extras included), and change what you mean to change. The SDK
+    /// sets `client_id` to `metadata.client_id` and never sends
+    /// `registration_access_token`, `registration_client_uri`,
+    /// `client_secret_expires_at`, `client_id_issued_at` or `client_secret`.
+    ///
+    /// **Persist the returned `registration_access_token` before doing anything
+    /// else.** From the moment the server answers it is the only valid token: the
+    /// one you presented is dead for every operation.
+    ///
+    /// **Never retried** — not on a transport error, not on a 5xx. An update that
+    /// reached the server and lost its answer has already rotated the token; a
+    /// retry with the old one is a 401 that locks you out of your own
+    /// registration. On a lost answer, read with the token you hold: a 401 means
+    /// the update landed.
+    ClientRegistration update_client_registration(
+        const std::string& registration_client_uri,
+        const Sensitive<std::string>& registration_access_token,
+        const ClientRegistration& metadata);
+
+    /// `DELETE registration_client_uri` (RFC 7592 §2.3) — delete this client's
+    /// registration; a 204 returns normally. **Never retried**: a retry after a
+    /// lost 204 reads 401 and would report a successful deletion as a failure.
+    void delete_client_registration(const std::string& registration_client_uri,
+                                    const Sensitive<std::string>& registration_access_token);
+
     // ---- §24 WebAuthn / passkeys ----
     //
     // The six wire operations. See <axiam/webauthn.hpp> for what is deliberately

@@ -49,6 +49,15 @@ struct HttpRequest {
     /// test suite uses, say) has nothing to isolate and MAY ignore this field;
     /// CurlTransport does not ignore it (see http_curl.cpp).
     bool no_stored_cookies = false;
+
+    /// CONTRACT.md §28.12.2 rule 3 / §32.7 (contracts 1.53, 1.56): a request that
+    /// is NOT the SDK's session at all — the RFC 7592 registration calls, the SSF
+    /// JWKS / discovery fetch and the SSF poll carry their own bearer (or none)
+    /// and must neither replay nor ADOPT a cookie. Implies `no_stored_cookies`;
+    /// unlike it, a `Set-Cookie` in the response is discarded rather than merged
+    /// into the shared jar. Redirects are never followed by any request this SDK
+    /// makes (CurlTransport sets `CURLOPT_FOLLOWLOCATION` to 0 for every handle).
+    bool sessionless = false;
 };
 
 /// An HTTP response, or a transport failure. When `transport_error` is non-empty

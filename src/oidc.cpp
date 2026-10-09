@@ -20,9 +20,11 @@
 #include <array>
 #include <cstring>
 #include <ctime>
+#include <stdexcept>
 #include <utility>
 
 #include "client_impl.hpp"
+#include "url_origin.hpp"
 
 namespace axiam {
 namespace {
@@ -1943,6 +1945,218 @@ PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
     out.nonce = request.nonce;
     out.code_verifier = request.code_verifier;
     return out;
+}
+
+
+// ---------------------------------------------------------------------------
+// §28.12 RFC 7592 client configuration
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The members update_client_registration() never sends (§28.12.2 rule 4): the
+/// first four the server refuses with `400 invalid_request`, `client_secret` it
+/// never accepts back.
+constexpr const char* kServerStatedMembers[] = {
+    "registration_access_token", "registration_client_uri", "client_secret_expires_at",
+    "client_id_issued_at", "client_secret",
+};
+
+/// §28.12.2 rule 1: the URI is used verbatim, and only at the configured AXIAM.
+///
+/// The refusal is std::invalid_argument — C++'s local ValidationError mapping
+/// (CONTRACT.md §28.7) — raised before any request, and names no part of the
+/// URI: it is caller input, and an error message is the one most often logged.
+void check_registration_uri(const std::string& base_url, const std::string& uri,
+                            const char* operation) {
+    const auto base = detail::origin_of(base_url);
+    const auto target = detail::origin_of(uri);
+    const bool scheme_ok = target && (target->scheme == "https" || target->scheme == "http");
+    if (!base || !scheme_ok || !(*target == *base) ||
+        (target->scheme == "http" && !detail::is_loopback_host(base->host))) {
+        throw std::invalid_argument(
+            std::string(operation) +
+            ": registration_client_uri must be an https URL at the configured AXIAM origin "
+            "(scheme, host and port of the client's base URL; http only for a loopback base "
+            "URL) — refused before any request (CONTRACT.md §28.12.2 rule 1)");
+    }
+}
+
+/// One RFC 7592 request: the registration bearer and nothing of the SDK's.
+///
+/// §28.12.2 rule 3: no access token, no cookie (the request is `sessionless`, so
+/// CurlTransport neither reads nor writes the jar), no CSRF header, no tenant
+/// header, no redirect followed — and it goes to the transport directly rather
+/// than through send_raw(), so nothing in the response is adopted either. A 401
+/// therefore cannot reach the §9 guard: nothing here calls it.
+HttpResponse registration_request(Client::Impl& impl, const char* method,
+                                  const std::string& uri,
+                                  const Sensitive<std::string>& token, std::string body,
+                                  bool retryable, const char* operation) {
+    HttpRequest req;
+    req.method = method;
+    req.url = uri;
+    req.headers["Accept"] = "application/json";
+    req.headers["Authorization"] = "Bearer " + detail::reveal(token);
+    if (!body.empty()) req.headers["Content-Type"] = "application/json";
+    req.body = std::move(body);
+    req.sessionless = true;
+
+    // Rule 5: only the read may be repeated, and only per §16 — never on a 4xx
+    // other than 408/429, which retry_should_retry() already excludes.
+    const int budget = (retryable && impl.retry_enabled) ? detail::kRetryMaxAttempts : 1;
+    for (int attempt = 1;; ++attempt) {
+        HttpResponse resp = impl.transport(req);
+        const std::optional<long> status =
+            resp.transport_error.empty() ? std::optional<long>(resp.status) : std::nullopt;
+        const bool ok = status && *status >= 200 && *status < 300;
+        if (ok || attempt >= budget || !detail::retry_should_retry(status)) {
+            if (!status) {
+                throw NetworkError(std::string(operation) + " failed: " + resp.transport_error,
+                                   resp.transport_error);
+            }
+            // §28.12.3: an `error` body is an OAuthProtocolError at any status,
+            // a 401 included; otherwise §2 by status.
+            if (!ok) raise_grant_error(resp, std::string(operation) + " failed");
+            return resp;
+        }
+        const auto hint = resp.headers.find("Retry-After");
+        impl.sleeper(detail::retry_delay(
+            attempt,
+            hint == resp.headers.end() ? std::nullopt
+                                       : detail::retry_after_from_header(hint->second),
+            impl.jitter()));
+    }
+}
+
+ClientRegistration decode_registration(const HttpResponse& resp, const char* operation) {
+    try {
+        return ClientRegistration::from_json(resp.body);
+    } catch (const NetworkError& e) {
+        throw NetworkError(std::string(operation) + ": " + e.what(), "malformed_body");
+    }
+}
+
+}  // namespace
+
+ClientRegistration ClientRegistration::from_json(const std::string& json_text) {
+    json j = json::parse(json_text, nullptr, false);
+    if (!j.is_object()) {
+        throw NetworkError("a client registration response is not a JSON object",
+                           "malformed_body");
+    }
+    // Every member this type names is TAKEN out of `j`; what is left is kept
+    // verbatim in extra_json. A member of an unexpected type is left in place
+    // rather than dropped: an update is a full replacement, and a member a read
+    // returned and an update left out is a member the server deletes.
+    const auto take_string = [&j](const char* key) -> std::optional<std::string> {
+        const auto it = j.find(key);
+        if (it == j.end() || !(it->is_string() || it->is_null())) return std::nullopt;
+        std::optional<std::string> out;
+        if (it->is_string()) out = it->get<std::string>();
+        j.erase(it);
+        return out;
+    };
+    const auto take_int = [&j](const char* key) -> std::optional<std::int64_t> {
+        const auto it = j.find(key);
+        if (it == j.end() || !(it->is_number_integer() || it->is_null())) return std::nullopt;
+        std::optional<std::int64_t> out;
+        if (it->is_number_integer()) out = it->get<std::int64_t>();
+        j.erase(it);
+        return out;
+    };
+    const auto take_list = [&j](const char* key) {
+        std::vector<std::string> out;
+        const auto it = j.find(key);
+        if (it == j.end() || !it->is_array()) return out;
+        for (const auto& item : *it) {
+            if (item.is_string()) out.push_back(item.get<std::string>());
+        }
+        j.erase(it);
+        return out;
+    };
+
+    ClientRegistration r;
+    const auto client_id = take_string("client_id");
+    if (!client_id || client_id->empty()) {
+        throw NetworkError("a client registration response carries no client_id",
+                           "malformed_body");
+    }
+    r.client_id = *client_id;
+    r.client_id_issued_at = take_int("client_id_issued_at");
+    r.client_name = take_string("client_name");
+    r.redirect_uris = take_list("redirect_uris");
+    r.grant_types = take_list("grant_types");
+    r.response_types = take_list("response_types");
+    r.token_endpoint_auth_method = take_string("token_endpoint_auth_method");
+    r.scope = take_string("scope");
+    r.registration_client_uri = take_string("registration_client_uri");
+    r.client_secret_expires_at = take_int("client_secret_expires_at");
+    if (const auto jwks = j.find("jwks"); jwks != j.end()) {
+        if (!jwks->is_null()) r.jwks_json = jwks->dump();
+        j.erase(jwks);
+    }
+    r.jwks_uri = take_string("jwks_uri");
+    if (auto secret = take_string("client_secret")) {
+        r.client_secret = Sensitive<std::string>(std::move(*secret));
+    }
+    if (auto token = take_string("registration_access_token")) {
+        r.registration_access_token = Sensitive<std::string>(std::move(*token));
+    }
+    r.extra_json = j.dump();
+    return r;
+}
+
+std::string ClientRegistration::update_body() const {
+    // Rule 4: start from every member (the extras included), drop the five the
+    // server states, and set client_id to this registration's own.
+    json body = json::parse(extra_json, nullptr, false);
+    if (!body.is_object()) body = json::object();
+    for (const char* key : kServerStatedMembers) body.erase(key);
+    body["client_id"] = client_id;
+    if (client_name) body["client_name"] = *client_name;
+    body["redirect_uris"] = redirect_uris;
+    body["grant_types"] = grant_types;
+    body["response_types"] = response_types;
+    if (token_endpoint_auth_method) body["token_endpoint_auth_method"] = *token_endpoint_auth_method;
+    if (scope) body["scope"] = *scope;
+    if (jwks_json) {
+        auto jwks = json::parse(*jwks_json, nullptr, false);
+        if (!jwks.is_discarded()) body["jwks"] = std::move(jwks);
+    }
+    if (jwks_uri) body["jwks_uri"] = *jwks_uri;
+    return body.dump();
+}
+
+ClientRegistration Client::read_client_registration(
+    const std::string& registration_client_uri,
+    const Sensitive<std::string>& registration_access_token) {
+    p_->ensure_open();
+    check_registration_uri(p_->base_url, registration_client_uri, "read_client_registration");
+    const HttpResponse resp =
+        registration_request(*p_, "GET", registration_client_uri, registration_access_token, {},
+                             /*retryable=*/true, "read_client_registration");
+    return decode_registration(resp, "read_client_registration");
+}
+
+ClientRegistration Client::update_client_registration(
+    const std::string& registration_client_uri,
+    const Sensitive<std::string>& registration_access_token,
+    const ClientRegistration& metadata) {
+    p_->ensure_open();
+    check_registration_uri(p_->base_url, registration_client_uri, "update_client_registration");
+    const HttpResponse resp = registration_request(
+        *p_, "PUT", registration_client_uri, registration_access_token, metadata.update_body(),
+        /*retryable=*/false, "update_client_registration");
+    return decode_registration(resp, "update_client_registration");
+}
+
+void Client::delete_client_registration(const std::string& registration_client_uri,
+                                        const Sensitive<std::string>& registration_access_token) {
+    p_->ensure_open();
+    check_registration_uri(p_->base_url, registration_client_uri, "delete_client_registration");
+    registration_request(*p_, "DELETE", registration_client_uri, registration_access_token, {},
+                         /*retryable=*/false, "delete_client_registration");
 }
 
 }  // namespace axiam
