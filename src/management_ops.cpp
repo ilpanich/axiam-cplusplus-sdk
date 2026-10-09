@@ -1727,6 +1727,7 @@ void SamlApi::delete_service_provider(const std::string& sp_id) {
 SamlSpMetadataDraft SamlApi::parse_sp_metadata(const ParseSamlSpMetadata& body) {
     const std::vector<PathValue> values{{"tenant_id", transport_->tenant_id(scope_)}};
     const std::vector<QueryValue> query{};
+    checks::parse_sp_metadata_exactly_one(body);
     const std::optional<nlohmann::json> payload = nlohmann::json(body);
     const auto response = transport_->send("saml.parse_sp_metadata", "POST", "/api/v1/tenants/{tenant_id}/saml/parse-sp-metadata",
                                             values, query, payload);

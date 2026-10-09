@@ -4036,13 +4036,15 @@ void from_json(const nlohmann::json& j, SamlIdpCredentialPromotion& value) {
 void to_json(nlohmann::json& j, const SamlIdpInfo& value) {
     j = nlohmann::json::object();
     if (value.active_credential_id) {
-        j["active_credential_id"] = *value.active_credential_id;
+        if (*value.active_credential_id) j["active_credential_id"] = **value.active_credential_id;
+        else j["active_credential_id"] = nullptr;
     }
     j["entity_id"] = value.entity_id;
     j["metadata_served"] = value.metadata_served;
     j["metadata_url"] = value.metadata_url;
     if (value.next_credential_id) {
-        j["next_credential_id"] = *value.next_credential_id;
+        if (*value.next_credential_id) j["next_credential_id"] = **value.next_credential_id;
+        else j["next_credential_id"] = nullptr;
     }
     j["saml_available"] = value.saml_available;
     j["saml_idp_enabled"] = value.saml_idp_enabled;
@@ -4052,14 +4054,16 @@ void to_json(nlohmann::json& j, const SamlIdpInfo& value) {
 }
 
 void from_json(const nlohmann::json& j, SamlIdpInfo& value) {
-    if (auto it = j.find("active_credential_id"); it != j.end() && !it->is_null()) {
-        value.active_credential_id = it->get<std::string>();
+    if (auto it = j.find("active_credential_id"); it != j.end()) {
+        if (it->is_null()) value.active_credential_id.emplace(std::nullopt);
+        else value.active_credential_id.emplace(it->get<std::string>());
     }
     value.entity_id = j.at("entity_id").get<std::string>();
     value.metadata_served = j.at("metadata_served").get<bool>();
     value.metadata_url = j.at("metadata_url").get<std::string>();
-    if (auto it = j.find("next_credential_id"); it != j.end() && !it->is_null()) {
-        value.next_credential_id = it->get<std::string>();
+    if (auto it = j.find("next_credential_id"); it != j.end()) {
+        if (it->is_null()) value.next_credential_id.emplace(std::nullopt);
+        else value.next_credential_id.emplace(it->get<std::string>());
     }
     value.saml_available = j.at("saml_available").get<bool>();
     value.saml_idp_enabled = j.at("saml_idp_enabled").get<bool>();

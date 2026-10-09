@@ -37,4 +37,52 @@ SetDirectoryConfig DirectoryConfig::to_input() const {
     return out;
 }
 
+// ---- §29 saml ----------------------------------------------------------------
+
+ParseSamlSpMetadata ParseSamlSpMetadata::from_url(std::string url) {
+    ParseSamlSpMetadata out;
+    out.metadata_url = std::move(url);
+    return out;
+}
+
+ParseSamlSpMetadata ParseSamlSpMetadata::from_xml(std::string xml) {
+    ParseSamlSpMetadata out;
+    out.metadata_xml = std::move(xml);
+    return out;
+}
+
+SamlServiceProviderInput SamlServiceProvider::to_input() const {
+    // Every member, so the replacement changes only what the caller changes: on an
+    // update an omitted member takes its DEFAULT, not its stored value (§29.2).
+    SamlServiceProviderInput out;
+    out.acs_urls = acs_urls;
+    out.allow_idp_initiated = allow_idp_initiated;
+    out.allowed_groups = allowed_groups;
+    out.attribute_mappings = attribute_mappings;
+    out.display_name = display_name;
+    out.enabled = enabled;
+    out.encrypt_assertions = encrypt_assertions;
+    out.entity_id = entity_id;
+    out.name_id_format = name_id_format;
+    out.sign_responses = sign_responses;
+    out.slo_binding = slo_binding;
+    out.slo_url = slo_url;
+    out.sp_encryption_cert_pem = sp_encryption_cert_pem;
+    out.sp_signing_cert_pem = sp_signing_cert_pem;
+    out.want_authn_requests_signed = want_authn_requests_signed;
+    return out;
+}
+
 }  // namespace axiam::management
+
+namespace axiam::management::checks {
+
+void parse_sp_metadata_exactly_one(const ParseSamlSpMetadata& body) {
+    if (body.metadata_url.has_value() != body.metadata_xml.has_value()) return;
+    throw std::invalid_argument(
+        "saml.parse_sp_metadata: set exactly one of metadata_xml and metadata_url — use "
+        "ParseSamlSpMetadata::from_url() or from_xml() (CONTRACT.md §29.2); refused before "
+        "any request");
+}
+
+}  // namespace axiam::management::checks

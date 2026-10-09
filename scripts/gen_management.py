@@ -84,6 +84,11 @@ OPEN_UNIONS = {"ScimTargetAuth", "ScimTargetScope"}
 EXPLICIT_NULL_FIELDS: set[tuple[str, str]] = {
     ("UpdateDirectoryConfig", "group_base_dn"),
     ("UpdateDirectoryConfig", "group_filter"),
+    # §29.8 test 8 asks the same of a RESPONSE: SamlIdpInfo's two credential ids
+    # are null when the slot is empty, and that null must stay distinct from an
+    # absent member, so a server that stopped sending the member is noticed.
+    ("SamlIdpInfo", "active_credential_id"),
+    ("SamlIdpInfo", "next_credential_id"),
 }
 
 # Call-site documentation the contract makes an SDK repeat (§29.3, §30.3, §31.3,
@@ -125,15 +130,63 @@ CALL_SITE_NOTES: dict[str, str] = {
         "already-linked account answers `was_already_linked` and repeats the "
         "revocations."
     ),
+    "saml.create_service_provider": (
+        "`sp_signing_cert_pem` must be RSA (2048 bits or more) or ECDSA on P-256, P-384 "
+        "or P-521; an **ECDSA certificate verifies HTTP-POST requests only** -- the "
+        "HTTP-Redirect binding is RSA-only (§29.3 rule 2). `encrypt_assertions: true` is "
+        "refused while encryption is unimplemented. `entity_id` is unique per tenant "
+        "(`409`) and immutable once created."
+    ),
+    "saml.update_service_provider": (
+        "An omitted member takes its **default**, not its stored value: `enabled` and "
+        "`sign_responses` default to `true`, `name_id_format` to `persistent`, the other "
+        "flags to `false`, certificates and `slo_url` / `slo_binding` to null, the lists "
+        "to empty (§29.2). Start from `get_service_provider` "
+        "(`SamlServiceProvider::to_input()`). `entity_id` is immutable: changing it is "
+        "`400` -- register a new service provider instead (§29.3 rule 3). An ECDSA "
+        "`sp_signing_cert_pem` verifies HTTP-POST requests only; HTTP-Redirect is "
+        "RSA-only."
+    ),
+    "saml.delete_service_provider": (
+        "Ends no session: users already signed in to the SP stay signed in there until "
+        "their SP session ends (§29.3 rule 5)."
+    ),
+    "saml.parse_sp_metadata": (
+        "**Parses and stores nothing** (§29.3 rule 6): the result is a draft to review "
+        "and pass to `create_service_provider`. Exactly one of `metadata_xml` and "
+        "`metadata_url` must be set (`ParseSamlSpMetadata::from_url()` / `from_xml()`); "
+        "both or neither is refused locally with `std::invalid_argument`, before any "
+        "request. The metadata's own signature is not evaluated. `503` in a server built "
+        "without SAML."
+    ),
+    "saml.issue_idp_credential": (
+        "Generates an RSA-4096 key on the server, which takes seconds; the key is never "
+        "returned. An occupied slot is `409` (§29.3 rule 7)."
+    ),
+    "saml.promote_idp_credential": (
+        "`credential_id` must be the tenant's current `next` credential; in one "
+        "transaction the old `active` is retired -- its key destroyed -- and `next` "
+        "becomes `active` (§29.3 rule 7)."
+    ),
+    "saml.retire_idp_credential": (
+        "**Retiring the `active` credential with no successor stops SAML sign-on for the "
+        "whole tenant at once** (§29.3 rule 7) -- it is the incident response to a leaked "
+        "key. The key is destroyed. The safe rotation is: issue into `next`, wait until "
+        "every SP has refreshed the metadata, then promote."
+    ),
 }
 
 # Local checks a generated operation runs before any I/O: the name of a function
 # in src/management_checks.hpp taking the request body.
-PRECHECKS: dict[str, str] = {}
+PRECHECKS: dict[str, str] = {
+    "saml.parse_sp_metadata": "parse_sp_metadata_exactly_one",
+}
 
 # Statements that make the generated conformance case's default body pass its
 # PRECHECK (the defaulted body every other case sends would be refused locally).
-PRECHECK_TEST_SETUP: dict[str, list[str]] = {}
+PRECHECK_TEST_SETUP: dict[str, list[str]] = {
+    "saml.parse_sp_metadata": ['body.metadata_url = "https://sp.example.com/metadata";'],
+}
 
 # Hand-written members declared inside a generated model (defined in
 # src/management_helpers.cpp): the read-modify-write helpers §27.4 rule 5
@@ -144,6 +197,19 @@ MODEL_MEMBERS: dict[str, list[tuple[str, str]]] = {
         "-- the read-modify-write form (§27.4 rule 5). `bind_secret` is absent: no "
         "read carries it, and absent keeps the stored one (§30.2).",
         "SetDirectoryConfig to_input() const;",
+    )],
+    "ParseSamlSpMetadata": [
+        ("`{ \"metadata_url\": url }` -- the server fetches the document once, through "
+         "its SSRF guard (§29.3 rule 6).",
+         "static ParseSamlSpMetadata from_url(std::string url);"),
+        ("`{ \"metadata_xml\": xml }` -- a metadata document of at most 512 KiB.",
+         "static ParseSamlSpMetadata from_xml(std::string xml);"),
+    ],
+    "SamlServiceProvider": [(
+        "The replacement body for `saml.update_service_provider` holding every member of "
+        "this read -- the read-modify-write form §29.2 recommends, since an omitted "
+        "member takes its DEFAULT on an update.",
+        "SamlServiceProviderInput to_input() const;",
     )],
 }
 

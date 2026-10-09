@@ -3330,6 +3330,13 @@ struct ParseSamlSpMetadata {
     std::optional<std::string> metadata_url = std::nullopt;
     /// A metadata document, at most 512 KiB. Optional.
     std::optional<std::string> metadata_xml = std::nullopt;
+
+    /// `{ "metadata_url": url }` -- the server fetches the document once, through its SSRF
+    /// guard (§29.3 rule 6).
+    static ParseSamlSpMetadata from_url(std::string url);
+
+    /// `{ "metadata_xml": xml }` -- a metadata document of at most 512 KiB.
+    static ParseSamlSpMetadata from_xml(std::string xml);
 };
 
 /// Password complexity and history requirements.
@@ -3741,8 +3748,10 @@ struct SamlIdpCredentialPromotion {
 /// The tenant's SAML IdP, as the administrator needs to see it before and while switching it
 /// on: what an SP will be given, and whether it answers yet.
 struct SamlIdpInfo {
-    /// The `active` credential, or null. Optional.
-    std::optional<std::string> active_credential_id = std::nullopt;
+    /// The `active` credential, or null. Tri-state (§27.4 rule 5, null is not absent):
+    /// `std::nullopt` omits the member; an engaged value holding `std::nullopt` is JSON `null`;
+    /// a value is a value.
+    std::optional<std::optional<std::string>> active_credential_id = std::nullopt;
     /// The IdP's entity id (the metadata URL itself).
     std::string entity_id;
     /// Whether `metadata_url` answers now: SAML is available, enabled for the tenant, and an
@@ -3750,8 +3759,10 @@ struct SamlIdpInfo {
     bool metadata_served;
     /// Where the IdP metadata is served.
     std::string metadata_url;
-    /// The `next` credential, or null. Optional.
-    std::optional<std::string> next_credential_id = std::nullopt;
+    /// The `next` credential, or null. Tri-state (§27.4 rule 5, null is not absent):
+    /// `std::nullopt` omits the member; an engaged value holding `std::nullopt` is JSON `null`;
+    /// a value is a value.
+    std::optional<std::optional<std::string>> next_credential_id = std::nullopt;
     /// Whether this server build serves SAML at all (it was built with the `saml` feature).
     bool saml_available;
     /// The tenant's **effective** `saml_idp_enabled` setting (D-20). Written through the
@@ -3805,6 +3816,11 @@ struct SamlServiceProvider {
     std::string updated_at;
     /// See [`SamlServiceProviderInput::want_authn_requests_signed`].
     bool want_authn_requests_signed;
+
+    /// The replacement body for `saml.update_service_provider` holding every member of this
+    /// read -- the read-modify-write form §29.2 recommends, since an omitted member takes its
+    /// DEFAULT on an update.
+    SamlServiceProviderInput to_input() const;
 };
 
 /// Everything an administrator supplies when registering or replacing a service provider

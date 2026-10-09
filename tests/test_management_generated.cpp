@@ -1425,6 +1425,7 @@ AXIAM_TEST("management saml.parse_sp_metadata reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
         R"json({"encryption_certificate_fingerprint": "example", "service_provider": {"acs_urls": [{"binding": "http_post", "index": 1, "is_default": true, "url": "example"}], "allow_idp_initiated": true, "allowed_groups": ["11111111-1111-4111-8111-111111111111"], "attribute_mappings": [{"name_format": "example", "saml_name": "example", "source": "username"}], "display_name": "example", "enabled": true, "encrypt_assertions": true, "entity_id": "example", "name_id_format": "persistent", "sign_responses": true, "slo_binding": "http_post", "slo_url": "example", "sp_encryption_cert_pem": "example", "sp_signing_cert_pem": "example", "want_authn_requests_signed": true}, "signing_certificate_fingerprint": "example", "warnings": ["example"]})json");
     ParseSamlSpMetadata body{};
+    body.metadata_url = "https://sp.example.com/metadata";
     const auto result = fixture.client.management().saml().parse_sp_metadata(body);
     (void) result;
 

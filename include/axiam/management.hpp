@@ -1916,6 +1916,11 @@ public:
     ///
     /// `POST /api/v1/tenants/{tenant_id}/saml/service-providers`.
     ///
+    /// `sp_signing_cert_pem` must be RSA (2048 bits or more) or ECDSA on P-256, P-384 or P-521;
+    /// an **ECDSA certificate verifies HTTP-POST requests only** -- the HTTP-Redirect binding
+    /// is RSA-only (§29.3 rule 2). `encrypt_assertions: true` is refused while encryption is
+    /// unimplemented. `entity_id` is unique per tenant (`409`) and immutable once created.
+    ///
     /// @param body The request body.
     SamlServiceProvider create_service_provider(const SamlServiceProviderInput& body);
 
@@ -1931,6 +1936,14 @@ public:
     ///
     /// `PUT /api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}`.
     ///
+    /// An omitted member takes its **default**, not its stored value: `enabled` and
+    /// `sign_responses` default to `true`, `name_id_format` to `persistent`, the other flags to
+    /// `false`, certificates and `slo_url` / `slo_binding` to null, the lists to empty (§29.2).
+    /// Start from `get_service_provider` (`SamlServiceProvider::to_input()`). `entity_id` is
+    /// immutable: changing it is `400` -- register a new service provider instead (§29.3 rule
+    /// 3). An ECDSA `sp_signing_cert_pem` verifies HTTP-POST requests only; HTTP-Redirect is
+    /// RSA-only.
+    ///
     /// @param sp_id The `{sp_id}` path parameter.
     /// @param body The request body.
     SamlServiceProvider update_service_provider(const std::string& sp_id, const SamlServiceProviderInput& body);
@@ -1944,12 +1957,21 @@ public:
     /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
     /// rather than succeeding quietly.
     ///
+    /// Ends no session: users already signed in to the SP stay signed in there until their SP
+    /// session ends (§29.3 rule 5).
+    ///
     /// @param sp_id The `{sp_id}` path parameter.
     void delete_service_provider(const std::string& sp_id);
 
     /// `POST /api/v1/tenants/{tenant_id}/saml/parse-sp-metadata`
     ///
     /// `POST /api/v1/tenants/{tenant_id}/saml/parse-sp-metadata`.
+    ///
+    /// **Parses and stores nothing** (§29.3 rule 6): the result is a draft to review and pass
+    /// to `create_service_provider`. Exactly one of `metadata_xml` and `metadata_url` must be
+    /// set (`ParseSamlSpMetadata::from_url()` / `from_xml()`); both or neither is refused
+    /// locally with `std::invalid_argument`, before any request. The metadata's own signature
+    /// is not evaluated. `503` in a server built without SAML.
     ///
     /// @param body The request body.
     SamlSpMetadataDraft parse_sp_metadata(const ParseSamlSpMetadata& body);
@@ -1966,6 +1988,9 @@ public:
     ///
     /// `POST /api/v1/tenants/{tenant_id}/saml/idp-credentials`.
     ///
+    /// Generates an RSA-4096 key on the server, which takes seconds; the key is never returned.
+    /// An occupied slot is `409` (§29.3 rule 7).
+    ///
     /// @param body The request body.
     SamlIdpCredential issue_idp_credential(const IssueSamlIdpCredential& body);
 
@@ -1973,12 +1998,21 @@ public:
     ///
     /// `POST /api/v1/tenants/{tenant_id}/saml/idp-credentials/{credential_id}/promote`.
     ///
+    /// `credential_id` must be the tenant's current `next` credential; in one transaction the
+    /// old `active` is retired -- its key destroyed -- and `next` becomes `active` (§29.3 rule
+    /// 7).
+    ///
     /// @param credential_id The `{credential_id}` path parameter.
     SamlIdpCredentialPromotion promote_idp_credential(const std::string& credential_id);
 
     /// `POST /api/v1/tenants/{tenant_id}/saml/idp-credentials/{credential_id}/retire`
     ///
     /// `POST /api/v1/tenants/{tenant_id}/saml/idp-credentials/{credential_id}/retire`.
+    ///
+    /// **Retiring the `active` credential with no successor stops SAML sign-on for the whole
+    /// tenant at once** (§29.3 rule 7) -- it is the incident response to a leaked key. The key
+    /// is destroyed. The safe rotation is: issue into `next`, wait until every SP has refreshed
+    /// the metadata, then promote.
     ///
     /// @param credential_id The `{credential_id}` path parameter.
     SamlIdpCredential retire_idp_credential(const std::string& credential_id);
