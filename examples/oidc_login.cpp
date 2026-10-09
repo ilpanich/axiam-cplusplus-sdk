@@ -140,7 +140,7 @@ int main() {
             // that a wrapper whose purpose is to resist stringification is the
             // wrong type for a value about to be embedded in a URL. It still
             // must not be logged, which is why the URL is not printed in full.
-            const auto url = axiam::logout_url(doc, axiam::detail::reveal(*tokens.id_token));
+            const auto url = axiam::logout_url(doc, tokens.id_token->expose());
             if (url) {
                 std::cout << "\nOn sign-out, redirect to the end-session endpoint "
                              "(URL withheld — it embeds the ID token).\n";

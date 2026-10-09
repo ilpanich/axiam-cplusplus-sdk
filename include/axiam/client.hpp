@@ -997,7 +997,9 @@ public:
     /// `access_denied` and `expired_token` (terminal and distinct —
     /// OAuthProtocolError::is_access_denied() / is_expired_token()),
     /// `invalid_grant`. A transport failure, 5xx, 408 or bodiless 429 is retried
-    /// per §16 within the call.
+    /// per §16 within the call. **A 5xx is transient whatever its body** — AXIAM's
+    /// own `500 {"error":"server_error"}` included — and, once §16 is spent, is a
+    /// NetworkError, never an OAuthProtocolError (contract 1.59, §34.2 P8).
     ///
     /// A 200 is the §12 token set, its ID token validated as for every grant (no
     /// nonce). **Store the tokens before anything else**: a request is redeemed
@@ -1010,8 +1012,8 @@ public:
     ///  * the first poll waits one `interval` (5 s when the response had none);
     ///  * `slow_down` adds 5 s to the interval, cumulatively and for good;
     ///    `authorization_pending` never lowers it;
-    ///  * a transport failure, 5xx or 429 that outlived §16 waits an interval and
-    ///    polls again;
+    ///  * a transport failure, 5xx (with or without an `error` body, §34.2 P8)
+    ///    or 429 that outlived §16 waits an interval and polls again;
     ///  * polling stops at `received_at + expires_in`: when the NEXT poll would
     ///    fall at or past it, `expired_token` is raised locally, without a request.
     ///

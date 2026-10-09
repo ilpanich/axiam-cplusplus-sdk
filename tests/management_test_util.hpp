@@ -65,6 +65,16 @@ Fixture signed_in_three(long a_status, const std::string& a_body,
 /// column of numbers nobody can align with the calls they answer.
 Fixture signed_in_many(std::vector<std::pair<long, std::string>> replies);
 
+/// One queued response with headers -- for the §16 `Retry-After` cases.
+struct Reply {
+    long status;
+    std::string body;
+    axiam::HeaderMap headers{};
+};
+
+/// As signed_in_many(), with response headers.
+Fixture signed_in_with_headers(std::vector<Reply> replies);
+
 /// As signed_in(), but with a §19 telemetry hook recording every request path.
 Fixture signed_in_telemetry(long status, const std::string& body);
 

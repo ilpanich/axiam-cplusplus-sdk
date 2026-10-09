@@ -7,6 +7,7 @@
 // verify.
 
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -379,12 +380,19 @@ AXIAM_TEST("§32.7: a JWKS fetch failure is a NetworkError, not a verdict on the
     auto client = rig.client();
     ssf::SsfReceiver receiver(client, rig.config());
     const std::string set = set_for(rig.key, claims(axtest::random_secret("jti-", 16)));
+    // Each failed fetch holds the next one off for a minute (§34.2 P6): step past it.
+    auto clock = std::chrono::steady_clock::now();
+    receiver._set_clock_for_testing([&clock] { return clock; });
     AXIAM_REQUIRE_THROWS_AS(receiver.verify_set(set), NetworkError);
     rig.jwks_status = 200;
     rig.jwks_body = "not json";
+    clock += std::chrono::seconds(61);
     AXIAM_REQUIRE_THROWS_AS(receiver.verify_set(set), NetworkError);
+    AXIAM_CHECK(rig.jwks_fetches() == 2);
     rig.jwks_body = R"({"keys":"nope"})";
+    clock += std::chrono::seconds(61);
     AXIAM_CHECK(refusal(receiver, set) == SetFailureReason::kInvalidKey);  // fetched, no keys
+    AXIAM_CHECK(rig.jwks_fetches() == 4);  // the (empty) fill, then the kid miss's one refetch
 
     // A transport failure, and the fetch is session-free.
     Rig dropped;
@@ -397,6 +405,44 @@ AXIAM_TEST("§32.7: a JWKS fetch failure is a NetworkError, not a verdict on the
     ssf::SsfReceiver r2(c2, dropped.config());
     AXIAM_REQUIRE_THROWS_AS(r2.verify_set(set), NetworkError);
     AXIAM_CHECK(dropped.st->last().sessionless);
+}
+
+AXIAM_TEST("§32.7 step 4, contract 1.59 P6: a failed first JWKS fetch is rate-limited too, so an outage is not one fetch per SET") {
+    Rig rig;
+    rig.jwks_status = 503;
+    auto client = rig.client();
+    ssf::SsfReceiver receiver(client, rig.config());
+    AXIAM_REQUIRE_THROWS_AS(receiver.verify_set(set_for(rig.key, claims(axtest::random_secret("jti-", 16)))),
+                            NetworkError);
+    AXIAM_CHECK(rig.jwks_fetches() == 1);
+
+    // Inside the minute: no fetch, and still no verdict (NetworkError, not invalid_key).
+    rig.jwks_status = 200;
+    for (int i = 0; i < 3; ++i) {
+        AXIAM_REQUIRE_THROWS_AS(
+            receiver.verify_set(set_for(rig.key, claims(axtest::random_secret("jti-", 16)))),
+            NetworkError);
+    }
+    AXIAM_CHECK(rig.jwks_fetches() == 1);
+
+    // Once the minute has passed, the cache is filled and the SET verifies.
+    const auto later = std::chrono::steady_clock::now() + std::chrono::seconds(61);
+    receiver._set_clock_for_testing([later] { return later; });
+    AXIAM_CHECK(receiver.verify_set(set_for(rig.key, claims(axtest::random_secret("jti-", 16))))
+                    .event_type == ssf::event_types::kSessionRevoked);
+    AXIAM_CHECK(rig.jwks_fetches() == 2);
+
+    // A successful fill is not "the refetch": an unknown kid right after it still
+    // gets its one refetch (§34.2 P6), and a failed refetch also waits the minute.
+    Rig cold;
+    auto c2 = cold.client();
+    ssf::SsfReceiver r2(c2, cold.config());
+    axtest::TestKey stranger;
+    stranger.kid = axtest::random_secret("kid-", 4);
+    cold.jwks_status = 200;
+    AXIAM_CHECK(refusal(r2, set_for(stranger, claims(axtest::random_secret("jti-", 16)))) ==
+                SetFailureReason::kInvalidKey);
+    AXIAM_CHECK(cold.jwks_fetches() == 2);  // the fill, then the one refetch
 }
 
 AXIAM_TEST("§32.7: a discovery URL is used for its jwks_uri when its issuer matches") {
@@ -525,6 +571,86 @@ AXIAM_TEST("§32.8 helper (8): poll sends ack and setErrs exactly as given and r
     AXIAM_CHECK(empty.events.empty() && empty.refused.empty() && !empty.more_available);
 }
 
+/// A store that remembers what it recorded, so a test can ask whether a jti is
+/// in it — and that can be told to fail (a store that cannot answer, §34.2 P3).
+struct RecordingStore : ssf::ReplayStore {
+    std::set<std::string> recorded;
+    std::set<std::string> fail_on;
+    bool check_and_record(const std::string& jti, std::chrono::seconds) override {
+        if (fail_on.count(jti)) throw std::runtime_error("replay store unavailable");
+        return recorded.insert(jti).second;
+    }
+};
+
+AXIAM_TEST("§32.8 helper (8), contract 1.59 P1: a two-SET batch whose second SET's key refetch fails leaves no unreturned jti recorded") {
+    Rig rig;
+    const std::string first = axtest::random_secret("jti-", 16);
+    const std::string second = axtest::random_secret("jti-", 16);
+    axtest::TestKey stranger;  // a kid the JWKS does not hold
+    stranger.kid = axtest::random_secret("kid-", 4);
+    rig.poll = [&](const HttpRequest&) {
+        return json_response(200, json{{"sets",
+                                        {{first, set_for(rig.key, claims(first))},
+                                         {second, set_for(stranger, claims(second))}}}}
+                                      .dump());
+    };
+    auto client = rig.client();
+    auto store = std::make_shared<RecordingStore>();
+    auto cfg = rig.config();
+    cfg.replay_store = store;
+    ssf::SsfReceiver receiver(client, cfg);
+    // Prime the key cache, then take the JWKS down: the second SET's refetch fails.
+    receiver.verify_set(set_for(rig.key, claims(axtest::random_secret("jti-", 16))));
+    rig.jwks_status = 503;
+
+    bool first_returned = false;
+    std::optional<ssf::SsfPollResult> result;
+    try {
+        result = receiver.poll("s-1");
+        for (const auto& e : result->events) first_returned = first_returned || e.jti == first;
+    } catch (const NetworkError&) {
+    }
+    // The contract's assertion, either form (§34.2 P1).
+    AXIAM_CHECK(first_returned || store->recorded.count(first) == 0);
+    // And this SDK's form: what was judged is returned, the unjudged SET is in
+    // neither list, is not recorded, and is named so the caller can tell.
+    AXIAM_REQUIRE(result.has_value());
+    AXIAM_CHECK(first_returned && store->recorded.count(first) == 1);
+    AXIAM_CHECK(store->recorded.count(second) == 0);
+    AXIAM_CHECK(result->refused.empty());
+    AXIAM_REQUIRE(result->unjudged.size() == 1);
+    AXIAM_CHECK(result->unjudged[0].jti == second);
+    AXIAM_CHECK(!result->unjudged[0].error.empty());
+}
+
+AXIAM_TEST("§32.7 contract 1.59 P1/P3: a store that cannot answer leaves that SET unjudged, and the earlier ones returned") {
+    Rig rig;
+    const std::string first = axtest::random_secret("jti-", 16);
+    const std::string second = axtest::random_secret("jti-", 16);
+    rig.poll = [&](const HttpRequest&) {
+        return json_response(200, json{{"sets",
+                                        {{first, set_for(rig.key, claims(first))},
+                                         {second, set_for(rig.key, claims(second))}}}}
+                                      .dump());
+    };
+    auto client = rig.client();
+    auto store = std::make_shared<RecordingStore>();
+    store->fail_on.insert(second);
+    auto cfg = rig.config();
+    cfg.replay_store = store;
+    ssf::SsfReceiver receiver(client, cfg);
+    const auto result = receiver.poll("s-1");
+    AXIAM_REQUIRE(result.events.size() == 1);
+    AXIAM_CHECK(result.events[0].jti == first);
+    AXIAM_CHECK(result.refused.empty());  // a store failure is no verdict: never `refused`
+    AXIAM_REQUIRE(result.unjudged.size() == 1);
+    AXIAM_CHECK(result.unjudged[0].jti == second);
+    AXIAM_CHECK(store->recorded.count(second) == 0);
+
+    // verify_set alone still raises the failure: it fails closed, never accepts.
+    AXIAM_REQUIRE_THROWS_AS(receiver.verify_set(set_for(rig.key, claims(second))), std::runtime_error);
+}
+
 AXIAM_TEST("§32.7: poll is never retried on a 400, and is on a 503 (retry enabled)") {
     Rig rig;
     rig.poll = [](const HttpRequest&) {
@@ -565,7 +691,7 @@ AXIAM_TEST("§32.7: poll is never retried on a 400, and is on a 503 (retry enabl
     AXIAM_REQUIRE_THROWS_AS(receiver.poll("s-1"), NetworkError);
 }
 
-AXIAM_TEST("§32.7: poll without a provider is a local AuthError; a JWKS failure aborts it") {
+AXIAM_TEST("§32.7: poll without a provider is a local AuthError; a JWKS failure leaves the SET unjudged") {
     Rig rig;
     auto client = rig.client();
     auto cfg = rig.config();
@@ -578,8 +704,15 @@ AXIAM_TEST("§32.7: poll without a provider is a local AuthError; a JWKS failure
     rig.poll = [&rig](const HttpRequest&) {
         return json_response(200, json{{"sets", {{"j1", set_for(rig.key, claims("j1"))}}}}.dump());
     };
-    ssf::SsfReceiver receiver(client, rig.config());
-    AXIAM_REQUIRE_THROWS_AS(receiver.poll("s-1"), NetworkError);
+    auto store = std::make_shared<RecordingStore>();
+    auto with_store = rig.config();
+    with_store.replay_store = store;
+    ssf::SsfReceiver receiver(client, with_store);
+    const auto result = receiver.poll("s-1");  // §34.2 P1: no throw, no verdict
+    AXIAM_CHECK(result.events.empty() && result.refused.empty());
+    AXIAM_REQUIRE(result.unjudged.size() == 1);
+    AXIAM_CHECK(result.unjudged[0].jti == "j1");
+    AXIAM_CHECK(store->recorded.empty());
 }
 
 AXIAM_TEST("§32.7: the origin helper splits what it can and refuses the rest") {

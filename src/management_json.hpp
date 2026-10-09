@@ -74,8 +74,6 @@ void to_json(nlohmann::json& j, const SettingsScope& value);
 void from_json(const nlohmann::json& j, SettingsScope& value);
 void to_json(nlohmann::json& j, const SsfDeliveryMethod& value);
 void from_json(const nlohmann::json& j, SsfDeliveryMethod& value);
-void to_json(nlohmann::json& j, const SsfEventType& value);
-void from_json(const nlohmann::json& j, SsfEventType& value);
 void to_json(nlohmann::json& j, const SsfStatusActor& value);
 void from_json(const nlohmann::json& j, SsfStatusActor& value);
 void to_json(nlohmann::json& j, const SsfStreamStatus& value);
@@ -406,5 +404,40 @@ void to_json(nlohmann::json& j, const WebhookResponse& value);
 void from_json(const nlohmann::json& j, WebhookResponse& value);
 
 }  // namespace axiam::management
+
+// R-27 (CONTRACT.md §29.8 t1, §30.8 t4, §31.8 t3, §32.8 t1): these inputs cannot be
+// default-constructed, so nlohmann's default serializer, which default-constructs, cannot
+// decode them. Each specialization decodes through the constructor and encodes through the
+// to_json above.
+namespace nlohmann {
+template <>
+struct adl_serializer<axiam::management::SamlServiceProviderInput> {
+    static axiam::management::SamlServiceProviderInput from_json(const json& j);
+    static void to_json(json& j, const axiam::management::SamlServiceProviderInput& value) {
+        axiam::management::to_json(j, value);
+    }
+};
+template <>
+struct adl_serializer<axiam::management::ScimTargetInput> {
+    static axiam::management::ScimTargetInput from_json(const json& j);
+    static void to_json(json& j, const axiam::management::ScimTargetInput& value) {
+        axiam::management::to_json(j, value);
+    }
+};
+template <>
+struct adl_serializer<axiam::management::SetDirectoryConfig> {
+    static axiam::management::SetDirectoryConfig from_json(const json& j);
+    static void to_json(json& j, const axiam::management::SetDirectoryConfig& value) {
+        axiam::management::to_json(j, value);
+    }
+};
+template <>
+struct adl_serializer<axiam::management::SsfStreamInput> {
+    static axiam::management::SsfStreamInput from_json(const json& j);
+    static void to_json(json& j, const axiam::management::SsfStreamInput& value) {
+        axiam::management::to_json(j, value);
+    }
+};
+}  // namespace nlohmann
 
 #endif  // AXIAM_MANAGEMENT_JSON_HPP

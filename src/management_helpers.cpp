@@ -19,23 +19,16 @@ SetDirectoryConfig DirectoryConfig::to_input() const {
     // so a replacement changes only what the caller then changes. `bind_secret`
     // is absent — "keep the stored secret" — because no read ever carries it
     // (§30.2); moving the connection still needs it set again (§30.3 rule 2).
-    SetDirectoryConfig out;
-    out.base_dn = base_dn;
-    out.bind_dn = bind_dn;
-    out.enabled = enabled;
+    SetDirectoryConfig out(enabled, kind, url, start_tls, bind_dn, base_dn, user_filter);
     out.group_base_dn = group_base_dn;
     out.group_filter = group_filter;
     out.group_mappings = group_mappings;
     out.group_member_attribute = group_member_attribute;
     out.group_nesting_depth = group_nesting_depth;
     out.jit_provisioning = jit_provisioning;
-    out.kind = kind;
-    out.start_tls = start_tls;
     out.sync_interval_secs = sync_interval_secs;
     out.trust_anchors_pem = trust_anchors_pem;
-    out.url = url;
     out.user_attribute_map = user_attribute_map;
-    out.user_filter = user_filter;
     return out;
 }
 
@@ -56,15 +49,12 @@ ParseSamlSpMetadata ParseSamlSpMetadata::from_xml(std::string xml) {
 SamlServiceProviderInput SamlServiceProvider::to_input() const {
     // Every member, so the replacement changes only what the caller changes: on an
     // update an omitted member takes its DEFAULT, not its stored value (§29.2).
-    SamlServiceProviderInput out;
-    out.acs_urls = acs_urls;
+    SamlServiceProviderInput out(display_name, entity_id, acs_urls);
     out.allow_idp_initiated = allow_idp_initiated;
     out.allowed_groups = allowed_groups;
     out.attribute_mappings = attribute_mappings;
-    out.display_name = display_name;
     out.enabled = enabled;
     out.encrypt_assertions = encrypt_assertions;
-    out.entity_id = entity_id;
     out.name_id_format = name_id_format;
     out.sign_responses = sign_responses;
     out.slo_binding = slo_binding;
@@ -80,14 +70,10 @@ SamlServiceProviderInput SamlServiceProvider::to_input() const {
 SsfStreamInput SsfStream::to_input() const {
     // `authorization_header` absent: no read carries it, and absent keeps the
     // stored one (§32.2). `clear_authorization_header` stays unset.
-    SsfStreamInput out;
-    out.audience = audience;
-    out.delivery_method = delivery_method;
+    SsfStreamInput out(receiver_client_id, audience, delivery_method, events_allowed);
     out.description = description;
     out.endpoint_url = endpoint_url;
-    out.events_allowed = events_allowed;
     out.events_requested = events_requested;
-    out.receiver_client_id = receiver_client_id;
     out.status = status;
     out.status_reason = status_reason;
     out.subject_format = subject_format;
@@ -98,14 +84,10 @@ SsfStreamInput SsfStream::to_input() const {
 
 ScimTargetInput ScimTargetResponse::to_input() const {
     // `credential` absent: no read carries it, and absent keeps the stored one.
-    ScimTargetInput out;
-    out.auth = auth;
-    out.base_url = base_url;
+    ScimTargetInput out(name, base_url, auth, scope);
     out.deprovision = deprovision;
     out.enabled = enabled;
-    out.name = name;
     out.push_groups = push_groups;
-    out.scope = scope;
     out.user_name_from = user_name_from;
     return out;
 }

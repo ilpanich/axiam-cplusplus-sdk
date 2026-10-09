@@ -2084,12 +2084,16 @@ ClientRegistration ClientRegistration::from_json(const std::string& json_text) {
         j.erase(it);
         return out;
     };
-    const auto take_list = [&j](const char* key) {
-        std::vector<std::string> out;
+    // §34.2 P12.4: a list is taken only when it is an array of strings. Absent
+    // stays absent (never `[]`), and any other shape — not an array, or an
+    // array holding a non-string — is left in `j` whole, kept as read.
+    const auto take_list = [&j](const char* key) -> std::optional<std::vector<std::string>> {
         const auto it = j.find(key);
-        if (it == j.end() || !it->is_array()) return out;
+        if (it == j.end() || !it->is_array()) return std::nullopt;
+        std::vector<std::string> out;
         for (const auto& item : *it) {
-            if (item.is_string()) out.push_back(item.get<std::string>());
+            if (!item.is_string()) return std::nullopt;
+            out.push_back(item.get<std::string>());
         }
         j.erase(it);
         return out;
@@ -2134,9 +2138,10 @@ std::string ClientRegistration::update_body() const {
     for (const char* key : kServerStatedMembers) body.erase(key);
     body["client_id"] = client_id;
     if (client_name) body["client_name"] = *client_name;
-    body["redirect_uris"] = redirect_uris;
-    body["grant_types"] = grant_types;
-    body["response_types"] = response_types;
+    // §34.2 P12.4: only a list the read carried (or the caller set) is sent.
+    if (redirect_uris) body["redirect_uris"] = *redirect_uris;
+    if (grant_types) body["grant_types"] = *grant_types;
+    if (response_types) body["response_types"] = *response_types;
     if (token_endpoint_auth_method) body["token_endpoint_auth_method"] = *token_endpoint_auth_method;
     if (scope) body["scope"] = *scope;
     if (jwks_json) {
@@ -2279,9 +2284,10 @@ Sensitive<std::string> signed_ciba_request(const CibaInitiateParams& params,
 /// One CIBA token request (§33.1 `ciba_poll`), and whether a failure is the
 /// transient kind §33.7 rule 5 says the await loop survives.
 ///
-/// §16 applies within the call: a transport failure, a 5xx, a 408 and a
-/// BODILESS 429 are retried; a protocol answer (`authorization_pending`,
-/// `slow_down`, `access_denied`, …) never is, and neither is any other 4xx.
+/// §16 applies within the call: a transport failure, a 5xx (with or without an
+/// `error` member, §34.2 P8), a 408 and a BODILESS 429 are retried; a protocol
+/// answer (`authorization_pending`, `slow_down`, `access_denied`, …) never is,
+/// and neither is any other 4xx.
 struct CibaPollOutcome {
     std::optional<OidcTokenSet> tokens;
     std::exception_ptr error;
@@ -2317,8 +2323,14 @@ CibaPollOutcome ciba_poll_once(Client::Impl& impl, const OidcConfiguration& conf
             return out;
         }
         const json j = parse_or_object(resp.body);
+        // §33.4 / §33.7 rule 5 (contract 1.59, §34.2 P8): on ciba_poll a 5xx is
+        // transient WHATEVER its body — AXIAM's token endpoint answers an internal
+        // failure 500 {"error":"server_error"} — so only a sub-500 answer with an
+        // `error` member is a protocol answer. That rule prevails over §2's
+        // "dispatch on `error` at any status" for this operation only.
+        const bool server_error = status && *status >= 500;
         const bool protocol_answer =
-            status && j.contains("error") && j["error"].is_string() &&
+            status && !server_error && j.contains("error") && j["error"].is_string() &&
             !j["error"].get<std::string>().empty();
         out.transient = !protocol_answer && detail::retry_should_retry(status);
         if (attempt >= budget || !out.transient) {
@@ -2326,6 +2338,12 @@ CibaPollOutcome ciba_poll_once(Client::Impl& impl, const OidcConfiguration& conf
                 if (!status) {
                     throw NetworkError("ciba poll failed: " + resp.transport_error,
                                        resp.transport_error);
+                }
+                if (server_error) {
+                    // §2 by status, the body's `error` notwithstanding (§34.2 P3, P8).
+                    throw NetworkError(
+                        "ciba poll failed (HTTP " + std::to_string(*status) + ")",
+                        "http_" + std::to_string(*status));
                 }
                 raise_grant_error(resp, "ciba poll failed");
             } catch (...) {

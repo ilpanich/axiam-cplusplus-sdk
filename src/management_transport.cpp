@@ -156,9 +156,9 @@ nlohmann::json Transport::send(const std::string& operation,
     const std::string payload = body ? body->dump() : std::string{};
 
     // Rule 8: a GET is the only method §16 may replay. Everything else may already have
-    // been applied server-side, and no client can tell from a transport failure. A 4xx is
-    // never replayed either: it is a decisive answer, and re-sending it just spends the
-    // caller's rate limit to be told the same thing again.
+    // been applied server-side, and no client can tell from a transport failure. A 4xx
+    // other than 408 and 429 is never replayed either: it is a decisive answer, and
+    // re-sending it just spends the caller's rate limit to be told the same thing again.
     const bool retryable = http_method == "GET";
     const int budget = (retryable && impl_->retry_enabled) ? 3 : 1;
 
@@ -195,9 +195,17 @@ nlohmann::json Transport::send(const std::string& operation,
             }
         }
 
-        const bool worth_retrying = attempt < budget && (!status || *status >= 500);
+        // §16.3 (contract 1.59 R-30): a transport failure, 408, 429 and 5xx -- the
+        // classification every other §16 path in this SDK uses -- and the server's
+        // `Retry-After` hint, which may lengthen the wait but never shorten it.
+        const bool worth_retrying = attempt < budget && detail::retry_should_retry(status);
         if (worth_retrying) {
-            const auto wait = detail::retry_delay(attempt, std::nullopt, impl_->jitter());
+            std::optional<std::chrono::milliseconds> hint;
+            if (resp) {
+                const auto it = resp->headers.find("Retry-After");
+                if (it != resp->headers.end()) hint = detail::retry_after_from_header(it->second);
+            }
+            const auto wait = detail::retry_delay(attempt, hint, impl_->jitter());
             impl_->emit(RetryEvent{operation, attempt, wait,
                                    status ? "HTTP " + std::to_string(*status)
                                           : std::string("transport failure")});

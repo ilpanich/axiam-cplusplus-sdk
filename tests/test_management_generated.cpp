@@ -1313,7 +1313,7 @@ AXIAM_TEST("management directory.get reaches its route") {
 AXIAM_TEST("management directory.set reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
         R"json({"base_dn": "example", "bind_dn": "example", "created_at": "2026-08-26T00:00:00Z", "enabled": true, "group_base_dn": "example", "group_filter": "example", "group_mappings": [{"directory_group_dn": "example", "group_id": "11111111-1111-4111-8111-111111111111"}], "group_member_attribute": "example", "group_nesting_depth": 1, "id": "11111111-1111-4111-8111-111111111111", "jit_provisioning": true, "kind": "open_ldap", "start_tls": true, "sync_interval_secs": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "trust_anchors_pem": ["example"], "updated_at": "2026-08-26T00:00:00Z", "url": "example", "user_attribute_map": {"display_name": "example", "email": "example", "external_id": "example", "username": "example"}, "user_filter": "example"})json");
-    SetDirectoryConfig body{};
+    SetDirectoryConfig body({}, {}, {}, {}, {}, {}, {});
     const auto result = fixture.client.management().directory().set(body);
     (void) result;
 
@@ -1384,7 +1384,7 @@ AXIAM_TEST("management saml.list_service_providers reaches its route") {
 AXIAM_TEST("management saml.create_service_provider reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
         R"json({"acs_urls": [{"binding": "http_post", "index": 1, "is_default": true, "url": "example"}], "allow_idp_initiated": true, "allowed_groups": ["11111111-1111-4111-8111-111111111111"], "attribute_mappings": [{"name_format": "example", "saml_name": "example", "source": "username"}], "created_at": "2026-08-26T00:00:00Z", "display_name": "example", "enabled": true, "encrypt_assertions": true, "entity_id": "example", "id": "11111111-1111-4111-8111-111111111111", "name_id_format": "persistent", "sign_responses": true, "slo_binding": "http_post", "slo_url": "example", "sp_encryption_cert_pem": "example", "sp_signing_cert_pem": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "want_authn_requests_signed": true})json");
-    SamlServiceProviderInput body{};
+    SamlServiceProviderInput body({}, {}, {});
     const auto result = fixture.client.management().saml().create_service_provider(body);
     (void) result;
 
@@ -1405,7 +1405,7 @@ AXIAM_TEST("management saml.get_service_provider reaches its route") {
 AXIAM_TEST("management saml.update_service_provider reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
         R"json({"acs_urls": [{"binding": "http_post", "index": 1, "is_default": true, "url": "example"}], "allow_idp_initiated": true, "allowed_groups": ["11111111-1111-4111-8111-111111111111"], "attribute_mappings": [{"name_format": "example", "saml_name": "example", "source": "username"}], "created_at": "2026-08-26T00:00:00Z", "display_name": "example", "enabled": true, "encrypt_assertions": true, "entity_id": "example", "id": "11111111-1111-4111-8111-111111111111", "name_id_format": "persistent", "sign_responses": true, "slo_binding": "http_post", "slo_url": "example", "sp_encryption_cert_pem": "example", "sp_signing_cert_pem": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "want_authn_requests_signed": true})json");
-    SamlServiceProviderInput body{};
+    SamlServiceProviderInput body({}, {}, {});
     const auto result = fixture.client.management().saml().update_service_provider("11111111-1111-4111-8111-111111111111", body);
     (void) result;
 
@@ -1487,7 +1487,7 @@ AXIAM_TEST("management ssf.list_streams reaches its route") {
 AXIAM_TEST("management ssf.create_stream reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
         R"json({"audience": "example", "authorization_header_set": true, "created_at": "2026-08-26T00:00:00Z", "delivery_method": "push", "description": "example", "endpoint_url": "example", "events_allowed": ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"], "events_delivered": ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"], "events_requested": ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"], "id": "11111111-1111-4111-8111-111111111111", "last_verification_at": "2026-08-26T00:00:00Z", "receiver_client_id": "example", "status": "enabled", "status_actor": "admin", "status_reason": "example", "subject_format": "iss_sub", "tenant_id": "11111111-1111-4111-8111-111111111111", "transmitter_active": true, "transmitter_inactive_reason": "example", "updated_at": "2026-08-26T00:00:00Z"})json");
-    SsfStreamInput body{};
+    SsfStreamInput body({}, {}, {}, {});
     const auto result = fixture.client.management().ssf().create_stream(body);
     (void) result;
 
@@ -1508,7 +1508,7 @@ AXIAM_TEST("management ssf.get_stream reaches its route") {
 AXIAM_TEST("management ssf.update_stream reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
         R"json({"audience": "example", "authorization_header_set": true, "created_at": "2026-08-26T00:00:00Z", "delivery_method": "push", "description": "example", "endpoint_url": "example", "events_allowed": ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"], "events_delivered": ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"], "events_requested": ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"], "id": "11111111-1111-4111-8111-111111111111", "last_verification_at": "2026-08-26T00:00:00Z", "receiver_client_id": "example", "status": "enabled", "status_actor": "admin", "status_reason": "example", "subject_format": "iss_sub", "tenant_id": "11111111-1111-4111-8111-111111111111", "transmitter_active": true, "transmitter_inactive_reason": "example", "updated_at": "2026-08-26T00:00:00Z"})json");
-    SsfStreamInput body{};
+    SsfStreamInput body({}, {}, {}, {});
     const auto result = fixture.client.management().ssf().update_stream("11111111-1111-4111-8111-111111111111", body);
     (void) result;
 
@@ -1537,7 +1537,7 @@ AXIAM_TEST("management scim_targets.list reaches its route") {
 AXIAM_TEST("management scim_targets.create reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
         R"json({"auth": {"type": "bearer"}, "base_url": "example", "created_at": "2026-08-26T00:00:00Z", "deprovision": "deactivate", "enabled": true, "id": "11111111-1111-4111-8111-111111111111", "name": "example", "push_groups": true, "scope": {"type": "all_users"}, "state": {"consecutive_failures": 1, "dead_lettered_total": 1, "last_failure_at": "2026-08-26T00:00:00Z", "last_failure_reason": "example", "last_reconciled_at": "2026-08-26T00:00:00Z", "last_success_at": "2026-08-26T00:00:00Z"}, "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "user_name_from": "username"})json");
-    ScimTargetInput body{};
+    ScimTargetInput body({}, {}, {}, {});
     body.auth.type = "bearer";
     body.scope.type = "all_users";
     const auto result = fixture.client.management().scim_targets().create(body);
@@ -1560,7 +1560,7 @@ AXIAM_TEST("management scim_targets.get reaches its route") {
 AXIAM_TEST("management scim_targets.update reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
         R"json({"auth": {"type": "bearer"}, "base_url": "example", "created_at": "2026-08-26T00:00:00Z", "deprovision": "deactivate", "enabled": true, "id": "11111111-1111-4111-8111-111111111111", "name": "example", "push_groups": true, "scope": {"type": "all_users"}, "state": {"consecutive_failures": 1, "dead_lettered_total": 1, "last_failure_at": "2026-08-26T00:00:00Z", "last_failure_reason": "example", "last_reconciled_at": "2026-08-26T00:00:00Z", "last_success_at": "2026-08-26T00:00:00Z"}, "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "user_name_from": "username"})json");
-    ScimTargetInput body{};
+    ScimTargetInput body({}, {}, {}, {});
     body.auth.type = "bearer";
     body.scope.type = "all_users";
     const auto result = fixture.client.management().scim_targets().update("11111111-1111-4111-8111-111111111111", body);

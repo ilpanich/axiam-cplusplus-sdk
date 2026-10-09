@@ -793,9 +793,15 @@ struct ClientRegistration {
     /// Never sent on an update.
     std::optional<std::int64_t> client_id_issued_at;
     std::optional<std::string> client_name;
-    std::vector<std::string> redirect_uris;
-    std::vector<std::string> grant_types;
-    std::vector<std::string> response_types;
+    /// The three lists are present exactly when the read carried them as arrays
+    /// of strings (contract 1.59, §34.2 P12.4). Absent is NOT `[]`: an update
+    /// does not send a list the read lacked — RFC 7591 gives an omitted
+    /// `grant_types` a default — and a list of an unexpected shape (not an
+    /// array, or holding a non-string) stays absent here and is kept, as read,
+    /// in `extra_json`, so the update sends it back unchanged. Set one to send it.
+    std::optional<std::vector<std::string>> redirect_uris;
+    std::optional<std::vector<std::string>> grant_types;
+    std::optional<std::vector<std::string>> response_types;
     /// The server refuses an update that changes it.
     std::optional<std::string> token_endpoint_auth_method;
     /// Space-separated.
@@ -822,7 +828,9 @@ struct ClientRegistration {
 
     /// The RFC 7592 §2.2 replacement body update_client_registration() sends:
     /// every member but the five the server states (§28.12.2 rule 4), with
-    /// `client_id` set to this registration's own. Carries no secret.
+    /// `client_id` set to this registration's own. Carries no secret. A member
+    /// the read did not carry is not sent, and one of an unexpected shape is
+    /// sent as read (§34.2 P12.4).
     std::string update_body() const;
 };
 

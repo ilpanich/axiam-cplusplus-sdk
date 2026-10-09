@@ -4,6 +4,7 @@
 
 
 #include <stdexcept>
+#include <utility>
 
 #include "axiam/errors.hpp"
 #include "management_json.hpp"
@@ -15,8 +16,8 @@ std::string to_wire(ActorType value) {
         case ActorType::User: return "User";
         case ActorType::ServiceAccount: return "ServiceAccount";
         case ActorType::System: return "System";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case ActorType::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -35,7 +36,17 @@ ActorType actor_type_from_wire(const std::string& value) {
     return ActorType::Unknown;
 }
 
-void to_json(nlohmann::json& j, const ActorType& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(ActorType value) {
+    if (value == ActorType::Unknown) {
+        throw NetworkError("ActorType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const ActorType& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, ActorType& value) {
     value = actor_type_from_wire(j.get<std::string>());
 }
@@ -45,8 +56,8 @@ std::string to_wire(AttestationMode value) {
         case AttestationMode::None: return "none";
         case AttestationMode::Indirect: return "indirect";
         case AttestationMode::DirectRequired: return "direct_required";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case AttestationMode::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -65,7 +76,17 @@ AttestationMode attestation_mode_from_wire(const std::string& value) {
     return AttestationMode::Unknown;
 }
 
-void to_json(nlohmann::json& j, const AttestationMode& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(AttestationMode value) {
+    if (value == AttestationMode::Unknown) {
+        throw NetworkError("AttestationMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const AttestationMode& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, AttestationMode& value) {
     value = attestation_mode_from_wire(j.get<std::string>());
 }
@@ -79,8 +100,8 @@ std::string to_wire(AttributeSource value) {
         case AttributeSource::FamilyName: return "family_name";
         case AttributeSource::Groups: return "groups";
         case AttributeSource::Roles: return "roles";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case AttributeSource::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -103,7 +124,17 @@ AttributeSource attribute_source_from_wire(const std::string& value) {
     return AttributeSource::Unknown;
 }
 
-void to_json(nlohmann::json& j, const AttributeSource& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(AttributeSource value) {
+    if (value == AttributeSource::Unknown) {
+        throw NetworkError("AttributeSource: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const AttributeSource& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, AttributeSource& value) {
     value = attribute_source_from_wire(j.get<std::string>());
 }
@@ -113,8 +144,8 @@ std::string to_wire(AuditOutcome value) {
         case AuditOutcome::Success: return "Success";
         case AuditOutcome::Failure: return "Failure";
         case AuditOutcome::Denied: return "Denied";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case AuditOutcome::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -133,7 +164,17 @@ AuditOutcome audit_outcome_from_wire(const std::string& value) {
     return AuditOutcome::Unknown;
 }
 
-void to_json(nlohmann::json& j, const AuditOutcome& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(AuditOutcome value) {
+    if (value == AuditOutcome::Unknown) {
+        throw NetworkError("AuditOutcome: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const AuditOutcome& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, AuditOutcome& value) {
     value = audit_outcome_from_wire(j.get<std::string>());
 }
@@ -142,8 +183,8 @@ std::string to_wire(AuthnRequestParamsMode value) {
     switch (value) {
         case AuthnRequestParamsMode::Ignore: return "ignore";
         case AuthnRequestParamsMode::Honour: return "honour";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case AuthnRequestParamsMode::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -161,7 +202,17 @@ AuthnRequestParamsMode authn_request_params_mode_from_wire(const std::string& va
     return AuthnRequestParamsMode::Unknown;
 }
 
-void to_json(nlohmann::json& j, const AuthnRequestParamsMode& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(AuthnRequestParamsMode value) {
+    if (value == AuthnRequestParamsMode::Unknown) {
+        throw NetworkError("AuthnRequestParamsMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const AuthnRequestParamsMode& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, AuthnRequestParamsMode& value) {
     value = authn_request_params_mode_from_wire(j.get<std::string>());
 }
@@ -171,8 +222,8 @@ std::string to_wire(CertificateStatus value) {
         case CertificateStatus::Active: return "Active";
         case CertificateStatus::Revoked: return "Revoked";
         case CertificateStatus::Expired: return "Expired";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case CertificateStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -191,7 +242,17 @@ CertificateStatus certificate_status_from_wire(const std::string& value) {
     return CertificateStatus::Unknown;
 }
 
-void to_json(nlohmann::json& j, const CertificateStatus& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(CertificateStatus value) {
+    if (value == CertificateStatus::Unknown) {
+        throw NetworkError("CertificateStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const CertificateStatus& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, CertificateStatus& value) {
     value = certificate_status_from_wire(j.get<std::string>());
 }
@@ -202,8 +263,8 @@ std::string to_wire(CertificateType value) {
         case CertificateType::Service: return "Service";
         case CertificateType::Device: return "Device";
         case CertificateType::Server: return "Server";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case CertificateType::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -223,7 +284,17 @@ CertificateType certificate_type_from_wire(const std::string& value) {
     return CertificateType::Unknown;
 }
 
-void to_json(nlohmann::json& j, const CertificateType& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(CertificateType value) {
+    if (value == CertificateType::Unknown) {
+        throw NetworkError("CertificateType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const CertificateType& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, CertificateType& value) {
     value = certificate_type_from_wire(j.get<std::string>());
 }
@@ -236,8 +307,8 @@ std::string to_wire(CertificationLevel value) {
         case CertificationLevel::L2Plus: return "L2Plus";
         case CertificationLevel::L3: return "L3";
         case CertificationLevel::L3Plus: return "L3Plus";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case CertificationLevel::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -259,7 +330,17 @@ CertificationLevel certification_level_from_wire(const std::string& value) {
     return CertificationLevel::Unknown;
 }
 
-void to_json(nlohmann::json& j, const CertificationLevel& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(CertificationLevel value) {
+    if (value == CertificationLevel::Unknown) {
+        throw NetworkError("CertificationLevel: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const CertificationLevel& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, CertificationLevel& value) {
     value = certification_level_from_wire(j.get<std::string>());
 }
@@ -268,8 +349,8 @@ std::string to_wire(CibaDeliveryMode value) {
     switch (value) {
         case CibaDeliveryMode::Poll: return "poll";
         case CibaDeliveryMode::Ping: return "ping";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case CibaDeliveryMode::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -287,7 +368,17 @@ CibaDeliveryMode ciba_delivery_mode_from_wire(const std::string& value) {
     return CibaDeliveryMode::Unknown;
 }
 
-void to_json(nlohmann::json& j, const CibaDeliveryMode& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(CibaDeliveryMode value) {
+    if (value == CibaDeliveryMode::Unknown) {
+        throw NetworkError("CibaDeliveryMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const CibaDeliveryMode& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, CibaDeliveryMode& value) {
     value = ciba_delivery_mode_from_wire(j.get<std::string>());
 }
@@ -297,8 +388,8 @@ std::string to_wire(CibaRequestSigningAlg value) {
         case CibaRequestSigningAlg::PS256: return "PS256";
         case CibaRequestSigningAlg::ES256: return "ES256";
         case CibaRequestSigningAlg::EdDSA: return "EdDSA";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case CibaRequestSigningAlg::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -317,7 +408,17 @@ CibaRequestSigningAlg ciba_request_signing_alg_from_wire(const std::string& valu
     return CibaRequestSigningAlg::Unknown;
 }
 
-void to_json(nlohmann::json& j, const CibaRequestSigningAlg& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(CibaRequestSigningAlg value) {
+    if (value == CibaRequestSigningAlg::Unknown) {
+        throw NetworkError("CibaRequestSigningAlg: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const CibaRequestSigningAlg& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, CibaRequestSigningAlg& value) {
     value = ciba_request_signing_alg_from_wire(j.get<std::string>());
 }
@@ -330,8 +431,8 @@ std::string to_wire(ClientAuthMethod value) {
         case ClientAuthMethod::SelfSignedTlsClientAuth: return "self_signed_tls_client_auth";
         case ClientAuthMethod::PrivateKeyJwt: return "private_key_jwt";
         case ClientAuthMethod::None: return "none";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case ClientAuthMethod::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -353,7 +454,17 @@ ClientAuthMethod client_auth_method_from_wire(const std::string& value) {
     return ClientAuthMethod::Unknown;
 }
 
-void to_json(nlohmann::json& j, const ClientAuthMethod& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(ClientAuthMethod value) {
+    if (value == ClientAuthMethod::Unknown) {
+        throw NetworkError("ClientAuthMethod: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const ClientAuthMethod& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, ClientAuthMethod& value) {
     value = client_auth_method_from_wire(j.get<std::string>());
 }
@@ -362,8 +473,8 @@ std::string to_wire(ClientProfile value) {
     switch (value) {
         case ClientProfile::Standard: return "standard";
         case ClientProfile::Fapi2: return "fapi2";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case ClientProfile::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -381,7 +492,17 @@ ClientProfile client_profile_from_wire(const std::string& value) {
     return ClientProfile::Unknown;
 }
 
-void to_json(nlohmann::json& j, const ClientProfile& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(ClientProfile value) {
+    if (value == ClientProfile::Unknown) {
+        throw NetworkError("ClientProfile: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const ClientProfile& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, ClientProfile& value) {
     value = client_profile_from_wire(j.get<std::string>());
 }
@@ -390,8 +511,8 @@ std::string to_wire(DeprovisionPolicy value) {
     switch (value) {
         case DeprovisionPolicy::Deactivate: return "deactivate";
         case DeprovisionPolicy::Delete_: return "delete";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case DeprovisionPolicy::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -409,7 +530,17 @@ DeprovisionPolicy deprovision_policy_from_wire(const std::string& value) {
     return DeprovisionPolicy::Unknown;
 }
 
-void to_json(nlohmann::json& j, const DeprovisionPolicy& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(DeprovisionPolicy value) {
+    if (value == DeprovisionPolicy::Unknown) {
+        throw NetworkError("DeprovisionPolicy: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const DeprovisionPolicy& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, DeprovisionPolicy& value) {
     value = deprovision_policy_from_wire(j.get<std::string>());
 }
@@ -418,8 +549,8 @@ std::string to_wire(DirectoryKind value) {
     switch (value) {
         case DirectoryKind::OpenLdap: return "open_ldap";
         case DirectoryKind::ActiveDirectory: return "active_directory";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case DirectoryKind::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -437,7 +568,17 @@ DirectoryKind directory_kind_from_wire(const std::string& value) {
     return DirectoryKind::Unknown;
 }
 
-void to_json(nlohmann::json& j, const DirectoryKind& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(DirectoryKind value) {
+    if (value == DirectoryKind::Unknown) {
+        throw NetworkError("DirectoryKind: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const DirectoryKind& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, DirectoryKind& value) {
     value = directory_kind_from_wire(j.get<std::string>());
 }
@@ -446,8 +587,8 @@ std::string to_wire(FailurePolicy value) {
     switch (value) {
         case FailurePolicy::FailClosed: return "fail_closed";
         case FailurePolicy::FailOpen: return "fail_open";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case FailurePolicy::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -465,7 +606,17 @@ FailurePolicy failure_policy_from_wire(const std::string& value) {
     return FailurePolicy::Unknown;
 }
 
-void to_json(nlohmann::json& j, const FailurePolicy& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(FailurePolicy value) {
+    if (value == FailurePolicy::Unknown) {
+        throw NetworkError("FailurePolicy: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const FailurePolicy& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, FailurePolicy& value) {
     value = failure_policy_from_wire(j.get<std::string>());
 }
@@ -474,8 +625,8 @@ std::string to_wire(KeyAlgorithm value) {
     switch (value) {
         case KeyAlgorithm::Rsa4096: return "Rsa4096";
         case KeyAlgorithm::Ed25519: return "Ed25519";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case KeyAlgorithm::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -493,7 +644,17 @@ KeyAlgorithm key_algorithm_from_wire(const std::string& value) {
     return KeyAlgorithm::Unknown;
 }
 
-void to_json(nlohmann::json& j, const KeyAlgorithm& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(KeyAlgorithm value) {
+    if (value == KeyAlgorithm::Unknown) {
+        throw NetworkError("KeyAlgorithm: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const KeyAlgorithm& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, KeyAlgorithm& value) {
     value = key_algorithm_from_wire(j.get<std::string>());
 }
@@ -503,8 +664,8 @@ std::string to_wire(ManagedBy value) {
         case ManagedBy::Admin: return "admin";
         case ManagedBy::Dcr: return "dcr";
         case ManagedBy::Cimd: return "cimd";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case ManagedBy::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -523,7 +684,17 @@ ManagedBy managed_by_from_wire(const std::string& value) {
     return ManagedBy::Unknown;
 }
 
-void to_json(nlohmann::json& j, const ManagedBy& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(ManagedBy value) {
+    if (value == ManagedBy::Unknown) {
+        throw NetworkError("ManagedBy: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const ManagedBy& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, ManagedBy& value) {
     value = managed_by_from_wire(j.get<std::string>());
 }
@@ -533,8 +704,8 @@ std::string to_wire(MfaMethodType value) {
         case MfaMethodType::Totp: return "Totp";
         case MfaMethodType::Passkey: return "Passkey";
         case MfaMethodType::SecurityKey: return "SecurityKey";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case MfaMethodType::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -553,7 +724,17 @@ MfaMethodType mfa_method_type_from_wire(const std::string& value) {
     return MfaMethodType::Unknown;
 }
 
-void to_json(nlohmann::json& j, const MfaMethodType& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(MfaMethodType value) {
+    if (value == MfaMethodType::Unknown) {
+        throw NetworkError("MfaMethodType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const MfaMethodType& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, MfaMethodType& value) {
     value = mfa_method_type_from_wire(j.get<std::string>());
 }
@@ -562,8 +743,8 @@ std::string to_wire(NameIdFormat value) {
     switch (value) {
         case NameIdFormat::Persistent: return "persistent";
         case NameIdFormat::EmailAddress: return "email_address";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case NameIdFormat::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -581,7 +762,17 @@ NameIdFormat name_id_format_from_wire(const std::string& value) {
     return NameIdFormat::Unknown;
 }
 
-void to_json(nlohmann::json& j, const NameIdFormat& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(NameIdFormat value) {
+    if (value == NameIdFormat::Unknown) {
+        throw NetworkError("NameIdFormat: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const NameIdFormat& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, NameIdFormat& value) {
     value = name_id_format_from_wire(j.get<std::string>());
 }
@@ -606,8 +797,8 @@ std::string to_wire(NotificationEventType value) {
         case NotificationEventType::ServiceAccountCreated: return "service_account_created";
         case NotificationEventType::ServiceAccountDeleted: return "service_account_deleted";
         case NotificationEventType::ScimDeliveryFailed: return "scim_delivery_failed";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case NotificationEventType::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -641,7 +832,17 @@ NotificationEventType notification_event_type_from_wire(const std::string& value
     return NotificationEventType::Unknown;
 }
 
-void to_json(nlohmann::json& j, const NotificationEventType& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(NotificationEventType value) {
+    if (value == NotificationEventType::Unknown) {
+        throw NetworkError("NotificationEventType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const NotificationEventType& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, NotificationEventType& value) {
     value = notification_event_type_from_wire(j.get<std::string>());
 }
@@ -650,8 +851,8 @@ std::string to_wire(PermissionEffect value) {
     switch (value) {
         case PermissionEffect::Allow: return "allow";
         case PermissionEffect::Deny: return "deny";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case PermissionEffect::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -669,7 +870,17 @@ PermissionEffect permission_effect_from_wire(const std::string& value) {
     return PermissionEffect::Unknown;
 }
 
-void to_json(nlohmann::json& j, const PermissionEffect& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(PermissionEffect value) {
+    if (value == PermissionEffect::Unknown) {
+        throw NetworkError("PermissionEffect: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const PermissionEffect& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, PermissionEffect& value) {
     value = permission_effect_from_wire(j.get<std::string>());
 }
@@ -678,8 +889,8 @@ std::string to_wire(PgpKeyAlgorithm value) {
     switch (value) {
         case PgpKeyAlgorithm::Rsa4096: return "Rsa4096";
         case PgpKeyAlgorithm::Ed25519: return "Ed25519";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case PgpKeyAlgorithm::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -697,7 +908,17 @@ PgpKeyAlgorithm pgp_key_algorithm_from_wire(const std::string& value) {
     return PgpKeyAlgorithm::Unknown;
 }
 
-void to_json(nlohmann::json& j, const PgpKeyAlgorithm& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(PgpKeyAlgorithm value) {
+    if (value == PgpKeyAlgorithm::Unknown) {
+        throw NetworkError("PgpKeyAlgorithm: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const PgpKeyAlgorithm& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, PgpKeyAlgorithm& value) {
     value = pgp_key_algorithm_from_wire(j.get<std::string>());
 }
@@ -706,8 +927,8 @@ std::string to_wire(PgpKeyPurpose value) {
     switch (value) {
         case PgpKeyPurpose::AuditSigning: return "AuditSigning";
         case PgpKeyPurpose::Export_: return "Export";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case PgpKeyPurpose::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -725,7 +946,17 @@ PgpKeyPurpose pgp_key_purpose_from_wire(const std::string& value) {
     return PgpKeyPurpose::Unknown;
 }
 
-void to_json(nlohmann::json& j, const PgpKeyPurpose& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(PgpKeyPurpose value) {
+    if (value == PgpKeyPurpose::Unknown) {
+        throw NetworkError("PgpKeyPurpose: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const PgpKeyPurpose& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, PgpKeyPurpose& value) {
     value = pgp_key_purpose_from_wire(j.get<std::string>());
 }
@@ -734,8 +965,8 @@ std::string to_wire(PgpKeyStatus value) {
     switch (value) {
         case PgpKeyStatus::Active: return "Active";
         case PgpKeyStatus::Revoked: return "Revoked";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case PgpKeyStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -753,7 +984,17 @@ PgpKeyStatus pgp_key_status_from_wire(const std::string& value) {
     return PgpKeyStatus::Unknown;
 }
 
-void to_json(nlohmann::json& j, const PgpKeyStatus& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(PgpKeyStatus value) {
+    if (value == PgpKeyStatus::Unknown) {
+        throw NetworkError("PgpKeyStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const PgpKeyStatus& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, PgpKeyStatus& value) {
     value = pgp_key_status_from_wire(j.get<std::string>());
 }
@@ -762,8 +1003,8 @@ std::string to_wire(ReactorMode value) {
     switch (value) {
         case ReactorMode::Intercept: return "intercept";
         case ReactorMode::Listen: return "listen";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case ReactorMode::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -781,7 +1022,17 @@ ReactorMode reactor_mode_from_wire(const std::string& value) {
     return ReactorMode::Unknown;
 }
 
-void to_json(nlohmann::json& j, const ReactorMode& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(ReactorMode value) {
+    if (value == ReactorMode::Unknown) {
+        throw NetworkError("ReactorMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const ReactorMode& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, ReactorMode& value) {
     value = reactor_mode_from_wire(j.get<std::string>());
 }
@@ -790,8 +1041,8 @@ std::string to_wire(SamlBinding value) {
     switch (value) {
         case SamlBinding::HttpPost: return "http_post";
         case SamlBinding::HttpRedirect: return "http_redirect";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case SamlBinding::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -809,7 +1060,17 @@ SamlBinding saml_binding_from_wire(const std::string& value) {
     return SamlBinding::Unknown;
 }
 
-void to_json(nlohmann::json& j, const SamlBinding& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(SamlBinding value) {
+    if (value == SamlBinding::Unknown) {
+        throw NetworkError("SamlBinding: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const SamlBinding& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, SamlBinding& value) {
     value = saml_binding_from_wire(j.get<std::string>());
 }
@@ -819,8 +1080,8 @@ std::string to_wire(SamlIdpCredentialStatus value) {
         case SamlIdpCredentialStatus::Active: return "active";
         case SamlIdpCredentialStatus::Next: return "next";
         case SamlIdpCredentialStatus::Retired: return "retired";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case SamlIdpCredentialStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -839,7 +1100,17 @@ SamlIdpCredentialStatus saml_idp_credential_status_from_wire(const std::string& 
     return SamlIdpCredentialStatus::Unknown;
 }
 
-void to_json(nlohmann::json& j, const SamlIdpCredentialStatus& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(SamlIdpCredentialStatus value) {
+    if (value == SamlIdpCredentialStatus::Unknown) {
+        throw NetworkError("SamlIdpCredentialStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const SamlIdpCredentialStatus& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, SamlIdpCredentialStatus& value) {
     value = saml_idp_credential_status_from_wire(j.get<std::string>());
 }
@@ -848,8 +1119,8 @@ std::string to_wire(SamlIdpSlot value) {
     switch (value) {
         case SamlIdpSlot::Active: return "active";
         case SamlIdpSlot::Next: return "next";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case SamlIdpSlot::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -867,7 +1138,17 @@ SamlIdpSlot saml_idp_slot_from_wire(const std::string& value) {
     return SamlIdpSlot::Unknown;
 }
 
-void to_json(nlohmann::json& j, const SamlIdpSlot& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(SamlIdpSlot value) {
+    if (value == SamlIdpSlot::Unknown) {
+        throw NetworkError("SamlIdpSlot: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const SamlIdpSlot& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, SamlIdpSlot& value) {
     value = saml_idp_slot_from_wire(j.get<std::string>());
 }
@@ -877,8 +1158,8 @@ std::string to_wire(ScimTokenStatus value) {
         case ScimTokenStatus::Active: return "active";
         case ScimTokenStatus::Expired: return "expired";
         case ScimTokenStatus::Revoked: return "revoked";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case ScimTokenStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -897,7 +1178,17 @@ ScimTokenStatus scim_token_status_from_wire(const std::string& value) {
     return ScimTokenStatus::Unknown;
 }
 
-void to_json(nlohmann::json& j, const ScimTokenStatus& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(ScimTokenStatus value) {
+    if (value == ScimTokenStatus::Unknown) {
+        throw NetworkError("ScimTokenStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const ScimTokenStatus& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, ScimTokenStatus& value) {
     value = scim_token_status_from_wire(j.get<std::string>());
 }
@@ -906,8 +1197,8 @@ std::string to_wire(SettingsScope value) {
     switch (value) {
         case SettingsScope::Org: return "Org";
         case SettingsScope::Tenant: return "Tenant";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case SettingsScope::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -925,7 +1216,17 @@ SettingsScope settings_scope_from_wire(const std::string& value) {
     return SettingsScope::Unknown;
 }
 
-void to_json(nlohmann::json& j, const SettingsScope& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(SettingsScope value) {
+    if (value == SettingsScope::Unknown) {
+        throw NetworkError("SettingsScope: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const SettingsScope& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, SettingsScope& value) {
     value = settings_scope_from_wire(j.get<std::string>());
 }
@@ -934,8 +1235,8 @@ std::string to_wire(SsfDeliveryMethod value) {
     switch (value) {
         case SsfDeliveryMethod::Push: return "push";
         case SsfDeliveryMethod::Poll: return "poll";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case SsfDeliveryMethod::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -953,53 +1254,50 @@ SsfDeliveryMethod ssf_delivery_method_from_wire(const std::string& value) {
     return SsfDeliveryMethod::Unknown;
 }
 
-void to_json(nlohmann::json& j, const SsfDeliveryMethod& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(SsfDeliveryMethod value) {
+    if (value == SsfDeliveryMethod::Unknown) {
+        throw NetworkError("SsfDeliveryMethod: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const SsfDeliveryMethod& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, SsfDeliveryMethod& value) {
     value = ssf_delivery_method_from_wire(j.get<std::string>());
 }
 
-std::string to_wire(SsfEventType value) {
-    switch (value) {
-        case SsfEventType::SessionRevoked: return "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
-        case SsfEventType::CredentialChange: return "https://schemas.openid.net/secevent/caep/event-type/credential-change";
-        case SsfEventType::AssuranceLevelChange: return "https://schemas.openid.net/secevent/caep/event-type/assurance-level-change";
-        case SsfEventType::AccountDisabled: return "https://schemas.openid.net/secevent/risc/event-type/account-disabled";
-        case SsfEventType::AccountEnabled: return "https://schemas.openid.net/secevent/risc/event-type/account-enabled";
-        case SsfEventType::AccountPurged: return "https://schemas.openid.net/secevent/risc/event-type/account-purged";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
-        case SsfEventType::Unknown: return "";
+bool is_known_ssf_event_type(const std::string& value) {
+    if (value == ssf_event_type::kSessionRevoked) return true;
+    if (value == ssf_event_type::kCredentialChange) return true;
+    if (value == ssf_event_type::kAssuranceLevelChange) return true;
+    if (value == ssf_event_type::kAccountDisabled) return true;
+    if (value == ssf_event_type::kAccountEnabled) return true;
+    if (value == ssf_event_type::kAccountPurged) return true;
+    return false;
+}
+
+// CONTRACT.md §32.2 / contract 1.59 §34.2 P12.2: decoded as itself, but a value this SDK does
+// not know is refused LOCALLY, before any request.
+static const std::string& send_ssf_event_type(const std::string& value) {
+    if (!is_known_ssf_event_type(value)) {
+        throw NetworkError("SsfEventType: a value this SDK does not know is never sent (CONTRACT.md §32.2, §34.2 P12.2)", "sdk_programming_error");
     }
-    // Unreachable for a value produced by this SDK; present because a switch over an enum class
-    // with an out-of-range value is otherwise undefined.
-    return "https://schemas.openid.net/secevent/caep/event-type/session-revoked";
+    return value;
 }
-
-SsfEventType ssf_event_type_from_wire(const std::string& value) {
-    if (value == "https://schemas.openid.net/secevent/caep/event-type/session-revoked") return SsfEventType::SessionRevoked;
-    if (value == "https://schemas.openid.net/secevent/caep/event-type/credential-change") return SsfEventType::CredentialChange;
-    if (value == "https://schemas.openid.net/secevent/caep/event-type/assurance-level-change") return SsfEventType::AssuranceLevelChange;
-    if (value == "https://schemas.openid.net/secevent/risc/event-type/account-disabled") return SsfEventType::AccountDisabled;
-    if (value == "https://schemas.openid.net/secevent/risc/event-type/account-enabled") return SsfEventType::AccountEnabled;
-    if (value == "https://schemas.openid.net/secevent/risc/event-type/account-purged") return SsfEventType::AccountPurged;
-    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
-    // whole response the value arrived in, so one field of one record takes down the page it
-    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
-    // server state into a wrong one.
-    return SsfEventType::Unknown;
-}
-
-void to_json(nlohmann::json& j, const SsfEventType& value) { j = to_wire(value); }
-void from_json(const nlohmann::json& j, SsfEventType& value) {
-    value = ssf_event_type_from_wire(j.get<std::string>());
+static const std::vector<std::string>& send_ssf_event_type(const std::vector<std::string>& values) {
+    for (const auto& value : values) send_ssf_event_type(value);
+    return values;
 }
 
 std::string to_wire(SsfStatusActor value) {
     switch (value) {
         case SsfStatusActor::Admin: return "admin";
         case SsfStatusActor::Receiver: return "receiver";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case SsfStatusActor::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -1017,7 +1315,17 @@ SsfStatusActor ssf_status_actor_from_wire(const std::string& value) {
     return SsfStatusActor::Unknown;
 }
 
-void to_json(nlohmann::json& j, const SsfStatusActor& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(SsfStatusActor value) {
+    if (value == SsfStatusActor::Unknown) {
+        throw NetworkError("SsfStatusActor: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const SsfStatusActor& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, SsfStatusActor& value) {
     value = ssf_status_actor_from_wire(j.get<std::string>());
 }
@@ -1027,8 +1335,8 @@ std::string to_wire(SsfStreamStatus value) {
         case SsfStreamStatus::Enabled: return "enabled";
         case SsfStreamStatus::Paused: return "paused";
         case SsfStreamStatus::Disabled: return "disabled";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case SsfStreamStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -1047,7 +1355,17 @@ SsfStreamStatus ssf_stream_status_from_wire(const std::string& value) {
     return SsfStreamStatus::Unknown;
 }
 
-void to_json(nlohmann::json& j, const SsfStreamStatus& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(SsfStreamStatus value) {
+    if (value == SsfStreamStatus::Unknown) {
+        throw NetworkError("SsfStreamStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const SsfStreamStatus& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, SsfStreamStatus& value) {
     value = ssf_stream_status_from_wire(j.get<std::string>());
 }
@@ -1056,8 +1374,8 @@ std::string to_wire(SsfSubjectFormat value) {
     switch (value) {
         case SsfSubjectFormat::IssSub: return "iss_sub";
         case SsfSubjectFormat::Email: return "email";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case SsfSubjectFormat::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -1075,7 +1393,17 @@ SsfSubjectFormat ssf_subject_format_from_wire(const std::string& value) {
     return SsfSubjectFormat::Unknown;
 }
 
-void to_json(nlohmann::json& j, const SsfSubjectFormat& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(SsfSubjectFormat value) {
+    if (value == SsfSubjectFormat::Unknown) {
+        throw NetworkError("SsfSubjectFormat: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const SsfSubjectFormat& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, SsfSubjectFormat& value) {
     value = ssf_subject_format_from_wire(j.get<std::string>());
 }
@@ -1084,8 +1412,8 @@ std::string to_wire(TenantKind value) {
     switch (value) {
         case TenantKind::Standard: return "standard";
         case TenantKind::Organization: return "organization";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case TenantKind::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -1103,7 +1431,17 @@ TenantKind tenant_kind_from_wire(const std::string& value) {
     return TenantKind::Unknown;
 }
 
-void to_json(nlohmann::json& j, const TenantKind& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(TenantKind value) {
+    if (value == TenantKind::Unknown) {
+        throw NetworkError("TenantKind: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const TenantKind& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, TenantKind& value) {
     value = tenant_kind_from_wire(j.get<std::string>());
 }
@@ -1112,8 +1450,8 @@ std::string to_wire(TenantStatus value) {
     switch (value) {
         case TenantStatus::Active: return "Active";
         case TenantStatus::Suspended: return "Suspended";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case TenantStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -1131,7 +1469,17 @@ TenantStatus tenant_status_from_wire(const std::string& value) {
     return TenantStatus::Unknown;
 }
 
-void to_json(nlohmann::json& j, const TenantStatus& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(TenantStatus value) {
+    if (value == TenantStatus::Unknown) {
+        throw NetworkError("TenantStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const TenantStatus& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, TenantStatus& value) {
     value = tenant_status_from_wire(j.get<std::string>());
 }
@@ -1140,8 +1488,8 @@ std::string to_wire(UnknownAaguidAction value) {
     switch (value) {
         case UnknownAaguidAction::Allow: return "allow";
         case UnknownAaguidAction::Deny: return "deny";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case UnknownAaguidAction::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -1159,7 +1507,17 @@ UnknownAaguidAction unknown_aaguid_action_from_wire(const std::string& value) {
     return UnknownAaguidAction::Unknown;
 }
 
-void to_json(nlohmann::json& j, const UnknownAaguidAction& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(UnknownAaguidAction value) {
+    if (value == UnknownAaguidAction::Unknown) {
+        throw NetworkError("UnknownAaguidAction: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const UnknownAaguidAction& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, UnknownAaguidAction& value) {
     value = unknown_aaguid_action_from_wire(j.get<std::string>());
 }
@@ -1168,8 +1526,8 @@ std::string to_wire(UserNameSource value) {
     switch (value) {
         case UserNameSource::Username: return "username";
         case UserNameSource::Email: return "email";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case UserNameSource::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -1187,7 +1545,17 @@ UserNameSource user_name_source_from_wire(const std::string& value) {
     return UserNameSource::Unknown;
 }
 
-void to_json(nlohmann::json& j, const UserNameSource& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(UserNameSource value) {
+    if (value == UserNameSource::Unknown) {
+        throw NetworkError("UserNameSource: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const UserNameSource& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, UserNameSource& value) {
     value = user_name_source_from_wire(j.get<std::string>());
 }
@@ -1200,8 +1568,8 @@ std::string to_wire(UserStatus value) {
         case UserStatus::PendingVerification: return "PendingVerification";
         case UserStatus::Anonymized: return "Anonymized";
         case UserStatus::Deleted: return "Deleted";
-        // The empty string, which no server value is: an unrecognised value carried back into
-        // an update is refused by the server rather than written as a spelling it never used.
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
         case UserStatus::Unknown: return "";
     }
     // Unreachable for a value produced by this SDK; present because a switch over an enum class
@@ -1223,14 +1591,36 @@ UserStatus user_status_from_wire(const std::string& value) {
     return UserStatus::Unknown;
 }
 
-void to_json(nlohmann::json& j, const UserStatus& value) { j = to_wire(value); }
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(UserStatus value) {
+    if (value == UserStatus::Unknown) {
+        throw NetworkError("UserStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const UserStatus& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, UserStatus& value) {
     value = user_status_from_wire(j.get<std::string>());
 }
 
+SamlServiceProviderInput::SamlServiceProviderInput(std::string display_name, std::string entity_id, std::vector<AcsEndpoint> acs_urls)
+    : acs_urls(std::move(acs_urls)), display_name(std::move(display_name)), entity_id(std::move(entity_id)) {}
+
+ScimTargetInput::ScimTargetInput(std::string name, std::string base_url, ScimTargetAuth auth, ScimTargetScope scope)
+    : auth(std::move(auth)), base_url(std::move(base_url)), name(std::move(name)), scope(std::move(scope)) {}
+
+SetDirectoryConfig::SetDirectoryConfig(bool enabled, DirectoryKind kind, std::string url, bool start_tls, std::string bind_dn, std::string base_dn, std::string user_filter)
+    : base_dn(std::move(base_dn)), bind_dn(std::move(bind_dn)), enabled(enabled), kind(kind), start_tls(start_tls), url(std::move(url)), user_filter(std::move(user_filter)) {}
+
+SsfStreamInput::SsfStreamInput(std::string receiver_client_id, std::string audience, SsfDeliveryMethod delivery_method, std::vector<SsfEventType> events_allowed)
+    : audience(std::move(audience)), delivery_method(delivery_method), events_allowed(std::move(events_allowed)), receiver_client_id(std::move(receiver_client_id)) {}
+
 void to_json(nlohmann::json& j, const AcsEndpoint& value) {
     j = nlohmann::json::object();
-    j["binding"] = to_wire(value.binding);
+    j["binding"] = send_wire(value.binding);
     j["index"] = value.index;
     if (value.is_default) {
         j["is_default"] = *value.is_default;
@@ -1365,7 +1755,7 @@ void to_json(nlohmann::json& j, const AttributeMapping& value) {
         j["name_format"] = *value.name_format;
     }
     j["saml_name"] = value.saml_name;
-    j["source"] = to_wire(value.source);
+    j["source"] = send_wire(value.source);
 }
 
 void from_json(const nlohmann::json& j, AttributeMapping& value) {
@@ -1380,13 +1770,13 @@ void to_json(nlohmann::json& j, const AuditLogEntry& value) {
     j = nlohmann::json::object();
     j["action"] = value.action;
     j["actor_id"] = value.actor_id;
-    j["actor_type"] = to_wire(value.actor_type);
+    j["actor_type"] = send_wire(value.actor_type);
     j["id"] = value.id;
     if (value.ip_address) {
         j["ip_address"] = *value.ip_address;
     }
     { auto parsed = nlohmann::json::parse(value.metadata, nullptr, false); if (!parsed.is_discarded()) j["metadata"] = parsed; }
-    j["outcome"] = to_wire(value.outcome);
+    j["outcome"] = send_wire(value.outcome);
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
     }
@@ -1428,7 +1818,7 @@ void to_json(nlohmann::json& j, const CaCertificate& value) {
     j["created_at"] = value.created_at;
     j["fingerprint"] = value.fingerprint;
     j["id"] = value.id;
-    j["key_algorithm"] = to_wire(value.key_algorithm);
+    j["key_algorithm"] = send_wire(value.key_algorithm);
     if (value.key_custody) {
         j["key_custody"] = *value.key_custody;
     }
@@ -1445,7 +1835,7 @@ void to_json(nlohmann::json& j, const CaCertificate& value) {
         j["parent_ca_id"] = *value.parent_ca_id;
     }
     j["public_cert_pem"] = value.public_cert_pem;
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["subject"] = value.subject;
     if (value.tenant_id) {
         j["tenant_id"] = *value.tenant_id;
@@ -1485,17 +1875,17 @@ void from_json(const nlohmann::json& j, CaCertificate& value) {
 
 void to_json(nlohmann::json& j, const Certificate& value) {
     j = nlohmann::json::object();
-    j["cert_type"] = to_wire(value.cert_type);
+    j["cert_type"] = send_wire(value.cert_type);
     j["created_at"] = value.created_at;
     j["fingerprint"] = value.fingerprint;
     j["id"] = value.id;
     j["issuer_ca_id"] = value.issuer_ca_id;
-    j["key_algorithm"] = to_wire(value.key_algorithm);
+    j["key_algorithm"] = send_wire(value.key_algorithm);
     { auto parsed = nlohmann::json::parse(value.metadata, nullptr, false); if (!parsed.is_discarded()) j["metadata"] = parsed; }
     j["not_after"] = value.not_after;
     j["not_before"] = value.not_before;
     j["public_cert_pem"] = value.public_cert_pem;
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["subject"] = value.subject;
     j["tenant_id"] = value.tenant_id;
     if (value.bound_service_account_id) {
@@ -1659,7 +2049,7 @@ void to_json(nlohmann::json& j, const CreateCaCertificateRequest& value) {
     if (value.issue_from_root) {
         j["issue_from_root"] = *value.issue_from_root;
     }
-    j["key_algorithm"] = to_wire(value.key_algorithm);
+    j["key_algorithm"] = send_wire(value.key_algorithm);
     j["subject"] = value.subject;
     j["validity_days"] = value.validity_days;
 }
@@ -1703,9 +2093,9 @@ void from_json(const nlohmann::json& j, SubjectAltName& value) {
 
 void to_json(nlohmann::json& j, const CreateCertificateRequest& value) {
     j = nlohmann::json::object();
-    j["cert_type"] = to_wire(value.cert_type);
+    j["cert_type"] = send_wire(value.cert_type);
     j["issuer_ca_id"] = value.issuer_ca_id;
-    j["key_algorithm"] = to_wire(value.key_algorithm);
+    j["key_algorithm"] = send_wire(value.key_algorithm);
     if (value.metadata) {
         auto parsed = nlohmann::json::parse(*value.metadata, nullptr, false);
         if (!parsed.is_discarded()) j["metadata"] = parsed;
@@ -1913,7 +2303,7 @@ void from_json(const nlohmann::json& j, CreateGroupRequest& value) {
 
 void to_json(nlohmann::json& j, const CreateIntermediateCaRequest& value) {
     j = nlohmann::json::object();
-    j["key_algorithm"] = to_wire(value.key_algorithm);
+    j["key_algorithm"] = send_wire(value.key_algorithm);
     j["parent_ca_id"] = value.parent_ca_id;
     j["subject"] = value.subject;
     j["validity_days"] = value.validity_days;
@@ -1947,7 +2337,7 @@ void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value) {
         j["allowed_resources"] = *value.allowed_resources;
     }
     if (value.authn_request_params) {
-        j["authn_request_params"] = to_wire(*value.authn_request_params);
+        j["authn_request_params"] = send_wire(*value.authn_request_params);
     }
     if (value.backchannel_authentication_request_signing_alg) {
         j["backchannel_authentication_request_signing_alg"] = *value.backchannel_authentication_request_signing_alg;
@@ -1985,7 +2375,7 @@ void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value) {
         j["post_logout_redirect_uris"] = *value.post_logout_redirect_uris;
     }
     if (value.profile) {
-        j["profile"] = to_wire(*value.profile);
+        j["profile"] = send_wire(*value.profile);
     }
     j["redirect_uris"] = value.redirect_uris;
     if (value.require_par) {
@@ -2008,7 +2398,7 @@ void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value) {
         j["tls_client_certificate_bound_access_tokens"] = *value.tls_client_certificate_bound_access_tokens;
     }
     if (value.token_endpoint_auth_method) {
-        j["token_endpoint_auth_method"] = to_wire(*value.token_endpoint_auth_method);
+        j["token_endpoint_auth_method"] = send_wire(*value.token_endpoint_auth_method);
     }
 }
 
@@ -2095,10 +2485,10 @@ void from_json(const nlohmann::json& j, CreatePermissionRequest& value) {
 
 void to_json(nlohmann::json& j, const CreatePgpKeyRequest& value) {
     j = nlohmann::json::object();
-    j["algorithm"] = to_wire(value.algorithm);
+    j["algorithm"] = send_wire(value.algorithm);
     j["email"] = value.email;
     j["name"] = value.name;
-    j["purpose"] = to_wire(value.purpose);
+    j["purpose"] = send_wire(value.purpose);
 }
 
 void from_json(const nlohmann::json& j, CreatePgpKeyRequest& value) {
@@ -2118,9 +2508,9 @@ void to_json(nlohmann::json& j, const CreateReactorRequest& value) {
     }
     j["events"] = value.events;
     if (value.failure_policy) {
-        j["failure_policy"] = to_wire(*value.failure_policy);
+        j["failure_policy"] = send_wire(*value.failure_policy);
     }
-    j["mode"] = to_wire(value.mode);
+    j["mode"] = send_wire(value.mode);
     j["name"] = value.name;
     if (value.priority) {
         j["priority"] = *value.priority;
@@ -2275,7 +2665,7 @@ void to_json(nlohmann::json& j, const CreateScimTokenResponse& value) {
     if (value.revoked_at) {
         j["revoked_at"] = *value.revoked_at;
     }
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["tenant_id"] = value.tenant_id;
     j["user_id"] = value.user_id;
     j["provisioning_token"] = detail::reveal(value.provisioning_token);
@@ -2455,7 +2845,7 @@ void to_json(nlohmann::json& j, const DirectoryConfig& value) {
     j["group_nesting_depth"] = value.group_nesting_depth;
     j["id"] = value.id;
     j["jit_provisioning"] = value.jit_provisioning;
-    j["kind"] = to_wire(value.kind);
+    j["kind"] = send_wire(value.kind);
     j["start_tls"] = value.start_tls;
     j["sync_interval_secs"] = value.sync_interval_secs;
     j["tenant_id"] = value.tenant_id;
@@ -2563,7 +2953,7 @@ void to_json(nlohmann::json& j, const EmailConfig& value) {
     if (value.reply_to) {
         j["reply_to"] = *value.reply_to;
     }
-    j["scope"] = to_wire(value.scope);
+    j["scope"] = send_wire(value.scope);
     j["scope_id"] = value.scope_id;
     j["updated_at"] = value.updated_at;
 }
@@ -2819,7 +3209,7 @@ void to_json(nlohmann::json& j, const GeneratedCaCertificate& value) {
     j["created_at"] = value.created_at;
     j["fingerprint"] = value.fingerprint;
     j["id"] = value.id;
-    j["key_algorithm"] = to_wire(value.key_algorithm);
+    j["key_algorithm"] = send_wire(value.key_algorithm);
     if (value.key_custody) {
         j["key_custody"] = *value.key_custody;
     }
@@ -2836,7 +3226,7 @@ void to_json(nlohmann::json& j, const GeneratedCaCertificate& value) {
         j["parent_ca_id"] = *value.parent_ca_id;
     }
     j["public_cert_pem"] = value.public_cert_pem;
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["subject"] = value.subject;
     if (value.tenant_id) {
         j["tenant_id"] = *value.tenant_id;
@@ -2882,17 +3272,17 @@ void from_json(const nlohmann::json& j, GeneratedCaCertificate& value) {
 
 void to_json(nlohmann::json& j, const GeneratedCertificate& value) {
     j = nlohmann::json::object();
-    j["cert_type"] = to_wire(value.cert_type);
+    j["cert_type"] = send_wire(value.cert_type);
     j["created_at"] = value.created_at;
     j["fingerprint"] = value.fingerprint;
     j["id"] = value.id;
     j["issuer_ca_id"] = value.issuer_ca_id;
-    j["key_algorithm"] = to_wire(value.key_algorithm);
+    j["key_algorithm"] = send_wire(value.key_algorithm);
     { auto parsed = nlohmann::json::parse(value.metadata, nullptr, false); if (!parsed.is_discarded()) j["metadata"] = parsed; }
     j["not_after"] = value.not_after;
     j["not_before"] = value.not_before;
     j["public_cert_pem"] = value.public_cert_pem;
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["subject"] = value.subject;
     j["tenant_id"] = value.tenant_id;
     if (value.chain_pem) {
@@ -2923,14 +3313,14 @@ void from_json(const nlohmann::json& j, GeneratedCertificate& value) {
 
 void to_json(nlohmann::json& j, const GeneratedPgpKey& value) {
     j = nlohmann::json::object();
-    j["algorithm"] = to_wire(value.algorithm);
+    j["algorithm"] = send_wire(value.algorithm);
     j["created_at"] = value.created_at;
     j["fingerprint"] = value.fingerprint;
     j["id"] = value.id;
     j["name"] = value.name;
     j["public_key_armored"] = value.public_key_armored;
-    j["purpose"] = to_wire(value.purpose);
-    j["status"] = to_wire(value.status);
+    j["purpose"] = send_wire(value.purpose);
+    j["status"] = send_wire(value.status);
     j["tenant_id"] = value.tenant_id;
     if (value.private_key_armored) {
         j["private_key_armored"] = detail::reveal(*value.private_key_armored);
@@ -2955,7 +3345,7 @@ void from_json(const nlohmann::json& j, GeneratedPgpKey& value) {
 void to_json(nlohmann::json& j, const GrantPermissionRequest& value) {
     j = nlohmann::json::object();
     if (value.effect) {
-        j["effect"] = to_wire(*value.effect);
+        j["effect"] = send_wire(*value.effect);
     }
     j["permission_id"] = value.permission_id;
     if (value.scope_ids) {
@@ -3053,7 +3443,7 @@ void from_json(const nlohmann::json& j, ImportCaCertificateRequest& value) {
 void to_json(nlohmann::json& j, const IssueSamlIdpCredential& value) {
     j = nlohmann::json::object();
     j["issuer_ca_id"] = value.issuer_ca_id;
-    j["slot"] = to_wire(value.slot);
+    j["slot"] = send_wire(value.slot);
     if (value.validity_days) {
         j["validity_days"] = *value.validity_days;
     }
@@ -3140,7 +3530,7 @@ void to_json(nlohmann::json& j, const MfaMethodResponse& value) {
         j["last_used_at"] = *value.last_used_at;
     }
     j["method_id"] = value.method_id;
-    j["method_type"] = to_wire(value.method_type);
+    j["method_type"] = send_wire(value.method_type);
     j["name"] = value.name;
 }
 
@@ -3273,15 +3663,15 @@ void from_json(const nlohmann::json& j, OAuth2ClientCreatedResponse& value) {
 void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
     j = nlohmann::json::object();
     j["allowed_resources"] = value.allowed_resources;
-    j["authn_request_params"] = to_wire(value.authn_request_params);
+    j["authn_request_params"] = send_wire(value.authn_request_params);
     if (value.backchannel_authentication_request_signing_alg) {
-        j["backchannel_authentication_request_signing_alg"] = to_wire(*value.backchannel_authentication_request_signing_alg);
+        j["backchannel_authentication_request_signing_alg"] = send_wire(*value.backchannel_authentication_request_signing_alg);
     }
     if (value.backchannel_client_notification_endpoint) {
         j["backchannel_client_notification_endpoint"] = *value.backchannel_client_notification_endpoint;
     }
     if (value.backchannel_token_delivery_mode) {
-        j["backchannel_token_delivery_mode"] = to_wire(*value.backchannel_token_delivery_mode);
+        j["backchannel_token_delivery_mode"] = send_wire(*value.backchannel_token_delivery_mode);
     }
     j["browser_sso"] = value.browser_sso;
     j["client_id"] = value.client_id;
@@ -3299,9 +3689,9 @@ void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
     if (value.last_authorized_at) {
         j["last_authorized_at"] = *value.last_authorized_at;
     }
-    j["managed_by"] = to_wire(value.managed_by);
+    j["managed_by"] = send_wire(value.managed_by);
     j["name"] = value.name;
-    j["profile"] = to_wire(value.profile);
+    j["profile"] = send_wire(value.profile);
     j["redirect_uris"] = value.redirect_uris;
     j["require_par"] = value.require_par;
     j["scopes"] = value.scopes;
@@ -3317,7 +3707,7 @@ void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
         j["tls_client_auth_subject_dn"] = *value.tls_client_auth_subject_dn;
     }
     j["tls_client_certificate_bound_access_tokens"] = value.tls_client_certificate_bound_access_tokens;
-    j["token_endpoint_auth_method"] = to_wire(value.token_endpoint_auth_method);
+    j["token_endpoint_auth_method"] = send_wire(value.token_endpoint_auth_method);
     j["updated_at"] = value.updated_at;
 }
 
@@ -3593,14 +3983,14 @@ void from_json(const nlohmann::json& j, Permission& value) {
 
 void to_json(nlohmann::json& j, const PgpKey& value) {
     j = nlohmann::json::object();
-    j["algorithm"] = to_wire(value.algorithm);
+    j["algorithm"] = send_wire(value.algorithm);
     j["created_at"] = value.created_at;
     j["fingerprint"] = value.fingerprint;
     j["id"] = value.id;
     j["name"] = value.name;
     j["public_key_armored"] = value.public_key_armored;
-    j["purpose"] = to_wire(value.purpose);
-    j["status"] = to_wire(value.status);
+    j["purpose"] = send_wire(value.purpose);
+    j["status"] = send_wire(value.status);
     j["tenant_id"] = value.tenant_id;
 }
 
@@ -3626,14 +4016,14 @@ void to_json(nlohmann::json& j, const PolicyResponse& value) {
         j["blocked_aaguids"] = *value.blocked_aaguids;
     }
     if (value.min_certification) {
-        j["min_certification"] = to_wire(*value.min_certification);
+        j["min_certification"] = send_wire(*value.min_certification);
     }
-    j["mode"] = to_wire(value.mode);
+    j["mode"] = send_wire(value.mode);
     j["require_fido_certified"] = value.require_fido_certified;
     if (value.unknown_aaguid) {
-        j["unknown_aaguid"] = to_wire(*value.unknown_aaguid);
+        j["unknown_aaguid"] = send_wire(*value.unknown_aaguid);
     }
-    j["effective_unknown_aaguid"] = to_wire(value.effective_unknown_aaguid);
+    j["effective_unknown_aaguid"] = send_wire(value.effective_unknown_aaguid);
 }
 
 void from_json(const nlohmann::json& j, PolicyResponse& value) {
@@ -3666,7 +4056,7 @@ void from_json(const nlohmann::json& j, PrivacyPolicy& value) {
 
 void to_json(nlohmann::json& j, const ReactorEventDescriptor& value) {
     j = nlohmann::json::object();
-    j["default_failure_policy"] = to_wire(value.default_failure_policy);
+    j["default_failure_policy"] = send_wire(value.default_failure_policy);
     j["description"] = value.description;
     j["interceptable"] = value.interceptable;
     j["mutable"] = value.mutable_;
@@ -3689,12 +4079,12 @@ void to_json(nlohmann::json& j, const ReactorResponse& value) {
     j["description"] = value.description;
     j["enabled"] = value.enabled;
     j["events"] = value.events;
-    j["failure_policy"] = to_wire(value.failure_policy);
+    j["failure_policy"] = send_wire(value.failure_policy);
     j["id"] = value.id;
     if (value.last_seen_at) {
         j["last_seen_at"] = *value.last_seen_at;
     }
-    j["mode"] = to_wire(value.mode);
+    j["mode"] = send_wire(value.mode);
     j["name"] = value.name;
     j["priority"] = value.priority;
     j["recent_timeout_count"] = value.recent_timeout_count;
@@ -3737,7 +4127,7 @@ void from_json(const nlohmann::json& j, ReadyResponse& value) {
 
 void to_json(nlohmann::json& j, const ResolvedPermissionGrant& value) {
     j = nlohmann::json::object();
-    j["effect"] = to_wire(value.effect);
+    j["effect"] = send_wire(value.effect);
     j["permission"] = value.permission;
     j["scope_ids"] = value.scope_ids;
     j["scopes"] = value.scopes;
@@ -3867,7 +4257,7 @@ void to_json(nlohmann::json& j, const ServiceAccountResponse& value) {
     }
     j["id"] = value.id;
     j["name"] = value.name;
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["tenant_id"] = value.tenant_id;
     j["updated_at"] = value.updated_at;
 }
@@ -3925,7 +4315,7 @@ void to_json(nlohmann::json& j, const UserResponse& value) {
     }
     { auto parsed = nlohmann::json::parse(value.metadata, nullptr, false); if (!parsed.is_discarded()) j["metadata"] = parsed; }
     j["mfa_enabled"] = value.mfa_enabled;
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["tenant_id"] = value.tenant_id;
     j["updated_at"] = value.updated_at;
     j["username"] = value.username;
@@ -3998,7 +4388,7 @@ void to_json(nlohmann::json& j, const SamlIdpCredential& value) {
         j["retired_at"] = *value.retired_at;
     }
     j["serial"] = value.serial;
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["tenant_id"] = value.tenant_id;
 }
 
@@ -4084,10 +4474,10 @@ void to_json(nlohmann::json& j, const SamlServiceProvider& value) {
     j["encrypt_assertions"] = value.encrypt_assertions;
     j["entity_id"] = value.entity_id;
     j["id"] = value.id;
-    j["name_id_format"] = to_wire(value.name_id_format);
+    j["name_id_format"] = send_wire(value.name_id_format);
     j["sign_responses"] = value.sign_responses;
     if (value.slo_binding) {
-        j["slo_binding"] = to_wire(*value.slo_binding);
+        j["slo_binding"] = send_wire(*value.slo_binding);
     }
     if (value.slo_url) {
         j["slo_url"] = *value.slo_url;
@@ -4154,13 +4544,13 @@ void to_json(nlohmann::json& j, const SamlServiceProviderInput& value) {
     }
     j["entity_id"] = value.entity_id;
     if (value.name_id_format) {
-        j["name_id_format"] = to_wire(*value.name_id_format);
+        j["name_id_format"] = send_wire(*value.name_id_format);
     }
     if (value.sign_responses) {
         j["sign_responses"] = *value.sign_responses;
     }
     if (value.slo_binding) {
-        j["slo_binding"] = to_wire(*value.slo_binding);
+        j["slo_binding"] = send_wire(*value.slo_binding);
     }
     if (value.slo_url) {
         j["slo_url"] = *value.slo_url;
@@ -4341,7 +4731,7 @@ void to_json(nlohmann::json& j, const ScimTargetInput& value) {
         j["credential"] = detail::reveal(*value.credential);
     }
     if (value.deprovision) {
-        j["deprovision"] = to_wire(*value.deprovision);
+        j["deprovision"] = send_wire(*value.deprovision);
     }
     if (value.enabled) {
         j["enabled"] = *value.enabled;
@@ -4352,7 +4742,7 @@ void to_json(nlohmann::json& j, const ScimTargetInput& value) {
     }
     j["scope"] = value.scope;
     if (value.user_name_from) {
-        j["user_name_from"] = to_wire(*value.user_name_from);
+        j["user_name_from"] = send_wire(*value.user_name_from);
     }
 }
 
@@ -4383,7 +4773,7 @@ void to_json(nlohmann::json& j, const ScimTargetResponse& value) {
     j["auth"] = value.auth;
     j["base_url"] = value.base_url;
     j["created_at"] = value.created_at;
-    j["deprovision"] = to_wire(value.deprovision);
+    j["deprovision"] = send_wire(value.deprovision);
     j["enabled"] = value.enabled;
     j["id"] = value.id;
     j["name"] = value.name;
@@ -4394,7 +4784,7 @@ void to_json(nlohmann::json& j, const ScimTargetResponse& value) {
     }
     j["tenant_id"] = value.tenant_id;
     j["updated_at"] = value.updated_at;
-    j["user_name_from"] = to_wire(value.user_name_from);
+    j["user_name_from"] = send_wire(value.user_name_from);
 }
 
 void from_json(const nlohmann::json& j, ScimTargetResponse& value) {
@@ -4428,7 +4818,7 @@ void to_json(nlohmann::json& j, const ScimTokenResponse& value) {
     if (value.revoked_at) {
         j["revoked_at"] = *value.revoked_at;
     }
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["tenant_id"] = value.tenant_id;
     j["user_id"] = value.user_id;
 }
@@ -4504,7 +4894,7 @@ void to_json(nlohmann::json& j, const SecuritySettings& value) {
     j["opaque"] = value.opaque;
     j["password"] = value.password;
     j["privacy"] = value.privacy;
-    j["scope"] = to_wire(value.scope);
+    j["scope"] = send_wire(value.scope);
     j["scope_id"] = value.scope_id;
     j["token"] = value.token;
     j["updated_at"] = value.updated_at;
@@ -4540,7 +4930,7 @@ void to_json(nlohmann::json& j, const ServiceAccountCreatedResponse& value) {
     }
     j["id"] = value.id;
     j["name"] = value.name;
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["tenant_id"] = value.tenant_id;
     j["updated_at"] = value.updated_at;
 }
@@ -4626,7 +5016,7 @@ void to_json(nlohmann::json& j, const SetDirectoryConfig& value) {
     if (value.jit_provisioning) {
         j["jit_provisioning"] = *value.jit_provisioning;
     }
-    j["kind"] = to_wire(value.kind);
+    j["kind"] = send_wire(value.kind);
     j["start_tls"] = value.start_tls;
     if (value.sync_interval_secs) {
         j["sync_interval_secs"] = *value.sync_interval_secs;
@@ -4871,7 +5261,7 @@ void from_json(const nlohmann::json& j, SignAuditBatchRequest& value) {
 
 void to_json(nlohmann::json& j, const SignCertificateCsrRequest& value) {
     j = nlohmann::json::object();
-    j["cert_type"] = to_wire(value.cert_type);
+    j["cert_type"] = send_wire(value.cert_type);
     j["csr_pem"] = value.csr_pem;
     j["issuer_ca_id"] = value.issuer_ca_id;
     if (value.metadata) {
@@ -4949,27 +5339,27 @@ void to_json(nlohmann::json& j, const SsfStream& value) {
     j["audience"] = value.audience;
     j["authorization_header_set"] = value.authorization_header_set;
     j["created_at"] = value.created_at;
-    j["delivery_method"] = to_wire(value.delivery_method);
+    j["delivery_method"] = send_wire(value.delivery_method);
     if (value.description) {
         j["description"] = *value.description;
     }
     if (value.endpoint_url) {
         j["endpoint_url"] = *value.endpoint_url;
     }
-    j["events_allowed"] = value.events_allowed;
-    j["events_delivered"] = value.events_delivered;
-    j["events_requested"] = value.events_requested;
+    j["events_allowed"] = send_ssf_event_type(value.events_allowed);
+    j["events_delivered"] = send_ssf_event_type(value.events_delivered);
+    j["events_requested"] = send_ssf_event_type(value.events_requested);
     j["id"] = value.id;
     if (value.last_verification_at) {
         j["last_verification_at"] = *value.last_verification_at;
     }
     j["receiver_client_id"] = value.receiver_client_id;
-    j["status"] = to_wire(value.status);
-    j["status_actor"] = to_wire(value.status_actor);
+    j["status"] = send_wire(value.status);
+    j["status_actor"] = send_wire(value.status_actor);
     if (value.status_reason) {
         j["status_reason"] = *value.status_reason;
     }
-    j["subject_format"] = to_wire(value.subject_format);
+    j["subject_format"] = send_wire(value.subject_format);
     j["tenant_id"] = value.tenant_id;
     j["transmitter_active"] = value.transmitter_active;
     if (value.transmitter_inactive_reason) {
@@ -5020,26 +5410,26 @@ void to_json(nlohmann::json& j, const SsfStreamInput& value) {
     if (value.clear_authorization_header) {
         j["clear_authorization_header"] = *value.clear_authorization_header;
     }
-    j["delivery_method"] = to_wire(value.delivery_method);
+    j["delivery_method"] = send_wire(value.delivery_method);
     if (value.description) {
         j["description"] = *value.description;
     }
     if (value.endpoint_url) {
         j["endpoint_url"] = *value.endpoint_url;
     }
-    j["events_allowed"] = value.events_allowed;
+    j["events_allowed"] = send_ssf_event_type(value.events_allowed);
     if (value.events_requested) {
-        j["events_requested"] = *value.events_requested;
+        j["events_requested"] = send_ssf_event_type(*value.events_requested);
     }
     j["receiver_client_id"] = value.receiver_client_id;
     if (value.status) {
-        j["status"] = to_wire(*value.status);
+        j["status"] = send_wire(*value.status);
     }
     if (value.status_reason) {
         j["status_reason"] = *value.status_reason;
     }
     if (value.subject_format) {
-        j["subject_format"] = to_wire(*value.subject_format);
+        j["subject_format"] = send_wire(*value.subject_format);
     }
 }
 
@@ -5079,13 +5469,13 @@ void to_json(nlohmann::json& j, const Tenant& value) {
     j["created_at"] = value.created_at;
     j["id"] = value.id;
     if (value.kind) {
-        j["kind"] = to_wire(*value.kind);
+        j["kind"] = send_wire(*value.kind);
     }
     { auto parsed = nlohmann::json::parse(value.metadata, nullptr, false); if (!parsed.is_discarded()) j["metadata"] = parsed; }
     j["name"] = value.name;
     j["organization_id"] = value.organization_id;
     j["slug"] = value.slug;
-    j["status"] = to_wire(value.status);
+    j["status"] = send_wire(value.status);
     j["updated_at"] = value.updated_at;
 }
 
@@ -5367,7 +5757,7 @@ void to_json(nlohmann::json& j, const UpdateDirectoryConfig& value) {
         j["jit_provisioning"] = *value.jit_provisioning;
     }
     if (value.kind) {
-        j["kind"] = to_wire(*value.kind);
+        j["kind"] = send_wire(*value.kind);
     }
     if (value.start_tls) {
         j["start_tls"] = *value.start_tls;
@@ -5642,7 +6032,7 @@ void to_json(nlohmann::json& j, const UpdateOAuth2ClientRequest& value) {
         j["allowed_resources"] = *value.allowed_resources;
     }
     if (value.authn_request_params) {
-        j["authn_request_params"] = to_wire(*value.authn_request_params);
+        j["authn_request_params"] = send_wire(*value.authn_request_params);
     }
     if (value.backchannel_authentication_request_signing_alg) {
         j["backchannel_authentication_request_signing_alg"] = *value.backchannel_authentication_request_signing_alg;
@@ -5684,7 +6074,7 @@ void to_json(nlohmann::json& j, const UpdateOAuth2ClientRequest& value) {
         j["post_logout_redirect_uris"] = *value.post_logout_redirect_uris;
     }
     if (value.profile) {
-        j["profile"] = to_wire(*value.profile);
+        j["profile"] = send_wire(*value.profile);
     }
     if (value.redirect_uris) {
         j["redirect_uris"] = *value.redirect_uris;
@@ -5711,7 +6101,7 @@ void to_json(nlohmann::json& j, const UpdateOAuth2ClientRequest& value) {
         j["tls_client_certificate_bound_access_tokens"] = *value.tls_client_certificate_bound_access_tokens;
     }
     if (value.token_endpoint_auth_method) {
-        j["token_endpoint_auth_method"] = to_wire(*value.token_endpoint_auth_method);
+        j["token_endpoint_auth_method"] = send_wire(*value.token_endpoint_auth_method);
     }
 }
 
@@ -5850,10 +6240,10 @@ void to_json(nlohmann::json& j, const UpdateReactorRequest& value) {
         j["events"] = *value.events;
     }
     if (value.failure_policy) {
-        j["failure_policy"] = to_wire(*value.failure_policy);
+        j["failure_policy"] = send_wire(*value.failure_policy);
     }
     if (value.mode) {
-        j["mode"] = to_wire(*value.mode);
+        j["mode"] = send_wire(*value.mode);
     }
     if (value.name) {
         j["name"] = *value.name;
@@ -5978,7 +6368,7 @@ void to_json(nlohmann::json& j, const UpdateServiceAccount& value) {
         j["name"] = *value.name;
     }
     if (value.status) {
-        j["status"] = to_wire(*value.status);
+        j["status"] = send_wire(*value.status);
     }
 }
 
@@ -6007,7 +6397,7 @@ void to_json(nlohmann::json& j, const UpdateTenant& value) {
         j["slug"] = *value.slug;
     }
     if (value.status) {
-        j["status"] = to_wire(*value.status);
+        j["status"] = send_wire(*value.status);
     }
 }
 
@@ -6036,7 +6426,7 @@ void to_json(nlohmann::json& j, const UpdateUserRequest& value) {
         if (!parsed.is_discarded()) j["metadata"] = parsed;
     }
     if (value.status) {
-        j["status"] = to_wire(*value.status);
+        j["status"] = send_wire(*value.status);
     }
     if (value.username) {
         j["username"] = *value.username;
@@ -6105,12 +6495,12 @@ void to_json(nlohmann::json& j, const WebauthnAttestationPolicy& value) {
         j["blocked_aaguids"] = *value.blocked_aaguids;
     }
     if (value.min_certification) {
-        j["min_certification"] = to_wire(*value.min_certification);
+        j["min_certification"] = send_wire(*value.min_certification);
     }
-    j["mode"] = to_wire(value.mode);
+    j["mode"] = send_wire(value.mode);
     j["require_fido_certified"] = value.require_fido_certified;
     if (value.unknown_aaguid) {
-        j["unknown_aaguid"] = to_wire(*value.unknown_aaguid);
+        j["unknown_aaguid"] = send_wire(*value.unknown_aaguid);
     }
 }
 
@@ -6156,3 +6546,34 @@ void from_json(const nlohmann::json& j, WebhookResponse& value) {
 }
 
 }  // namespace axiam::management
+
+// R-27: the REQUIRED_CTOR inputs have no public default constructor, so nlohmann decodes them
+// through these: built with placeholder required members, then filled by from_json above, which
+// reads every required member (and throws when one is absent, as for any other model).
+axiam::management::SamlServiceProviderInput nlohmann::adl_serializer<axiam::management::SamlServiceProviderInput>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::SamlServiceProviderInput value({}, {}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}
+
+axiam::management::ScimTargetInput nlohmann::adl_serializer<axiam::management::ScimTargetInput>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::ScimTargetInput value({}, {}, {}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}
+
+axiam::management::SetDirectoryConfig nlohmann::adl_serializer<axiam::management::SetDirectoryConfig>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::SetDirectoryConfig value({}, {}, {}, {}, {}, {}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}
+
+axiam::management::SsfStreamInput nlohmann::adl_serializer<axiam::management::SsfStreamInput>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::SsfStreamInput value({}, {}, {}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}

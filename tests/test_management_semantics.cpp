@@ -523,6 +523,41 @@ AXIAM_TEST("§27.4 rule 8: a rejected GET is not retried") {
     AXIAM_CHECK(fixture.state->count() == 2);
 }
 
+// Contract 1.59 R-30 (§27.4 rule 8, §16.3): a management read is retried exactly as
+// §16 says -- on a transport failure, 408, 429 and 5xx -- and a `Retry-After` hint
+// lengthens the wait (never shortens it below the backoff).
+AXIAM_TEST("§27.4 rule 8 / §16.3 (R-30): a GET is retried on 408 and 429, honouring Retry-After") {
+    for (const long status : {408L, 429L}) {
+        auto fixture = axtest::mgmt::signed_in_two(status, "", 200, kRole);
+        std::vector<std::chrono::milliseconds> waits;
+        fixture.client._set_retry_test_seams(
+            [] { return 0.0; }, [&waits](std::chrono::milliseconds w) { waits.push_back(w); });
+        const auto role = fixture.client.management().roles().get(kUuid);
+        AXIAM_CHECK(role.name == "auditor");
+        AXIAM_CHECK(fixture.state->count() == 3);  // login + two GET attempts
+        AXIAM_CHECK(waits.size() == 1);
+    }
+
+    axiam::HeaderMap hint;
+    hint["Retry-After"] = "7";
+    auto fixture = axtest::mgmt::signed_in_with_headers({{429, "", hint}, {503, "", hint}, {200, kRole}});
+    std::vector<std::chrono::milliseconds> waits;
+    fixture.client._set_retry_test_seams(
+        [] { return 0.0; }, [&waits](std::chrono::milliseconds w) { waits.push_back(w); });
+    const auto role = fixture.client.management().roles().get(kUuid);
+    AXIAM_CHECK(role.name == "auditor");
+    AXIAM_REQUIRE(waits.size() == 2);
+    for (const auto w : waits) AXIAM_CHECK(w >= std::chrono::milliseconds(7000));
+
+    // A 429 on a write is still not retried (rule 8: only GET is replayed).
+    auto write = axtest::mgmt::signed_in_two(429, "", 200, kRole);
+    try {
+        write.client.management().roles().update(kUuid, UpdateRole{});
+    } catch (const AxiamError&) {
+    }
+    AXIAM_CHECK(write.state->count() == 2);
+}
+
 // ---- rule 10: nothing is cached ----------------------------------------
 
 AXIAM_TEST("§27.4 rule 10: the same read twice is two wire calls") {

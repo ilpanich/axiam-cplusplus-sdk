@@ -75,7 +75,14 @@ struct SsfReceiver::State {
     bool have_keys = false;
     std::optional<std::string> jwks_uri;  // resolved from the key source, once
     std::map<std::string, std::string> keys;  // kid -> raw Ed25519 public key
-    std::optional<std::chrono::steady_clock::time_point> last_forced_refetch;
+    /// The last fetch that counts toward step 4's once-a-minute limit: every
+    /// unknown-kid refetch, and every FAILED fetch — the cold-cache fill
+    /// included (§34.2 P6). A successful fill does not count: it is not "the
+    /// refetch", and leaves the one refetch available.
+    std::optional<std::chrono::steady_clock::time_point> last_limited_fetch;
+    std::function<std::chrono::steady_clock::time_point()> now = [] {
+        return std::chrono::steady_clock::now();
+    };
 
     /// One unauthenticated, session-free GET over the client's transport (§6 TLS
     /// policy, no cookie jar, no SDK credential) returning the JSON object it
@@ -149,16 +156,29 @@ struct SsfReceiver::State {
         have_keys = true;
     }
 
-    /// Step 4: the key for `kid`, with at most one forced refetch per minute.
+    /// Step 4: the key for `kid`, with at most one limited fetch per minute.
     std::optional<std::string> key_for(const std::string& kid) {
         std::lock_guard<std::mutex> lock(keys_mtx);
-        if (!have_keys) load_keys();
-        if (auto it = keys.find(kid); it != keys.end()) return it->second;
-        const auto now = std::chrono::steady_clock::now();
-        if (last_forced_refetch && now - *last_forced_refetch < std::chrono::seconds(60)) {
-            return std::nullopt;
+        const auto at = now();
+        const bool limited =
+            last_limited_fetch && at - *last_limited_fetch < std::chrono::seconds(60);
+        if (!have_keys) {
+            if (limited) {
+                throw NetworkError(
+                    "ssf: the JWKS fetch failed less than a minute ago and is not retried "
+                    "yet (CONTRACT.md §32.7 step 4, §34.2 P6)",
+                    "jwks_unavailable");
+            }
+            try {
+                load_keys();
+            } catch (...) {
+                last_limited_fetch = at;  // a failed fill counts toward the limit
+                throw;
+            }
         }
-        last_forced_refetch = now;
+        if (auto it = keys.find(kid); it != keys.end()) return it->second;
+        if (limited) return std::nullopt;
+        last_limited_fetch = at;
         load_keys();
         if (auto it = keys.find(kid); it != keys.end()) return it->second;
         return std::nullopt;
@@ -300,6 +320,12 @@ SsfReceiver::SsfReceiver(const Client& client, SsfReceiverConfig config)
     state_->config = std::move(config);
 }
 
+void SsfReceiver::_set_clock_for_testing(
+    std::function<std::chrono::steady_clock::time_point()> now) {
+    std::lock_guard<std::mutex> lock(state_->keys_mtx);
+    state_->now = std::move(now);
+}
+
 SecurityEvent SsfReceiver::verify_set(const std::string& set) {
     return state_->verify(set, nullptr);
 }
@@ -372,10 +398,19 @@ SsfPollResult SsfReceiver::poll(const std::string& stream_id, const SsfPollOptio
                 out.refused.push_back({jti, SetFailureReason::kMalformed});
                 continue;
             }
+            // §34.2 P1: a verdict is `events` or `refused`; anything else — a key
+            // fetch or a replay store that failed — leaves the SET unjudged and
+            // its jti unrecorded (verify() records only at step 9, and a store
+            // that throws has recorded nothing), so the transmitter offers it
+            // again instead of the next poll reading it `replayed`.
             try {
                 out.events.push_back(state_->verify(it.value().get<std::string>(), &jti));
             } catch (const SetVerificationError& e) {
                 out.refused.push_back({jti, e.reason()});
+            } catch (const std::exception& e) {
+                out.unjudged.push_back({jti, e.what()});
+            } catch (...) {
+                out.unjudged.push_back({jti, "unknown failure"});
             }
         }
     }

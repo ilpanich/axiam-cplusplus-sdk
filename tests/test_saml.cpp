@@ -63,15 +63,11 @@ json credential_body(const char* status) {
 }
 
 SamlServiceProviderInput input() {
-    SamlServiceProviderInput in;
-    in.display_name = "Payroll";
-    in.entity_id = "https://payroll.example.com/sp";
     AcsEndpoint acs;
     acs.url = "https://payroll.example.com/acs";
     acs.binding = SamlBinding::HttpPost;
     acs.index = 0;
-    in.acs_urls = {acs};
-    return in;
+    return SamlServiceProviderInput("Payroll", "https://payroll.example.com/sp", {acs});
 }
 
 template <typename T, typename = void>
@@ -119,9 +115,9 @@ AXIAM_TEST("§29.8 (1): update_service_provider PUTs the whole registration and 
           "want_authn_requests_signed"}) {
         AXIAM_CHECK(sent.contains(member));
     }
-    // C++ has no compile-time "required": display_name, entity_id and acs_urls are
-    // plain members, always serialized, never omitted.
-    const json bare = SamlServiceProviderInput{};
+    // The input cannot be built without display_name, entity_id and acs_urls (the
+    // R-27 trait test below); built with them, all three are always serialized.
+    const json bare = input();
     AXIAM_CHECK(bare.contains("display_name") && bare.contains("entity_id") && bare.contains("acs_urls"));
 }
 
@@ -316,6 +312,16 @@ AXIAM_TEST("§29.8 (8): get_idp keeps null apart from absent, is never cached, a
     const json encoded = first;
     AXIAM_CHECK(encoded.at("next_credential_id").is_null());
     AXIAM_CHECK(!json(second).contains("next_credential_id"));
+}
+
+// Contract 1.59 R-27: "the input cannot be built without" its required members is
+// a compile-time property in C++ -- a constructor taking every required member, in
+// the contract's order, and no public default constructor. Checked as traits so a
+// regression reads as a failed check rather than as a test that no longer builds.
+AXIAM_TEST("§29.8 (1) (R-27): SamlServiceProviderInput cannot be built without display_name, entity_id and acs_urls") {
+    AXIAM_CHECK(!std::is_default_constructible<SamlServiceProviderInput>::value);
+    AXIAM_CHECK((!std::is_constructible<SamlServiceProviderInput, std::string, std::string>::value));
+    AXIAM_CHECK((std::is_constructible<SamlServiceProviderInput, std::string, std::string, std::vector<AcsEndpoint>>::value));
 }
 
 }  // namespace
