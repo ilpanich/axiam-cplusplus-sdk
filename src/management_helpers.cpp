@@ -75,6 +75,25 @@ SamlServiceProviderInput SamlServiceProvider::to_input() const {
     return out;
 }
 
+// ---- §32 ssf -----------------------------------------------------------------
+
+SsfStreamInput SsfStream::to_input() const {
+    // `authorization_header` absent: no read carries it, and absent keeps the
+    // stored one (§32.2). `clear_authorization_header` stays unset.
+    SsfStreamInput out;
+    out.audience = audience;
+    out.delivery_method = delivery_method;
+    out.description = description;
+    out.endpoint_url = endpoint_url;
+    out.events_allowed = events_allowed;
+    out.events_requested = events_requested;
+    out.receiver_client_id = receiver_client_id;
+    out.status = status;
+    out.status_reason = status_reason;
+    out.subject_format = subject_format;
+    return out;
+}
+
 // ---- §31 scim_targets --------------------------------------------------------
 
 ScimTargetInput ScimTargetResponse::to_input() const {

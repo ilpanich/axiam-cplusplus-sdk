@@ -2074,6 +2074,13 @@ public:
     ///
     /// `PUT /api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}`.
     ///
+    /// An omitted optional member takes its default (§32.2) -- **except `authorization_header`,
+    /// which absent keeps the stored one** -- unless the update moves `endpoint_url` to another
+    /// scheme, host or port while a header is stored: then it must carry `authorization_header`
+    /// again or `clear_authorization_header: true`, else `400` (§32.3 rule 5). Start from
+    /// `SsfStream::to_input()`. An update overtaken by the receiver's own write is `409`: read
+    /// the stream again.
+    ///
     /// @param stream_id The `{stream_id}` path parameter.
     /// @param body The request body.
     SsfStream update_stream(const std::string& stream_id, const SsfStreamInput& body);

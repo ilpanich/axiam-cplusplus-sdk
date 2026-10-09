@@ -40,6 +40,7 @@
 #include "axiam/mcp.hpp"
 #include "axiam/revocation.hpp"
 #include "axiam/sensitive.hpp"
+#include "axiam/ssf.hpp"
 #include "axiam/transport.hpp"
 #include "axiam/types.hpp"
 #include "axiam/opaque.hpp"

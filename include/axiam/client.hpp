@@ -62,6 +62,10 @@ class PrivacyApi;
 class PlatformApi;
 }  // namespace axiam::management
 
+namespace axiam::ssf {
+class SsfReceiver;
+}  // namespace axiam::ssf
+
 namespace axiam {
 
 /// The CONTRACT.md §5.2 rule 1 (contract 1.51) acting-tenant header name.
@@ -1395,6 +1399,9 @@ public:
     struct Impl;
 
 private:
+    // §32.7: the receiver helper shares this client's transport (§6 TLS policy),
+    // base URL and §16 seams — never its session.
+    friend class ssf::SsfReceiver;
     std::shared_ptr<Impl> p_;
     explicit Client(std::shared_ptr<Impl> impl);
 

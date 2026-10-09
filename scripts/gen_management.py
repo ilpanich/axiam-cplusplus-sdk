@@ -174,6 +174,15 @@ CALL_SITE_NOTES: dict[str, str] = {
         "key. The key is destroyed. The safe rotation is: issue into `next`, wait until "
         "every SP has refreshed the metadata, then promote."
     ),
+    "ssf.update_stream": (
+        "An omitted optional member takes its default (§32.2) -- **except "
+        "`authorization_header`, which absent keeps the stored one** -- unless the update "
+        "moves `endpoint_url` to another scheme, host or port while a header is stored: "
+        "then it must carry `authorization_header` again or "
+        "`clear_authorization_header: true`, else `400` (§32.3 rule 5). Start from "
+        "`SsfStream::to_input()`. An update overtaken by the receiver's own write is "
+        "`409`: read the stream again."
+    ),
     "scim_targets.create": (
         "`credential` is required here (§31.3 rule 2). It is write-only: no response "
         "ever carries it, and the SDK keeps no copy."
@@ -234,6 +243,12 @@ MODEL_MEMBERS: dict[str, list[tuple[str, str]]] = {
         "this read -- the read-modify-write form §29.2 recommends, since an omitted "
         "member takes its DEFAULT on an update.",
         "SamlServiceProviderInput to_input() const;",
+    )],
+    "SsfStream": [(
+        "The replacement body for `ssf.update_stream` holding every member of this "
+        "read. `authorization_header` is absent: no read carries it, and absent keeps "
+        "the stored one -- unless the update moves the endpoint (§32.3 rule 5).",
+        "SsfStreamInput to_input() const;",
     )],
     "ScimTargetResponse": [(
         "The replacement body for `scim_targets.update` holding every member of this "

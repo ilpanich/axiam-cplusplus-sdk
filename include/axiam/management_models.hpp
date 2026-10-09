@@ -4428,6 +4428,11 @@ struct SsfStream {
     std::optional<std::string> transmitter_inactive_reason = std::nullopt;
     /// When it was last written.
     std::string updated_at;
+
+    /// The replacement body for `ssf.update_stream` holding every member of this read.
+    /// `authorization_header` is absent: no read carries it, and absent keeps the stored one --
+    /// unless the update moves the endpoint (§32.3 rule 5).
+    SsfStreamInput to_input() const;
 };
 
 /// `create_stream` and `update_stream` (a **replacement**) body.
