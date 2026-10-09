@@ -111,6 +111,18 @@ public:
     /// The paging pair as query values.
     static std::vector<QueryValue> paging(const PageRequest& page);
 
+    /// Percent-encode one path segment (RFC 3986 unreserved set kept). An
+    /// identifier is caller-supplied, and a raw '/' or '?' in one would silently
+    /// retarget the request at a different route.
+    static std::string encode_segment(const std::string& value);
+
+    /// Rule 7's classification of a non-2xx answer, shared with the §32.7 poll:
+    /// 404 NotFoundError, 409 ConflictError, 400/422 ValidationError carrying the
+    /// server's `message` (§29.4, §30.4, §31.4: it names the rule; an SDK MUST NOT
+    /// parse it), everything else §2's own mapping.
+    [[noreturn]] static void raise_management_status(const std::string& operation,
+                                                     const HttpResponse& resp);
+
 private:
     std::shared_ptr<Client::Impl> impl_;
 };

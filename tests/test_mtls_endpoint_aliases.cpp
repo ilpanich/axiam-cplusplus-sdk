@@ -6,7 +6,7 @@
 //   - a call going over mTLS prefers the alias;
 //   - a call NOT going over mTLS keeps the top-level entry;
 //   - an ABSENT member means "no separate mTLS host", never "unsupported";
-//   - only the six listed endpoints are ever aliased — not
+//   - only the seven listed endpoints are ever aliased — not
 //     `authorization_endpoint`, `end_session_endpoint` or `jwks_uri`;
 //   - `issuer` is not an endpoint, does not move, and still governs `iss`
 //     validation by exact string.
@@ -19,6 +19,8 @@
 
 #include <memory>
 #include <mutex>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 #include "assert.hpp"
@@ -46,7 +48,8 @@ const char* kKeyPem =
     "bm90LWtleS1tYXRlcmlhbA==\n"
     "-----END AXIAM TEST PLACEHOLDER-----\n";
 
-// The conventional document, plus all six aliases on the mTLS host.
+// The conventional document, plus all seven aliases on the mTLS host (the seventh,
+// CIBA's backchannel_authentication_endpoint, arrived with contract 1.58).
 const char* kDiscoveryWithAliases = R"({
   "issuer":"https://issuer.test",
   "authorization_endpoint":"https://iam.example.com/oauth2/authorize",
@@ -57,13 +60,15 @@ const char* kDiscoveryWithAliases = R"({
   "end_session_endpoint":"https://iam.example.com/oauth2/end_session",
   "device_authorization_endpoint":"https://iam.example.com/oauth2/device_authorization",
   "pushed_authorization_request_endpoint":"https://iam.example.com/oauth2/par",
+  "backchannel_authentication_endpoint":"https://iam.example.com/oauth2/bc-authorize",
   "mtls_endpoint_aliases":{
     "token_endpoint":"https://mtls.iam.example.com/oauth2/token",
     "userinfo_endpoint":"https://mtls.iam.example.com/oauth2/userinfo",
     "revocation_endpoint":"https://mtls.iam.example.com/oauth2/revoke",
     "introspection_endpoint":"https://mtls.iam.example.com/oauth2/introspect",
     "device_authorization_endpoint":"https://mtls.iam.example.com/oauth2/device_authorization",
-    "pushed_authorization_request_endpoint":"https://mtls.iam.example.com/oauth2/par"
+    "pushed_authorization_request_endpoint":"https://mtls.iam.example.com/oauth2/par",
+    "backchannel_authentication_endpoint":"https://mtls.iam.example.com/oauth2/bc-authorize"
   }
 })";
 
@@ -179,6 +184,8 @@ axiam::Transport routed(Fixture& f) {
             // RFC 9126 §2.2 answers Created, and the SDK asserts exactly that.
             resp.status = 201;
             resp.body = R"({"request_uri":"urn:ietf:params:oauth:request_uri:x","expires_in":60})";
+        } else if (url.find("/oauth2/bc-authorize") != std::string::npos) {
+            resp.body = R"({"auth_req_id":"r","expires_in":60,"interval":5})";
         } else if (url.find("/oauth2/introspect") != std::string::npos) {
             resp.body = R"({"active":true})";
         } else if (url.find("/oauth2/revoke") != std::string::npos) {
@@ -256,9 +263,12 @@ AXIAM_TEST("§21.3 rule 2 every aliasable endpoint goes to the alias host") {
     const auto config = client.oidc_discover();
     const auto request = client.oidc_begin(config, "https://app.example.com/cb");
     client.oidc_par(config, request, "https://app.example.com/cb");
+    axiam::CibaInitiateParams ciba{"openid", axiam::CibaUserHint::login_hint("alice")};
+    client.ciba_initiate(ciba);
 
     for (const char* path : {"/oauth2/token", "/oauth2/introspect", "/oauth2/revoke",
-                             "/oauth2/device_authorization", "/oauth2/par"}) {
+                             "/oauth2/device_authorization", "/oauth2/par",
+                             "/oauth2/bc-authorize"}) {
         AXIAM_REQUIRE(host_of_last_call(*f.st, path) == kMtlsBase);
     }
 }
@@ -440,4 +450,72 @@ AXIAM_TEST("§21.3.1 vector C one malformed alias does not poison the others") {
 
     AXIAM_REQUIRE_THROWS_AS(client.introspect(axiam::Sensitive<std::string>("t")),
                             axiam::AuthError);
+}
+
+// ── §21.3.1 vector A, pinned from the vendored CONTRACT.md (contract 1.58) ──
+
+namespace {
+
+/// The JSON block of §21.3.1 vector A, read from the CONTRACT.md this
+/// repository vendors — so a re-vendor that changes the vector changes this
+/// test's input, and a pin can never drift from the text it pins.
+std::string vector_a() {
+    std::ifstream in(std::string(AXIAM_REPO_ROOT) + "/CONTRACT.md");
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const auto at = text.find("**Vector A");
+    const auto open = text.find("```json\n", at);
+    const auto close = text.find("```", open + 8);
+    if (at == std::string::npos || open == std::string::npos || close == std::string::npos) {
+        return {};
+    }
+    return text.substr(open + 8, close - open - 8);
+}
+
+}  // namespace
+
+AXIAM_TEST("§21.3.1 vector A: all seven aliases decode, and an mTLS client uses each") {
+    static const std::string doc = vector_a();
+    AXIAM_REQUIRE(!doc.empty());
+    Fixture f;
+    f.discovery = doc.c_str();
+    auto client = axiam::Client::builder()
+                      .base_url("https://iam.example.test")
+                      .tenant_id("6f3e0a5c-1b2d-4e8f-9a7b-0c1d2e3f4a5b")
+                      .oidc_client_id(kClientId)
+                      .oidc_client_secret(kClientSecret)
+                      .with_client_cert(kCertPem, kKeyPem)
+                      .transport(routed(f))
+                      .build();
+    const auto config = client.oidc_discover();
+    AXIAM_REQUIRE(config.mtls_endpoint_aliases.has_value());
+    const auto& a = *config.mtls_endpoint_aliases;
+    const std::string q = "?tenant_id=6f3e0a5c-1b2d-4e8f-9a7b-0c1d2e3f4a5b";
+    const std::string mtls = "https://mtls.iam.example.test/oauth2/";
+    AXIAM_CHECK(a.token_endpoint == mtls + "token" + q);
+    AXIAM_CHECK(a.userinfo_endpoint == mtls + "userinfo");
+    AXIAM_CHECK(a.revocation_endpoint == mtls + "revoke" + q);
+    AXIAM_CHECK(a.introspection_endpoint == mtls + "introspect" + q);
+    AXIAM_CHECK(a.device_authorization_endpoint == mtls + "device_authorization" + q);
+    AXIAM_CHECK(a.pushed_authorization_request_endpoint == mtls + "par" + q);
+    AXIAM_CHECK(a.backchannel_authentication_endpoint == mtls + "bc-authorize" + q);
+    AXIAM_CHECK(config.backchannel_authentication_endpoint ==
+                "https://iam.example.test/oauth2/bc-authorize" + q);
+    AXIAM_CHECK(config.issuer == "https://iam.example.test");  // iss does not move
+
+    client.login_client_credentials();
+    axiam::CibaInitiateParams ciba{"openid", axiam::CibaUserHint::login_hint("alice")};
+    client.ciba_initiate(ciba);
+    std::lock_guard<std::mutex> lock(f.st->mtx);
+    int checked = 0;
+    for (const auto& r : f.st->requests) {
+        if (r.url.find("/oauth2/token") == std::string::npos &&
+            r.url.find("/oauth2/bc-authorize") == std::string::npos) {
+            continue;
+        }
+        ++checked;
+        // The alias, its query intact: the tenant_id displaced, never duplicated.
+        AXIAM_CHECK(r.url.rfind(mtls, 0) == 0);
+        AXIAM_CHECK(r.url.find("tenant_id=") == r.url.rfind("tenant_id="));
+    }
+    AXIAM_CHECK(checked == 2);
 }

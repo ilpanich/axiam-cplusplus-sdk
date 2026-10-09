@@ -25,6 +25,14 @@ add_executable(axiam_cpp_tests
   # does not parse are never exercised. Hand-written, not a generator output.
   test_management_models_optional.cpp
   test_management_semantics.cpp
+  # Contract 1.54–1.57: the four new namespaces' required tests (§29.8, §30.8,
+  # §31.8, §32.8 management).
+  test_directory.cpp
+  test_saml.cpp
+  test_scim_targets.cpp
+  test_ssf_management.cpp
+  # CONTRACT.md §32.7 (contract 1.56): the SSF receiver helper.
+  test_ssf_receiver.cpp
   # CONTRACT.md §27.13 (contract 1.51): the model-level pins C-1's EXECUTED block
   # calls out by name -- SubjectAltName's externally-tagged shape, a subject-side
   # inherit's open-default decode, and CertificateType's open-enum successor value.
@@ -88,6 +96,10 @@ add_executable(axiam_cpp_tests
   test_revocation.cpp
   test_oidc_grants.cpp
   test_oidc_errors.cpp
+  # CONTRACT.md §28.12 (contract 1.53): RFC 7592 client configuration.
+  test_client_registration.cpp
+  # CONTRACT.md §33 (contract 1.58): CIBA, including the §33.2 signed form.
+  test_ciba.cpp
   test_oidc_login_providers.cpp
   # §23 OPAQUE: the binding — exchange lifetime, key-stretching selection,
   # error taxonomy — driven against a fake Native that counts every handle the

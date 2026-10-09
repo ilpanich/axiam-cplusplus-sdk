@@ -467,7 +467,7 @@ void CurlTransport::merge_into_shared_jar(const std::string& request_url,
 HttpResponse CurlTransport::perform(const HttpRequest& req) {
     // §24.1 (contract 1.45): a request that must not replay the shared jar's
     // cookies is routed off the pool entirely — see perform_isolated().
-    if (req.no_stored_cookies) return perform_isolated(req);
+    if (req.no_stored_cookies || req.sessionless) return perform_isolated(req);
 
     HandleLease lease{impl_.get(), impl_->acquire()};
     CURL* h = lease.h;
@@ -502,7 +502,8 @@ HttpResponse CurlTransport::perform_isolated(const HttpRequest& req) {
     HttpResponse resp = transfer(h, req);
     curl_easy_cleanup(h);
 
-    if (resp.transport_error.empty() && !resp.set_cookies.empty()) {
+    // A sessionless request (§28.12.2 rule 3, §32.7) adopts nothing either.
+    if (!req.sessionless && resp.transport_error.empty() && !resp.set_cookies.empty()) {
         merge_into_shared_jar(req.url, resp.set_cookies);
     }
     return resp;

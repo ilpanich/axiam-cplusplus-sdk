@@ -49,6 +49,10 @@ class Oauth2ClientsApi;
 class FederationApi;
 class NotificationRulesApi;
 class EmailConfigApi;
+class DirectoryApi;
+class SamlApi;
+class SsfApi;
+class ScimTargetsApi;
 class SettingsApi;
 class ScimTokensApi;
 class ReactorsApi;
@@ -57,6 +61,10 @@ class AuditApi;
 class PrivacyApi;
 class PlatformApi;
 }  // namespace axiam::management
+
+namespace axiam::ssf {
+class SsfReceiver;
+}  // namespace axiam::ssf
 
 namespace axiam {
 
@@ -873,6 +881,167 @@ public:
     /// signal.
     ExchangedToken token_exchange(const TokenExchangeParams& params);
 
+    // ---- §28.12 RFC 7592 client configuration (contract 1.53) ----
+    //
+    // A client that registered itself through `POST /oauth2/register` received,
+    // once, a `registration_client_uri` and a `registration_access_token`. With the
+    // two it reads, replaces and deletes ITS OWN registration. The four rules
+    // (§28.12.2) shape all three:
+    //
+    //  1. The URI is used verbatim — query included — and only at THIS client's
+    //     base URL origin (scheme, host, port; http only for a loopback base). Any
+    //     other is refused before any request with std::invalid_argument (C++'s
+    //     local ValidationError mapping, §28.7), naming no part of the URI.
+    //  2. The token travels in `Authorization: Bearer` only.
+    //  3. It is not the SDK's session: no access token, no cookie (read or
+    //     adopted), no CSRF or tenant header, no redirect followed, and a 401
+    //     never reaches the §9 refresh guard.
+    //  4. Neither write is retried, on any status or transport error.
+    //
+    // A body with an `error` member is an OAuthProtocolError at any status (401
+    // `invalid_token`, 400 `invalid_client_metadata`, …); otherwise §2 by status.
+
+    /// `GET registration_client_uri` (RFC 7592 §2.1) — read this client's
+    /// registration. The result carries neither the token nor the secret (the
+    /// server never returns them on a read), and every member an update needs.
+    ///
+    /// Retried per §16 on a transport failure, 408, 429 or 5xx — never on another
+    /// 4xx: an answer the server has given is not repeated.
+    ClientRegistration read_client_registration(
+        const std::string& registration_client_uri,
+        const Sensitive<std::string>& registration_access_token);
+
+    /// `PUT registration_client_uri` (RFC 7592 §2.2) — REPLACE this client's
+    /// registration, and receive a ROTATED token.
+    ///
+    /// `metadata` is the **whole** registration: a member it omits is a member the
+    /// server deletes. Start from read_client_registration()'s result, which keeps
+    /// every member (extras included), and change what you mean to change. The SDK
+    /// sets `client_id` to `metadata.client_id` and never sends
+    /// `registration_access_token`, `registration_client_uri`,
+    /// `client_secret_expires_at`, `client_id_issued_at` or `client_secret`.
+    ///
+    /// **Persist the returned `registration_access_token` before doing anything
+    /// else.** From the moment the server answers it is the only valid token: the
+    /// one you presented is dead for every operation.
+    ///
+    /// **Never retried** — not on a transport error, not on a 5xx. An update that
+    /// reached the server and lost its answer has already rotated the token; a
+    /// retry with the old one is a 401 that locks you out of your own
+    /// registration. On a lost answer, read with the token you hold: a 401 means
+    /// the update landed.
+    ClientRegistration update_client_registration(
+        const std::string& registration_client_uri,
+        const Sensitive<std::string>& registration_access_token,
+        const ClientRegistration& metadata);
+
+    /// `DELETE registration_client_uri` (RFC 7592 §2.3) — delete this client's
+    /// registration; a 204 returns normally. **Never retried**: a retry after a
+    /// lost 204 reads 401 and would report a successful deletion as a failure.
+    void delete_client_registration(const std::string& registration_client_uri,
+                                    const Sensitive<std::string>& registration_access_token);
+
+    // ---- §33 CIBA — client-initiated backchannel authentication (contract 1.58) ----
+    //
+    // A client that already knows whom it wants to authenticate asks AXIAM to
+    // authenticate that user ON ANOTHER DEVICE; AXIAM notifies the user, who
+    // approves or refuses on the console. The client collects the tokens at the
+    // token endpoint — by polling (ciba_await), or once after AXIAM pings it
+    // (ciba_handle_ping, then ciba_poll).
+    //
+    // The client ALWAYS authenticates (§33.1): client_secret_post with the
+    // configured oidc_client_secret(), or — a `tls_client_auth` client — the §6.1
+    // certificate with `client_id` alone in the form. A client built with neither
+    // is refused locally with AuthError, before any request. `tenant_id` goes in
+    // the query, never the body; X-Tenant-ID as for every /oauth2 call.
+    //
+    // Two things a caller must not read into a success:
+    //  * A successful ciba_initiate() proves NOTHING about the user (§33.3 rule 4):
+    //    AXIAM answers a hint naming nobody, a locked user and a real one
+    //    identically; the only sign a user did not answer is `expired_token`.
+    //  * A ping says the request was decided, never how (§33.2): the outcome —
+    //    tokens, `access_denied` or `expired_token` — comes from ciba_poll().
+    //
+    // Ping mode: answer the ping 204 as soon as ciba_handle_ping() returns, THEN
+    // call ciba_poll() once (again at `interval` on `authorization_pending` /
+    // `slow_down`); if no ping has arrived after half of `expires_in`, fall back
+    // to ciba_await() (§33.7 rule 6) — a ping is at-least-once, never guaranteed.
+
+    /// `POST /oauth2/bc-authorize` (CIBA Core §7) — ask AXIAM to authenticate a
+    /// user on another device. The endpoint is discovery's
+    /// `backchannel_authentication_endpoint` — its `mtls_endpoint_aliases` entry on
+    /// an mTLS client (§21.3 rule 2) — and its absence is an AuthError ("this
+    /// server does not support CIBA"), never a guessed path.
+    ///
+    /// Sends exactly the members `params` sets, form-encoded; with a `signer`,
+    /// ONLY client authentication and one signed `request` JWT carrying them
+    /// (§33.2 signed: `iss` = client_id, `aud` = the issuer, `iat` = `nbf` = now,
+    /// `exp` = now + 300 s, a fresh 128-bit `jti`; `requested_expiry` a number).
+    ///
+    /// **Never retried** — not on a transport error, a 5xx or a 429 (§33.7 rule
+    /// 1): each accepted call stores a request and may notify a person. On a lost
+    /// answer, let it expire and ask again deliberately.
+    ///
+    /// @throws AuthError without a request when the client has no credential.
+    /// @throws std::invalid_argument without a request for a ping-mode request
+    ///         with an empty client_notification_token.
+    /// @throws OAuthProtocolError for the server's refusals at any status — e.g.
+    ///         `invalid_binding_message` with its `error_description`, or a 429's
+    ///         `rate_limit_exceeded`; otherwise §2 by status.
+    CibaInitiateResponse ciba_initiate(const CibaInitiateParams& params);
+
+    /// One token request with `grant_type=urn:openid:params:grant-type:ciba`
+    /// (CIBA Core §10.1) at the token endpoint (its mTLS alias as for every token
+    /// call). The §33.3 rule 6 answers are OAuthProtocolErrors and are NOT
+    /// retried: `authorization_pending`, `slow_down` (non-terminal),
+    /// `access_denied` and `expired_token` (terminal and distinct —
+    /// OAuthProtocolError::is_access_denied() / is_expired_token()),
+    /// `invalid_grant`. A transport failure, 5xx, 408 or bodiless 429 is retried
+    /// per §16 within the call.
+    ///
+    /// A 200 is the §12 token set, its ID token validated as for every grant (no
+    /// nonce). **Store the tokens before anything else**: a request is redeemed
+    /// once, and a second ciba_poll() for it is `invalid_grant` (§33.7 rule 7).
+    OidcTokenSet ciba_poll(const Sensitive<std::string>& auth_req_id,
+                           std::optional<std::string> tenant_id = std::nullopt);
+
+    /// Poll `initiated` to a terminal outcome (§33.7), surfacing nothing to the
+    /// user (AXIAM notified them):
+    ///  * the first poll waits one `interval` (5 s when the response had none);
+    ///  * `slow_down` adds 5 s to the interval, cumulatively and for good;
+    ///    `authorization_pending` never lowers it;
+    ///  * a transport failure, 5xx or 429 that outlived §16 waits an interval and
+    ///    polls again;
+    ///  * polling stops at `received_at + expires_in`: when the NEXT poll would
+    ///    fall at or past it, `expired_token` is raised locally, without a request.
+    ///
+    /// Returns the token set WITHOUT adopting it as this client's credential —
+    /// the posture of device_login() and login_client_credentials(). The clock is
+    /// injectable (CibaAwaitOptions::clock) so the schedule is testable.
+    OidcTokenSet ciba_await(const CibaInitiateResponse& initiated,
+                            const CibaAwaitOptions& options = {});
+
+    /// Check a ping AXIAM delivered to your notification endpoint and return the
+    /// `auth_req_id` it names (CIBA Core §10.2). **No I/O, synchronous**, and it
+    /// neither answers the HTTP request nor calls the token endpoint.
+    ///
+    /// `headers` are the request's headers as name/value pairs (duplicates
+    /// kept); `body` its raw body; `expected_token` the client_notification_token
+    /// you sent with the request.
+    ///
+    ///  1. Exactly one `Authorization` header (name matched case-insensitively),
+    ///     `Bearer` in any case, ONE space, and the token — compared in constant
+    ///     time (CRYPTO_memcmp). Otherwise AuthError, whose message names no value.
+    ///  2. A JSON object with a non-empty string `auth_req_id`; any other member is
+    ///     ignored, never acted on. Otherwise std::invalid_argument (C++'s local
+    ///     ValidationError mapping).
+    ///
+    /// It does not check that the `auth_req_id` is one you issued: the token
+    /// endpoint answers `invalid_grant` for any other.
+    Sensitive<std::string> ciba_handle_ping(
+        const std::vector<std::pair<std::string, std::string>>& headers,
+        const std::string& body, const Sensitive<std::string>& expected_token) const;
+
     // ---- §24 WebAuthn / passkeys ----
     //
     // The six wire operations. See <axiam/webauthn.hpp> for what is deliberately
@@ -1194,7 +1363,7 @@ public:
     /// construct or inspect one — the alternative was a second copy of the
     /// request plumbing living beside the first, which is exactly the "second,
     /// parallel stack" the §12.6 deferral warned about.
-    /// The CONTRACT.md §27 management surface: 162 operations across 24 namespaces.
+    /// The CONTRACT.md §27 management surface: 190 operations across 28 namespaces.
     ///
     /// `client.management().users().list()`. §27.3's C++ row is
     /// `client.service_accounts().rotate_secret(id)` — a method returning a handle,
@@ -1202,7 +1371,7 @@ public:
     ///
     /// Built on the same request path every other operation uses, so §3 CSRF, the §4
     /// cookie jar, the §5 tenant header, §6 TLS, §16 retry and §19 telemetry apply to all
-    /// 147 by construction rather than by 147 opportunities to forget one (§27.8).
+    /// 190 by construction rather than by 190 opportunities to forget one (§27.8).
     ///
     /// Returned by value: it holds a shared_ptr to the transport and a scope, and
     /// building one per call is what keeps `in_org()` from having anything shared to
@@ -1222,7 +1391,7 @@ public:
     // constructors take a transport nothing outside this library can build.
     //
     // Declared, not defined, here: the definitions live in the generated
-    // src/management_ops.cpp, so client.cpp still knows nothing about the 147
+    // src/management_ops.cpp, so client.cpp still knows nothing about the 190
     // operations and a caller who never touches §27 never compiles its models.
 
     /// Organizations an SDK client may read and configure. Creation and deletion are outside
@@ -1283,6 +1452,26 @@ public:
     /// tenant.
     management::EmailConfigApi email_config();
 
+    /// A tenant's LDAP / Active Directory identity source (CONTRACT §30): the one
+    /// configuration, the explicit act that links an existing local account to its
+    /// directory entry, and a read-only view of the sync job.
+    management::DirectoryApi directory();
+
+    /// A tenant's SAML 2.0 identity provider (CONTRACT §29): the registry of service
+    /// providers, the import of an SP's metadata into a *draft* registration (never a
+    /// write), and the lifecycle of the IdP signing credential.
+    management::SamlApi saml();
+
+    /// A tenant's Shared Signals Framework streams (CONTRACT §32): which receiver
+    /// receives which CAEP and RISC security events. The receiver side is
+    /// axiam::ssf::SsfReceiver (§32.7).
+    management::SsfApi ssf();
+
+    /// A tenant's outbound SCIM targets (CONTRACT §31): the downstream SCIM 2.0 service
+    /// providers AXIAM pushes the tenant's users and groups to. The credential is
+    /// write-only; deleting a target deprovisions nothing downstream.
+    management::ScimTargetsApi scim_targets();
+
     /// Effective settings, and the organization/tenant layers they resolve from.
     management::SettingsApi settings();
 
@@ -1311,6 +1500,9 @@ public:
     struct Impl;
 
 private:
+    // §32.7: the receiver helper shares this client's transport (§6 TLS policy),
+    // base URL and §16 seams — never its session.
+    friend class ssf::SsfReceiver;
     std::shared_ptr<Impl> p_;
     explicit Client(std::shared_ptr<Impl> impl);
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Generate the CONTRACT §27 management surface for the C++ SDK.
 
-Reads ``management-registry.json`` (the management operations across 24 namespaces,
+Reads ``management-registry.json`` (every management operation in every namespace,
 maintained in ``ilpanich/axiam`` and vendored here) plus ``openapi.json``, and writes:
 
 - ``include/axiam/management_models.hpp`` — one struct or enum per request and response
   type, with ``from_json``/``to_json`` free functions ADL-found by nlohmann;
-- ``include/axiam/management.hpp`` — the 24 namespace handles and the ``management()``
+- ``include/axiam/management.hpp`` — every namespace handle and the ``management()``
   accessor;
 - ``src/management_models.cpp`` / ``src/management_ops.cpp`` — the implementations;
 - ``tests/test_management_generated.cpp`` — one conformance case per operation.
@@ -48,7 +48,13 @@ OP_COUNT: int = sum(len(ns["operations"]) for ns in REGISTRY["namespaces"].value
 # §27.4 rule 3: `{org_id}` always defaults from the client. `{tenant_id}`
 # defaults from the client only where it names the *context*; in `tenants` and
 # the signing-CA routes it names the object being acted on.
-IMPLICIT_TENANT_NAMESPACES = {"email_config", "settings", "webauthn_policy"}
+#
+# Contract 1.58 adds three more context namespaces: `directory` (§30), `saml` (§29) and
+# `ssf` (§32) all live under `/api/v1/tenants/{tenant_id}/...` where the tenant is the
+# one the client is pointed at, so it defaults exactly like `email_config`. (`scim_targets`
+# (§31) carries no tenant path parameter at all.)
+IMPLICIT_TENANT_NAMESPACES = {"email_config", "settings", "webauthn_policy",
+                              "directory", "saml", "ssf"}
 
 # Schema names that would collide with a type this SDK already declares. The models sit
 # in `axiam::management` alongside the hand-written core, so a collision is possible --
@@ -56,6 +62,221 @@ IMPLICIT_TENANT_NAMESPACES = {"email_config", "settings", "webauthn_policy"}
 # model_type() turns a future collision into a build failure rather than a silent
 # redefinition; this map is where the rename goes when one happens.
 RENAMED_SCHEMAS: dict[str, str] = {}
+
+# CONTRACT.md §31.2: the `auth` and `scope` unions of a SCIM target are tagged on `type`,
+# and "an unknown `type` MUST decode without failing and MUST NOT be sent". Every
+# discriminated union here already DECODES an unknown tag (the tag plus the raw object);
+# these two are request-side as well, so their to_json() additionally refuses -- locally,
+# before any request -- a tag that is not one of the spec's arms, and always writes the
+# tag member itself so a value built as `{type = "bearer"}` with no raw text still says
+# which arm it is.
+OPEN_UNIONS = {"ScimTargetAuth", "ScimTargetScope"}
+
+# Members where an explicit JSON `null` is a different statement from an absent
+# member (§27.4 rule 5, "null is not absent"). §30.2 names two on a request:
+# `UpdateDirectoryConfig.group_base_dn` / `.group_filter`, where `null` CLEARS the
+# stored value and absence keeps it. A name list rather than a schema rule,
+# because the export spells every optional member `["string", "null"]` and cannot
+# say which ones `null` clears.
+#
+# Generated as `std::optional<std::optional<T>>`: disengaged omits the key; engaged
+# with an inner `std::nullopt` sends (or, decoding, records) `null`.
+EXPLICIT_NULL_FIELDS: set[tuple[str, str]] = {
+    ("UpdateDirectoryConfig", "group_base_dn"),
+    ("UpdateDirectoryConfig", "group_filter"),
+    # §29.8 test 8 asks the same of a RESPONSE: SamlIdpInfo's two credential ids
+    # are null when the slot is empty, and that null must stay distinct from an
+    # absent member, so a server that stopped sending the member is noticed.
+    ("SamlIdpInfo", "active_credential_id"),
+    ("SamlIdpInfo", "next_credential_id"),
+}
+
+# Call-site documentation the contract makes an SDK repeat (§29.3, §30.3, §31.3,
+# §32.2), appended to the generated operation's Doxygen block. Keyed by the
+# registry's namespace-qualified operation name.
+CALL_SITE_NOTES: dict[str, str] = {
+    "directory.set": (
+        "**Moving the connection requires the secret again** (§30.3 rule 2): a `set` "
+        "that changes `url`, `start_tls`, `bind_dn` or `trust_anchors_pem` without "
+        "`bind_secret` is refused `400` and changes nothing. The SDK holds no copy of "
+        "the secret and cannot re-send one for you. `bind_secret` is required while the "
+        "tenant has no configuration; otherwise absent keeps the stored secret. Every "
+        "other optional member left out is **reset to its default** (start from "
+        "`DirectoryConfig::to_input()`). An enabled directory and an effective "
+        "`opaque_mode = required` never coexist (`409`); without the deployment's "
+        "directory key a write carrying a secret is `503`."
+    ),
+    "directory.update": (
+        "**Moving the connection requires the secret again** (§30.3 rule 2): an "
+        "`update` that changes `url`, `start_tls`, `bind_dn` or `trust_anchors_pem` "
+        "without `bind_secret` is refused `400` and changes nothing; the SDK holds no "
+        "copy of the secret to re-send. A member left `std::nullopt` is not sent and "
+        "stays as stored; `group_base_dn` / `group_filter` engaged with an inner "
+        "`std::nullopt` are sent as `null` and clear the value. An enabled directory "
+        "and an effective `opaque_mode = required` never coexist (`409`)."
+    ),
+    "directory.delete": (
+        "**Deleting stops the directory, and only that** (§30.3 rule 5): directory "
+        "accounts can no longer sign in with a password -- there is no fallback to a "
+        "local hash -- and the sync stops. Sessions, refresh tokens and passkeys those "
+        "accounts already hold keep working until they expire or the accounts are "
+        "deactivated. There is no unlink: a linked account stays a directory account."
+    ),
+    "directory.link_account": (
+        "**Signs the account's owner out everywhere** (§30.3 rule 6): linking deletes "
+        "the account's WebAuthn credentials and federation links, revokes its `User` "
+        "certificates, all its sessions and its OAuth2 refresh tokens (TOTP is kept). "
+        "The entry is found by the account's own username; a repeat on an "
+        "already-linked account answers `was_already_linked` and repeats the "
+        "revocations."
+    ),
+    "saml.create_service_provider": (
+        "`sp_signing_cert_pem` must be RSA (2048 bits or more) or ECDSA on P-256, P-384 "
+        "or P-521; an **ECDSA certificate verifies HTTP-POST requests only** -- the "
+        "HTTP-Redirect binding is RSA-only (§29.3 rule 2). `encrypt_assertions: true` is "
+        "refused while encryption is unimplemented. `entity_id` is unique per tenant "
+        "(`409`) and immutable once created."
+    ),
+    "saml.update_service_provider": (
+        "An omitted member takes its **default**, not its stored value: `enabled` and "
+        "`sign_responses` default to `true`, `name_id_format` to `persistent`, the other "
+        "flags to `false`, certificates and `slo_url` / `slo_binding` to null, the lists "
+        "to empty (§29.2). Start from `get_service_provider` "
+        "(`SamlServiceProvider::to_input()`). `entity_id` is immutable: changing it is "
+        "`400` -- register a new service provider instead (§29.3 rule 3). An ECDSA "
+        "`sp_signing_cert_pem` verifies HTTP-POST requests only; HTTP-Redirect is "
+        "RSA-only."
+    ),
+    "saml.delete_service_provider": (
+        "Ends no session: users already signed in to the SP stay signed in there until "
+        "their SP session ends (§29.3 rule 5)."
+    ),
+    "saml.parse_sp_metadata": (
+        "**Parses and stores nothing** (§29.3 rule 6): the result is a draft to review "
+        "and pass to `create_service_provider`. Exactly one of `metadata_xml` and "
+        "`metadata_url` must be set (`ParseSamlSpMetadata::from_url()` / `from_xml()`); "
+        "both or neither is refused locally with `std::invalid_argument`, before any "
+        "request. The metadata's own signature is not evaluated. `503` in a server built "
+        "without SAML."
+    ),
+    "saml.issue_idp_credential": (
+        "Generates an RSA-4096 key on the server, which takes seconds; the key is never "
+        "returned. An occupied slot is `409` (§29.3 rule 7)."
+    ),
+    "saml.promote_idp_credential": (
+        "`credential_id` must be the tenant's current `next` credential; in one "
+        "transaction the old `active` is retired -- its key destroyed -- and `next` "
+        "becomes `active` (§29.3 rule 7)."
+    ),
+    "saml.retire_idp_credential": (
+        "**Retiring the `active` credential with no successor stops SAML sign-on for the "
+        "whole tenant at once** (§29.3 rule 7) -- it is the incident response to a leaked "
+        "key. The key is destroyed. The safe rotation is: issue into `next`, wait until "
+        "every SP has refreshed the metadata, then promote."
+    ),
+    "ssf.update_stream": (
+        "An omitted optional member takes its default (§32.2) -- **except "
+        "`authorization_header`, which absent keeps the stored one** -- unless the update "
+        "moves `endpoint_url` to another scheme, host or port while a header is stored: "
+        "then it must carry `authorization_header` again or "
+        "`clear_authorization_header: true`, else `400` (§32.3 rule 5). Start from "
+        "`SsfStream::to_input()`. An update overtaken by the receiver's own write is "
+        "`409`: read the stream again."
+    ),
+    "scim_targets.create": (
+        "`credential` is required here (§31.3 rule 2). It is write-only: no response "
+        "ever carries it, and the SDK keeps no copy."
+    ),
+    "scim_targets.update": (
+        "**The credential is bound to its URL** (§31.3 rule 2): absent `credential` keeps "
+        "the stored one -- except that changing `base_url` of a bearer target, "
+        "`auth.token_url` or `base_url` of a client-credentials target, or `auth.type`, "
+        "without `credential` in the same write is refused `400` and changes nothing. The "
+        "SDK holds no credential to re-send. Every other member left out takes its default "
+        "(start from `ScimTargetResponse::to_input()`). An update overtaken by another "
+        "administrator's write is `409` (§31.3 rule 4): reload, then retry yourself."
+    ),
+    "scim_targets.delete": (
+        "**Deprovisions nothing downstream** (§31.3 rule 8): the users and groups AXIAM "
+        "created in the service provider stay there, and AXIAM no longer knows them. To "
+        "remove them, set `deprovision` to `delete`, let AXIAM push, and only then delete "
+        "the target."
+    ),
+    "scim_targets.reconcile": (
+        "Starts a reconciliation in the background and answers `202`; its outcome is on "
+        "the target's `state` (§31.3 rule 7). `409` while a run holds the claim, within "
+        "five minutes of the last one, or for a disabled target."
+    ),
+}
+
+# Local checks a generated operation runs before any I/O: the name of a function
+# in src/management_checks.hpp taking the request body.
+PRECHECKS: dict[str, str] = {
+    "saml.parse_sp_metadata": "parse_sp_metadata_exactly_one",
+}
+
+# Statements that make the generated conformance case's default body pass its
+# PRECHECK (the defaulted body every other case sends would be refused locally).
+PRECHECK_TEST_SETUP: dict[str, list[str]] = {
+    "saml.parse_sp_metadata": ['body.metadata_url = "https://sp.example.com/metadata";'],
+}
+
+# Hand-written members declared inside a generated model (defined in
+# src/management_helpers.cpp): the read-modify-write helpers §27.4 rule 5
+# recommends and the factories that make a §29/§31 body hard to get wrong.
+MODEL_MEMBERS: dict[str, list[tuple[str, str]]] = {
+    "DirectoryConfig": [(
+        "The replacement body for `directory.set` holding every member of this read "
+        "-- the read-modify-write form (§27.4 rule 5). `bind_secret` is absent: no "
+        "read carries it, and absent keeps the stored one (§30.2).",
+        "SetDirectoryConfig to_input() const;",
+    )],
+    "ParseSamlSpMetadata": [
+        ("`{ \"metadata_url\": url }` -- the server fetches the document once, through "
+         "its SSRF guard (§29.3 rule 6).",
+         "static ParseSamlSpMetadata from_url(std::string url);"),
+        ("`{ \"metadata_xml\": xml }` -- a metadata document of at most 512 KiB.",
+         "static ParseSamlSpMetadata from_xml(std::string xml);"),
+    ],
+    "SamlServiceProvider": [(
+        "The replacement body for `saml.update_service_provider` holding every member of "
+        "this read -- the read-modify-write form §29.2 recommends, since an omitted "
+        "member takes its DEFAULT on an update.",
+        "SamlServiceProviderInput to_input() const;",
+    )],
+    "SsfStream": [(
+        "The replacement body for `ssf.update_stream` holding every member of this "
+        "read. `authorization_header` is absent: no read carries it, and absent keeps "
+        "the stored one -- unless the update moves the endpoint (§32.3 rule 5).",
+        "SsfStreamInput to_input() const;",
+    )],
+    "ScimTargetResponse": [(
+        "The replacement body for `scim_targets.update` holding every member of this "
+        "read. `credential` is absent: no read carries it, and absent keeps the stored "
+        "one -- unless the update moves the URL (§31.3 rule 2).",
+        "ScimTargetInput to_input() const;",
+    )],
+    "ScimTargetAuth": [
+        ("`{ \"type\": \"bearer\" }` -- the credential is a static bearer token.",
+         "static ScimTargetAuth bearer();"),
+        ("`{ \"type\": \"oauth2_client_credentials\", \"token_url\", \"client_id\", "
+         "\"scope\"? }` -- the credential is the OAuth2 client secret.",
+         "static ScimTargetAuth oauth2_client_credentials(std::string token_url, "
+         "std::string client_id, std::optional<std::string> scope = std::nullopt);"),
+    ],
+    "ScimTargetScope": [
+        ("`{ \"type\": \"all_users\" }` -- every user of the tenant.",
+         "static ScimTargetScope all_users();"),
+        ("`{ \"type\": \"groups\", \"group_ids\": [...] }` -- users who are direct "
+         "members of any listed group.",
+         "static ScimTargetScope groups(std::vector<std::string> group_ids);"),
+    ],
+}
+
+# Members no RESPONSE may surface (§29.5, §30.2, §31.2, §32.5). The structs declare
+# none of them and keep no unknown member, so only a union's raw object could carry
+# one through; an OPEN_UNIONS decoder strips them from it.
+RESPONSE_SECRET_MEMBERS = ("credential", "bind_secret", "authorization_header", "private_key_pem")
 
 EXAMPLE_UUID = "11111111-1111-4111-8111-111111111111"
 
@@ -406,8 +627,17 @@ def model_type(name: str) -> str:
 
 
 def enum_value(value: str) -> str:
-    """A C++ enum-class enumerator (``pending_review`` -> ``PendingReview``)."""
-    rendered = pascal(value)
+    """A C++ enum-class enumerator (``pending_review`` -> ``PendingReview``).
+
+    §32's ``SsfEventType`` values are event-type URIs
+    (``https://schemas.openid.net/secevent/caep/event-type/session-revoked``). The last
+    path segment is what names the event, so that names the enumerator
+    (``SessionRevoked``); the URI stays the wire value in ``to_wire``/``*_from_wire``.
+    """
+    text = str(value)
+    if "/" in text:
+        text = text.rstrip("/").rsplit("/", 1)[-1]
+    rendered = pascal(text)
     if not rendered or not rendered[0].isalpha():
         rendered = f"V{rendered}"
     return f"{rendered}_" if rendered.lower() in CPP_KEYWORDS else rendered
@@ -570,6 +800,7 @@ def fields_of(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]]
             "wire": wire, "name": member(wire), "decl": info["decl"], "kind": info["kind"],
             "ref": info["ref"], "required": wire in required, "schema": sub,
             "secret": wire in secrets,
+            "explicit_null": (schema_name, wire) in EXPLICIT_NULL_FIELDS,
             "description": sub.get("description") if isinstance(sub, dict) else None,
         })
     return out, description
@@ -582,11 +813,18 @@ def declared(f: dict[str, Any]) -> str:
     "absent" in the type, so §27.4 rule 5's "an unset field is OMITTED, not null" is
     something the serializer can act on without a convention to remember.
     """
+    if f.get("explicit_null"):
+        return f"std::optional<std::optional<{f['decl']}>>"
     return f["decl"] if f["required"] else f"std::optional<{f['decl']}>"
 
 
 def field_doc(f: dict[str, Any]) -> str:
     """The one-line description for a member."""
+    if f.get("explicit_null"):
+        lead = escape(f["description"]) + " " if f["description"] else ""
+        return (lead + "Tri-state (§27.4 rule 5, null is not absent): `std::nullopt` "
+                "omits the member; an engaged value holding `std::nullopt` is JSON "
+                "`null`; a value is a value.")
     if f["description"]:
         return escape(f["description"])
     if f["secret"]:
@@ -787,9 +1025,14 @@ def emit_models_header() -> str:
         out.extend(doc(summary))
         out.append(f"struct {rendered} {{")
         for f in fields:
-            out.extend(doc(field_doc(f) + ("" if f["required"] else " Optional."), "    "))
+            optional_note = "" if f["required"] or f.get("explicit_null") else " Optional."
+            out.extend(doc(field_doc(f) + optional_note, "    "))
             default = "" if f["required"] else " = std::nullopt"
             out.append(f"    {declared(f)} {f['name']}{default};")
+        for text, decl in MODEL_MEMBERS.get(name, []):
+            out.append("")
+            out.extend(doc(text, "    "))
+            out.append(f"    {decl}")
         # CONTRACT.md §27.13 S-10 rule 3: on a SUBJECT-side role listing, `inherit` is
         # optional and absence means the assignment INHERITS -- true for a server that
         # sends the field and stayed silent, and equally true for one that predates the
@@ -858,6 +1101,15 @@ def emit_to_json_member(f: dict[str, Any]) -> list[str]:
     if kind == "union_raw":
         return []
 
+    if f.get("explicit_null"):
+        # §27.4 rule 5: disengaged omits; engaged-with-nullopt is JSON null.
+        return [
+            f"    if (value.{n}) {{",
+            f'        if (*value.{n}) j["{w}"] = **value.{n};',
+            f'        else j["{w}"] = nullptr;',
+            "    }",
+        ]
+
     if kind == "json_text":
         parse = f"nlohmann::json::parse(value.{n}, nullptr, false)"
         if f["required"]:
@@ -898,6 +1150,15 @@ def emit_from_json_member(f: dict[str, Any]) -> list[str]:
 
     if kind == "union_raw":
         return ["    value.raw = j.dump();"]
+
+    if f.get("explicit_null"):
+        # An explicit null is KEPT, distinct from an absent member.
+        return [
+            f'    if (auto it = j.find("{w}"); it != j.end()) {{',
+            f"        if (it->is_null()) value.{n}.emplace(std::nullopt);",
+            f"        else value.{n}.emplace(it->get<{f['decl']}>());",
+            "    }",
+        ]
 
     if kind == "json_text":
         if f["required"]:
@@ -1001,16 +1262,45 @@ def emit_models_source() -> str:
             )
             out.append("    }")
         if any(f["kind"] == "union_raw" for f in fields):
+            union = discriminated(SCHEMAS.get(name) or {})
+            if name in OPEN_UNIONS and union:
+                tag, arms = union
+                tag_member = member(tag)
+                known = " && ".join(f'value.{tag_member} != "{v}"' for v, _ in arms)
+                names = ", ".join(f"`{v}`" for v, _ in arms)
+                out.extend(comment(
+                    f"CONTRACT.md §31.2: an unknown `{tag}` decodes but MUST NOT be sent. "
+                    "Refused here, before any request, with no part of the value in the "
+                    "message.", "    "))
+                out.append(f"    if ({known}) {{")
+                out.append(
+                    f'        throw NetworkError("{rendered}: `{tag}` must be one of {names}; '
+                    'a variant this SDK does not know is never sent (CONTRACT.md §31.2)", '
+                    '"sdk_programming_error");')
+                out.append("    }")
             out.extend(comment(
                 "A union is forwarded EXACTLY as received. Re-encoding from the two "
                 "members this SDK models would drop every field belonging to the variant "
                 "it does not model -- and the server round-trips those.", "    "))
             out.append("    j = nlohmann::json::parse(value.raw, nullptr, false);")
-            out.append("    if (j.is_discarded()) j = nlohmann::json::object();")
+            if name in OPEN_UNIONS and union:
+                out.append("    if (j.is_discarded() || !j.is_object()) j = nlohmann::json::object();")
+                out.append(f'    j["{union[0]}"] = value.{member(union[0])};')
+            else:
+                out.append("    if (j.is_discarded()) j = nlohmann::json::object();")
             out.append("}")
             out.append("")
             out.append(f"void from_json(const nlohmann::json& j, {rendered}& value) {{")
             for f in fields:
+                if f["kind"] == "union_raw" and name in OPEN_UNIONS:
+                    names = ", ".join(f'"{m}"' for m in RESPONSE_SECRET_MEMBERS)
+                    out.extend(comment(
+                        "A secret is on no response (§31.2): one a server wrongly sent "
+                        "inside the union is dropped rather than kept in `raw`.", "    "))
+                    out.append("    nlohmann::json kept = j;")
+                    out.append(f"    for (const char* secret : {{{names}}}) kept.erase(secret);")
+                    out.append("    value.raw = kept.dump();")
+                    continue
                 out.extend(emit_from_json_member(f))
             out.append("}")
             out.append("")
@@ -1142,6 +1432,9 @@ def op_doc(namespace: str, opname: str, op: dict[str, Any]) -> str:
         lead += (f"\n\nThe response carries a ONE-TIME secret ({fields}): the server will "
                  "not return it again, so a caller that does not persist it here cannot "
                  "recover it (§27.5).")
+    note = CALL_SITE_NOTES.get(f"{namespace}.{opname}")
+    if note:
+        lead += "\n\n" + note
     return lead
 
 
@@ -1158,7 +1451,7 @@ def op_decl(namespace: str, opname: str, op: dict[str, Any], defaults: bool) -> 
 
 
 def emit_api_header() -> str:
-    """The 24 namespace handles, the Page/PageRequest types, and the §27.4 errors."""
+    """Every namespace handle, the Page/PageRequest types, and the §27.4 errors."""
     out = [BANNER, ""]
     out.append("#ifndef AXIAM_MANAGEMENT_HPP")
     out.append("#define AXIAM_MANAGEMENT_HPP")
@@ -1473,6 +1766,9 @@ def emit_op_body(namespace: str, opname: str, op: dict[str, Any]) -> list[str]:
         out.append("    const std::vector<QueryValue> query{};")
 
     body_param = next((p for p in params if p["kind"] == "body"), None)
+    if canonical in PRECHECKS:
+        # A local refusal, before the request is built (see management_checks.hpp).
+        out.append(f"    checks::{PRECHECKS[canonical]}(body);")
     body_expr = "nlohmann::json(body)" if body_param else "std::nullopt"
     if body_param:
         out.append("    const std::optional<nlohmann::json> payload = nlohmann::json(body);")
@@ -1500,10 +1796,11 @@ def emit_op_body(namespace: str, opname: str, op: dict[str, Any]) -> list[str]:
 
 
 def emit_ops_source() -> str:
-    """The 24 handle classes' implementations, plus Client::management()."""
+    """Every handle class's implementation, plus Client::management()."""
     out = [BANNER, ""]
     out.append('#include "axiam/management.hpp"')
     out.append("")
+    out.append('#include "management_checks.hpp"')
     out.append('#include "management_json.hpp"')
     out.append('#include "management_transport.hpp"')
     out.append("")
@@ -1591,9 +1888,19 @@ def emit_ops_source() -> str:
 # ---------------------------------------------------------------------------
 
 
+MAX_EXAMPLE_DEPTH = 10
+
+
 def example_json(schema: Any, depth: int = 0) -> Any:
-    """A plausible wire value for ``schema`` -- what the fake transport returns."""
-    if depth > 6 or not isinstance(schema, dict):
+    """A plausible wire value for ``schema`` -- what the fake transport returns.
+
+    ``depth`` only guards against a self-referencing schema; it counts two steps per
+    ``$ref`` hop (one here, one in ``example_for``). Contract 1.58's
+    ``SamlSpMetadataDraft -> SamlServiceProviderInput -> AcsEndpoint -> SamlBinding`` is
+    the first legitimate chain deeper than the old bound of 6, which cut it off with a
+    ``null`` the decoder then refused.
+    """
+    if depth > MAX_EXAMPLE_DEPTH or not isinstance(schema, dict):
         return None
     if "$ref" in schema:
         return example_for(schema["$ref"].split("/")[-1], depth + 1)
@@ -1629,7 +1936,7 @@ def example_json(schema: Any, depth: int = 0) -> Any:
 
 def example_for(name: str, depth: int = 0) -> Any:
     """A plausible wire object for the named schema."""
-    if depth > 6:
+    if depth > MAX_EXAMPLE_DEPTH:
         return None
     schema = SCHEMAS.get(name) or {}
     if isinstance(schema.get("enum"), list) and schema["enum"]:
@@ -1685,6 +1992,28 @@ def expected_path(op: dict[str, Any]) -> str:
     return re.sub(r"\{[^}]+\}", EXAMPLE_UUID, op["path"])
 
 
+def test_body_setup(schema_name: str, var: str = "body") -> list[str]:
+    """Statements that make a default-constructed request body SENDABLE.
+
+    A default-constructed ``OPEN_UNIONS`` member carries an empty tag, which its
+    ``to_json()`` refuses (§31.2) -- correctly, and before any request, so a generated
+    case sending ``Model body{}`` would test the refusal rather than the route. Engage the
+    first arm of each such member instead.
+    """
+    out: list[str] = []
+    fields, _ = fields_of(schema_name, sensitive_map().get(schema_name, set()))
+    for f in fields:
+        if f["kind"] != "model" or f["ref"] not in OPEN_UNIONS:
+            continue
+        union = discriminated(SCHEMAS.get(f["ref"]) or {})
+        if not union:
+            continue
+        tag, arms = union
+        target = f"{var}.{f['name']}" if f["required"] else f"{var}.{f['name']}.emplace()"
+        out.append(f'    {target}.{member(tag)} = "{arms[0][0]}";')
+    return out
+
+
 def emit_test() -> str:
     """One conformance case per operation: right method, right path, decodes."""
     out = [BANNER, ""]
@@ -1734,6 +2063,9 @@ def emit_test() -> str:
                 elif p["kind"] == "body":
                     bmodel = model_type(op["request_schema"].lstrip("[]"))
                     out.append(f"    {bmodel} body{{}};")
+                    out.extend(test_body_setup(op["request_schema"].lstrip("[]")))
+                    out.extend(f"    {line}" for line in
+                               PRECHECK_TEST_SETUP.get(f"{namespace}.{opname}", []))
                     args.append("body")
             call = (f"fixture.client.management().{method(namespace)}()."
                     f"{method(opname)}(" + ", ".join(args) + ")")

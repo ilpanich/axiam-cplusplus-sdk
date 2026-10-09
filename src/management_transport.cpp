@@ -11,8 +11,6 @@
 namespace axiam::management {
 namespace {
 
-// Percent-encode a path segment. An identifier is caller-supplied, and a raw '/' or '?'
-// in one would silently retarget the request at a different route.
 std::string url_encode(const std::string& in) {
     static const char* kHex = "0123456789ABCDEF";
     std::string out;
@@ -208,20 +206,35 @@ nlohmann::json Transport::send(const std::string& operation,
         }
 
         if (thrown) std::rethrow_exception(thrown);
-
-        // Rule 7's classification. Three statuses get a sub-type INSIDE the §2 taxonomy;
-        // everything else falls through to §2's own mapping, so the management surface
-        // cannot drift from the rest of the SDK on 401, 403 or 5xx.
-        const std::string where = operation + ": ";
-        switch (resp->status) {
-            case 404: throw NotFoundError(where + "not found (HTTP 404)");
-            case 409: throw ConflictError(where + "conflict (HTTP 409)");
-            case 400: throw ValidationError(where + "invalid request (HTTP 400)");
-            case 422: throw ValidationError(where + "invalid request (HTTP 422)");
-            default: break;
-        }
-        Client::Impl::raise_for_status(*resp);
+        raise_management_status(operation, *resp);
     }
+}
+
+std::string Transport::encode_segment(const std::string& value) { return url_encode(value); }
+
+void Transport::raise_management_status(const std::string& operation, const HttpResponse& resp) {
+    // Rule 7's classification. Three statuses get a sub-type INSIDE the §2 taxonomy;
+    // everything else falls through to §2's own mapping, so the management surface
+    // cannot drift from the rest of the SDK on 401, 403 or 5xx.
+    const std::string where = operation + ": ";
+    switch (resp.status) {
+        case 404: throw NotFoundError(where + "not found (HTTP 404)");
+        case 409: throw ConflictError(where + "conflict (HTTP 409)");
+        case 400:
+        case 422: {
+            // The server's `message` names the field and the rule (§29.4, §30.4,
+            // §31.4) — carried for a human, never parsed here. The server never
+            // echoes a secret into it (§30.3 rule 1, §31.3 rule 1).
+            std::string text = where + "invalid request (HTTP " + std::to_string(resp.status) + ")";
+            const auto j = nlohmann::json::parse(resp.body, nullptr, false);
+            if (j.is_object() && j.contains("message") && j["message"].is_string()) {
+                text += ": " + j["message"].get<std::string>();
+            }
+            throw ValidationError(text);
+        }
+        default: break;
+    }
+    Client::Impl::raise_for_status(resp);
 }
 
 }  // namespace axiam::management
