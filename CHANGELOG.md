@@ -2,164 +2,171 @@
 
 All notable changes to the AXIAM C++ SDK are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follows
-semantic versioning (pre-release track `1.0.0-alpha*`).
+[Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Contract 1.60 (phase 1: `CONTRACT.md` re-vendored byte-for-byte; `openapi.json`, `management-registry.json` and `proto/` follow in phase 2)
+The AXIAM C++ SDK at 1.0.0 is a C++17 client (tested through C++23, with g++ and clang++)
+for the AXIAM **REST** surface over libcurl, with strict TLS and §6.1 mTLS client
+certificates, plus the §22 reactor protocol core over a transport you supply. It conforms
+to `CONTRACT.md` §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27,
+§28, §28.12, §29, §30, §31, §32, §33 and §34 at **contract 1.60** (re-vendored with
+`openapi.json` and `management-registry.json` from axiam `3ed6547`), with the MUST-level §16
+retry policy and §18 deterministic shutdown, and §32.7 and §33.2 signed (PS256, ES256,
+EdDSA). The management surface is 190 operations across 28 namespaces. gRPC (including
+§1.1, §1.1.1 and §10.3) and the §8 AMQP consumer are not shipped. This release closes the
+contract 1.59 follow-up F-59-11 (ilpanich/axiam#586) and every contract 1.60 row assigned to
+C++. From 1.0.0 the SDK is stable and follows semantic versioning.
 
-#### Changed (source-incompatible)
+### Breaking changes
 
-- **A local refusal is `std::invalid_argument`, not `NetworkError` (contract 1.60 B5, §34.2
-  P12.2 (a)).** A request carrying an open enum's `Unknown`, an unknown `ScimTargetAuth` /
-  `ScimTargetScope` variant, or a `SubjectAltName` that sets neither or both of `dns` and `ip`
-  is refused before any request with `std::invalid_argument` -- C++'s validation error (§28.7)
-  -- no longer with a bare `NetworkError` (`cause() == "sdk_programming_error"`). Code that
-  catches `NetworkError` around a read-modify-write must also catch `std::invalid_argument`.
-  The generator emits the new type; the generated tests assert it.
-- **An event-type URI is sent as the string the caller holds (B4, §34.2 P12.2 (b)).** The SDK
-  no longer refuses a `SsfEventType` that `is_known_ssf_event_type()` rejects: an unseen URI
-  read from the server decodes with its value and is sent back unchanged by `update_stream`
-  (a read-modify-write keeps it), and the server judges it. Previously that read-modify-write
-  was refused locally. There is no client-side list to document, because a list of URIs goes
-  stale; `is_known_ssf_event_type()` remains as an informational check.
+Since `v1.0.0-beta17`. Each is a compile error or a different exception type, never a
+silent change on the wire.
 
-#### Fixed
-
-- **A never-retried write arrives exactly once (A6, §34.2 P11, R-17).** `CurlTransport` sets
-  `CURLOPT_FRESH_CONNECT` and `CURLOPT_FORBID_REUSE` on every request that is not a `GET` and
-  that the SDK does not itself repeat, so libcurl has no dead pooled connection to re-send a
-  dropped write over. New `HttpRequest::replayable` (default `false`) is set by the §16
-  authorization-check loop, by retried token-endpoint requests, and by `ssf.poll` when its
-  retry budget allows a second attempt; the options are set both ways on every request, so a
-  `GET` after a write still reuses the pool. Test: a loopback server that reads a write and
-  closes unanswered receives it once (twice without the options), and two `GET`s share one
-  connection.
-- **A replay store that cannot answer is raised as the §2 `NetworkError` (B1, §34.2 P3/P4).**
-  The `ReplayStore` interface was already fallible (it throws), so this is the *verify* row;
-  `verify_set` now wraps whatever the store threw (a `std::exception` or anything else) into a
-  `NetworkError` with `cause() == "replay_store_unavailable"` and no reason code, so it can
-  never be read as `replayed`, and `poll` still lists the SET in `unjudged`, unrecorded and
-  unacknowledged. Tests: §32.8 helper test 6's store-failure case (`verify_set` and `poll`,
-  including the SET being judged once the store recovers).
-
-#### Documentation
-
-- `TokenExchangeParams::actor_token`, the README's §15 section and
-  `examples/token_exchange.cpp`: the actor token is the exchanging client's own
-  `client_credentials` token (§15.2 rule 9); a token issued to another client is answered
-  `400 invalid_request` and surfaces unchanged. New §15.6 test: one request, no rewriting.
-- README: the P11 connection rule (retry section), the B1 store wording, the B4/B5 wording.
-
-Contract 1.59 (re-vendored `CONTRACT.md` from axiam `fe369eb`; `openapi.json`,
-`management-registry.json` unchanged). The README states conformance to §1–§7, §9–§13,
-§14, §15, §17, §19, §20 – §28, §28.12, §29, §30, §31, §32 and §33 at contract 1.59, with
-§32.7 and §33.2 signed (PS256, ES256, EdDSA). This entry closes follow-up F-59-11
-(ilpanich/axiam#586), the §34.3 rows R-1, R-8, R-11, R-19, R-22, R-23, R-27, R-29, R-30.
-
-### Changed (source-incompatible)
-
-- **SSF event types are strings (§32.2, R-22).** `management::SsfEventType` is now
-  `std::string`, with the six URIs as `management::ssf_event_type::k…` constants and
-  `is_known_ssf_event_type()`; an unlisted URI decodes as itself, not as a lossy
-  `Unknown`. Code naming `SsfEventType::<Enumerator>` must use the constants.
-- **Required members are constructor arguments (§29.8 t1, §30.8 t4, §31.8 t3, §32.8 t1,
-  R-27).** `SamlServiceProviderInput`, `SetDirectoryConfig`, `ScimTargetInput` and
-  `SsfStreamInput` have a constructor taking every required member in the spec's order and
-  no public default constructor (decoding goes through `nlohmann::adl_serializer`
-  specializations). `SetDirectoryConfig`'s required `bool`s can no longer be left
-  indeterminate.
-- **`ClientRegistration::redirect_uris`, `grant_types`, `response_types` are
-  `std::optional<std::vector<std::string>>` (§28.12.2 rule 4, P12.4, R-23).** An update no
-  longer sends `[]` for a list the read lacked, and a list of an unexpected shape is kept
-  whole in `extra_json` and sent back as read (it used to be filtered or overwritten).
-- **`SsfPollResult::unjudged` (§34.2 P1, R-1).** `ssf.poll` no longer throws when a SET's
-  key fetch or the replay store fails mid-batch: that SET is listed in `unjudged` (its
-  `jti` and the failure's message), in neither `events` nor `refused`, with its `jti`
-  unrecorded, and the rest of the batch is returned. **P1 form taken: the second** —
-  "return what was judged and leave the unjudged SETs unrecorded", listing their `jti`s.
-  It is the form that also covers a replay store failing after earlier SETs were recorded.
+- **A local refusal is `std::invalid_argument` (contract 1.60 B5, §34.2 P12.2 (a)).** A
+  request carrying an open enum's `Unknown`, an unknown `ScimTargetAuth` /
+  `ScimTargetScope` variant, or a `SubjectAltName` that sets neither or both of `dns` and
+  `ip` is refused before any request with `std::invalid_argument`, C++'s validation error.
+  The `SubjectAltName` refusal used to be a `NetworkError` with
+  `cause() == "sdk_programming_error"`, and an `Unknown` used to be sent as `""`.
+  *Migration:* catch `std::invalid_argument` around a read-modify-write, and replace an
+  `Unknown` value before writing a read back.
+- **`UpdateFederationConfigRequest`'s ten nullable members are tri-state (§27.15 note 8).**
+  `metadata_url`, `idp_signing_cert_pem`, `idp_metadata_signing_cert_pem`, `provider_slug`,
+  `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, `apple_team_id`,
+  `apple_key_id` and `button_icon` are `std::optional<std::optional<std::string>>`:
+  `std::nullopt` omits the member and leaves the stored value, an engaged `std::nullopt`
+  sends `null` and clears it, and a value is sent as given. *Migration:* assign
+  `std::optional<std::string>("…")` (or `.emplace("…")`) where you assigned a string; use
+  `.emplace(std::nullopt)` to clear.
+- **`TelemetryEvent` has a sixth alternative, `SsfUnjudgedEvent` (§19.1).** *Migration:* a
+  `std::visit` with an exhaustive overload set needs a case for it; `std::get_if` /
+  `std::holds_alternative` dispatch is unaffected.
 
 ### Added
 
-- `Sensitive<T>::expose()` — the single public accessor §7 rule 3 and its C++ row name
-  (R-19). `axiam::detail::reveal` stays as the SDK's internal equivalent (rule 4); the
-  README and examples now use `expose()`, and the §28.12 example persists the rotated
-  `registration_access_token` with it.
-- `SsfReceiver::_set_clock_for_testing()` — a test seam for the JWKS fetch limit.
-
-### Fixed
-
-- **`ciba_poll` retries a `5xx` whatever its body (§33.4, §33.7 rule 5, P8, R-11).** The
-  server's `500 {"error":"server_error"}` was an `OAuthProtocolError` that ended
-  `ciba_await`; it is now §16-retried, a `NetworkError` once §16 is spent, and never
-  terminal in the await loop. §33.8 test 8's `500` carries `{"error":"server_error"}`.
-- **A failed JWKS fetch waits out the minute (§32.7 step 4, P6, R-8).** The once-a-minute
-  limit now counts every failed fetch, the cold-cache fill included; a SET needing the
-  held-off fetch raises `NetworkError` without a request. A successful fill is not "the
-  refetch" and leaves it available.
-- **An open enum's `Unknown` is refused locally (§34.2 P12.2, R-22).** Every generated
-  request serializer refuses it with `NetworkError` before any request instead of sending
-  `""`; `to_wire()` still renders it (as `""`) for logs without failing.
-- **Management reads follow §16 (§27.4 rule 8, R-30).** A `GET` is retried on `408` and
-  `429` as well as transport failures and `5xx`, and honours `Retry-After`.
-- **Call-site documentation (R-29).** `scim_targets.create` states the credential–URL
-  binding (§31.3 rule 2, "both call sites"); the `sp_signing_cert_pem` field doc carries
-  the RSA/ECDSA rule with HTTP-Redirect RSA-only (§29.3 rule 2). Both come from the
-  generator (`CALL_SITE_NOTES`, new `FIELD_NOTES`).
-
-### Documentation
-
-- README: acknowledge a `replayed` refusal instead of reporting it (§34.2 P2); the default
-  `MemoryReplayStore` is unbounded in count, bounded by the window (P4); a store that
-  cannot answer throws, so `verify_set` fails closed and `poll` reports the SET unjudged
-  (**P4 route: this SDK's store interface already reports failure, by throwing** — the
-  documentation states it). **P10 anchor: the response-received instant** (`received_at`),
-  unchanged — one of the two anchors P10 allows; the waits come from the injected clock.
-
-Contract 1.58 (re-vendored `CONTRACT.md`, `openapi.json`, `management-registry.json`;
-190 operations across 28 namespaces).
-
-### Added
-
-- **RFC 7592 client configuration (CONTRACT §28.12)** — `Client::read_client_registration`,
+- **RFC 7592 client configuration (§28.12).** `Client::read_client_registration`,
   `update_client_registration`, `delete_client_registration` and `ClientRegistration`
-  (tolerant decoding with `extra_json`, `Sensitive` token and secret). The URI must be
-  at the client's origin (`std::invalid_argument` otherwise, before any request); the
-  requests carry only the registration bearer, on a new `sessionless` `HttpRequest`
-  (no cookie read or adopted); writes are never retried; an `error` body is an
-  `OAuthProtocolError` at any status.
-- **Management namespaces `directory` (§30), `saml` (§29), `scim_targets` (§31) and
-  `ssf` (§32)** — `client.directory()`, `client.saml()`, `client.scim_targets()`,
-  `client.ssf()` (and under `management()`), with the contract's call-site warnings in
-  the generated Doxygen. `UpdateDirectoryConfig::group_base_dn` / `group_filter` and
-  `SamlIdpInfo::active_credential_id` / `next_credential_id` are tri-state
-  (`std::optional<std::optional<std::string>>`). Read-modify-write helpers
-  `DirectoryConfig::to_input()`, `SamlServiceProvider::to_input()`,
-  `ScimTargetResponse::to_input()`, `SsfStream::to_input()` (secret absent);
-  `ParseSamlSpMetadata::from_url()` / `from_xml()` (both or neither is refused
-  locally); `ScimTargetAuth::bearer()` / `oauth2_client_credentials()` and
-  `ScimTargetScope::all_users()` / `groups()`. An unknown `auth.type` / `scope.type`
-  decodes and is refused locally if sent.
-- **SSF receiver helper (§32.7)** — `axiam::ssf::SsfReceiver` (`<axiam/ssf.hpp>`):
-  `verify_set` (the nine steps; `SetVerificationError` with `SetFailureReason`,
-  `push_error_code()`, `SetErr::from_reason`), `poll` (only the members set, nothing
-  acknowledged, §16 on transport/408/429/5xx only), pluggable `ReplayStore`
-  (`MemoryReplayStore`), seven-day replay window floor, `event_types` constants.
-- **CIBA (§33)** — `Client::ciba_initiate` (never retried), `ciba_poll`, `ciba_await`
-  (injectable `CibaClock`), `ciba_handle_ping` (constant-time bearer check), the signed
-  request form via `CibaRequestSigner::from_pem` for PS256, ES256 and EdDSA, and
+  (tolerant decoding with `extra_json`; the token and secret are `Sensitive`). The URI must
+  be at the client's origin (`std::invalid_argument` otherwise, before any request); the
+  requests carry only the registration bearer, on a `sessionless` `HttpRequest` (no cookie
+  read or adopted); writes are never retried; an `error` body is an `OAuthProtocolError` at
+  any status. `redirect_uris`, `grant_types` and `response_types` are
+  `std::optional<std::vector<std::string>>`, so an update sends no list the read lacked,
+  and a list of an unexpected shape is kept whole in `extra_json` and sent back as read
+  (§34.2 P12.4).
+- **Four management namespaces: `saml` (§29), `directory` (§30), `scim_targets` (§31) and
+  `ssf` (§32)**, as `client.saml()`, `client.directory()`, `client.scim_targets()` and
+  `client.ssf()` (and under `management()`), with the contract's call-site warnings in the
+  Doxygen of each operation — `scim_targets.create` and `update` state the credential–URL
+  binding (§31.3 rule 2) — and the `sp_signing_cert_pem` RSA/ECDSA rule on the field
+  (§29.3 rule 2). `UpdateDirectoryConfig::group_base_dn` / `group_filter` and
+  `SamlIdpInfo::active_credential_id` / `next_credential_id` are tri-state. The
+  read-modify-write helpers `DirectoryConfig::to_input()`,
+  `SamlServiceProvider::to_input()`, `ScimTargetResponse::to_input()` and
+  `SsfStream::to_input()` leave the secret absent; `ParseSamlSpMetadata::from_url()` /
+  `from_xml()` make exactly one source; `ScimTargetAuth::bearer()` /
+  `oauth2_client_credentials()` and `ScimTargetScope::all_users()` / `groups()` build the
+  unions, whose unknown `type` decodes and is refused locally if sent. The four replacement
+  inputs — `SamlServiceProviderInput`, `SetDirectoryConfig`, `ScimTargetInput` and
+  `SsfStreamInput` — have a constructor taking every required member in the spec's order
+  and no public default constructor, so none can be built without them. SSF event types
+  are strings (`SsfEventType` is `std::string`, the six URIs as
+  `management::ssf_event_type::k…`, `is_known_ssf_event_type()` informational): an event
+  type this SDK has never seen decodes as itself and is sent back unchanged by
+  `update_stream`, and the server judges it (contract 1.60 B4).
+- **`expected_updated_at` on `ScimTargetInput` (§31.3 rule 4, contract 1.60).** Passed
+  through unchanged on `update`; when the target was written since, the server answers
+  `409` (`ConflictError`) and writes nothing. `ScimTargetResponse::to_input()` fills it
+  with the read's `updated_at`.
+- **`window_minutes` on notification rules (§27.15 note 1).** Optional on
+  `CreateNotificationRuleRequest` and `UpdateNotificationRuleRequest`, always on
+  `NotificationRuleResponse`; sent as given and never clamped (the server answers `400` for
+  a value outside 1 – 1440), omitted when unset.
+- **`allow_sha1_signatures` and `idp_metadata_signing_cert_pem` on the federation
+  configuration (§27.15 notes 6 and 7).** Optional on `CreateFederationConfigRequest` and
+  `UpdateFederationConfigRequest`, sent only when set; `FederationConfigResponse` carries
+  both, and a response without `allow_sha1_signatures` (a server before 1.0.0) reads
+  `false`.
+- **SSF receiver helper (§32.7).** `axiam::ssf::SsfReceiver` (`<axiam/ssf.hpp>`):
+  `verify_set` runs the nine steps and refuses with `SetVerificationError` and a
+  `SetFailureReason` (`push_error_code()`, `SetErr::from_reason`); `poll` sends only the
+  members you set, acknowledges nothing itself and is retried per §16 on transport, `408`,
+  `429` and `5xx` only. The `ReplayStore` is pluggable (`MemoryReplayStore` by default,
+  bounded by the window and unbounded in count), the replay window has a seven-day floor,
+  and `event_types` names the URIs. A SET that `poll` could not judge — its key fetch or
+  the replay store failed — is listed in `SsfPollResult::unjudged`, in neither `events` nor
+  `refused`, with its `jti` unrecorded, and the rest of the batch is returned (§34.2 P1,
+  the second form). `SsfReceiver::_set_clock_for_testing()` is a test seam for the fetch
+  limit and the key-cache lifetime.
+- **`SsfUnjudgedEvent` (§19.1, contract 1.60).** A `poll` that returns leaving SETs
+  unjudged emits it: `ssf.poll`, the count and the category (`key_fetch` or
+  `replay_store`), one event per category, never a `jti` or a SET.
+- **CIBA (§33).** `Client::ciba_initiate` (never retried), `ciba_poll`, `ciba_await` (with
+  an injectable `CibaClock`; the deadline is anchored at the response-received instant),
+  `ciba_handle_ping` (constant-time bearer check), the signed request form through
+  `CibaRequestSigner::from_pem` for PS256, ES256 and EdDSA, and
   `OAuthProtocolError::is_access_denied()` / `is_expired_token()`.
-- **§21.3.1's seventh alias** — `MtlsEndpointAliases::backchannel_authentication_endpoint`,
-  and the four CIBA members on `OidcConfiguration`.
+- **Discovery members.** `MtlsEndpointAliases::backchannel_authentication_endpoint`
+  (§21.3.1's seventh alias) and the four CIBA members on `OidcConfiguration`; and, from
+  contract 1.60 (§21.5), `revocation_endpoint_auth_methods_supported`,
+  `revocation_endpoint_auth_signing_alg_values_supported`,
+  `introspection_endpoint_auth_methods_supported` and
+  `introspection_endpoint_auth_signing_alg_values_supported`, each optional (empty means
+  absent) and informational: how the SDK authenticates is unchanged.
+- **`Sensitive<T>::expose()`**, the public accessor §7 rule 3 names; the README and
+  examples use it, and the §28.12 example persists the rotated
+  `registration_access_token` with it.
+- **`HttpRequest::replayable`** for custom `Transport` implementations: `true` only on a
+  request the SDK itself may send again (see Fixed).
 
 ### Changed
 
-- A management `400`/`422` `ValidationError` now carries the server's `message`.
-- `Sensitive<std::string>` overwrites its bytes on destruction, reassignment and move.
-- The generator (`scripts/gen_management.py`) gained the re-sync fixes (implicit
-  tenant for `directory`/`saml`/`ssf`, URI-valued enum names, open unions) and the
-  `EXPLICIT_NULL_FIELDS`, `CALL_SITE_NOTES`, `PRECHECKS` and `MODEL_MEMBERS` tables.
+- **Management reads follow §16 (§27.4 rule 8).** A `GET` is retried on `408` and `429`
+  as well as on transport failures and `5xx`, and honours `Retry-After`.
+- **A management `400` / `422` `ValidationError` carries the server's `message`.**
+- **A refresh's `scope` is the response's (§12.1, contract 1.60).** `oidc_refresh` already
+  took it from the response, never from the request or the original grant; it is now
+  pinned by a test, since a server narrows a grant whose client registration was narrowed.
+- **The `actor_token` of a token exchange is this client's own (§15.2 rule 9).**
+  `TokenExchangeParams::actor_token`, the README and `examples/token_exchange.cpp` obtain
+  it from the same client's `client_credentials` grant; a token issued to another client
+  is answered `400 invalid_request` and surfaces unchanged.
+- **Documentation.** The README states conformance at contract 1.60, the P11 connection
+  rule, the replay-store and `replayed` acknowledgement rules (§34.2 P2, P4) and the
+  tri-state federation update. The §27 surface is regenerated from contract 1.60's
+  `openapi.json` and `management-registry.json` by `scripts/gen_management.py`, which now
+  carries the contract's call-site and field notes, the tri-state members and the local
+  prechecks as tables, and the drift check gates the release.
+
+### Fixed
+
+- **A never-retried write arrives exactly once (contract 1.60 A6, §34.2 P11).**
+  `CurlTransport` sets `CURLOPT_FRESH_CONNECT` and `CURLOPT_FORBID_REUSE` on every request
+  that is not a `GET` and that the SDK does not itself repeat, so libcurl has no dead pooled
+  connection to re-send a dropped write over; a `GET` after a write still reuses the pool.
+- **`ciba_poll` retries a `5xx` whatever its body (§33.4, §33.7 rule 5, P8).** A
+  `500 {"error":"server_error"}` no longer ends `ciba_await`: it is §16-retried, a
+  `NetworkError` once §16 is spent, and never terminal in the await loop.
+- **SSF JWKS fetches are rate-limited when they fail (§32.7 step 4, P6).** The
+  once-a-minute limit counts every failed fetch, the cold-cache fill and an expired cache's
+  refresh included; a SET needing a held-off fetch raises `NetworkError` without a request.
+  A successful fill is not "the refetch", so an unknown `kid` right after it still gets its
+  one refetch.
+- **After a replay store fails, a `poll` batch asks it nothing more (§34.2 P1, contract
+  1.60).** Every later SET that passes steps 1 – 8 is unjudged; one that fails them is
+  still refused.
+
+### Security
+
+- **The SSF key cache expires (§34.2 P6, contract 1.60).** It used to keep verifying with
+  a key the transmitter had removed; it now expires ten minutes after the successful fetch
+  that filled it, and the next SET fetches again.
+- **A replay store that cannot answer is no verdict (contract 1.60 B1, §34.2 P3, P4).**
+  `verify_set` raises whatever the store threw as a `NetworkError`
+  (`cause() == "replay_store_unavailable"`, no reason code), so it is never read as
+  `replayed`, and `poll` lists the SET as unjudged, unrecorded and unacknowledged.
+- **`Sensitive<std::string>` overwrites its bytes** on destruction, reassignment and move.
 
 ## [1.0.0-beta17] - 2026-09-25
 
