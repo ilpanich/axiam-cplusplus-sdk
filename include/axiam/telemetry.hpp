@@ -9,8 +9,8 @@
 // to documentation:
 //
 //   * No secrets, ever (rule 3). `TelemetryEvent` is a `std::variant` over the
-//     five structs below, each with a fixed member list and no map. The variant
-//     is closed by construction — a caller cannot add a sixth alternative — so
+//     six structs below, each with a fixed member list and no map. The variant
+//     is closed by construction — a caller cannot add a seventh alternative — so
 //     "there is nowhere to put a token in a payload bound for a metrics backend"
 //     is checkable by reading one declaration rather than trusting a review.
 //   * No cost when uninstalled (rule 1). Nothing here allocates; building an
@@ -18,6 +18,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -114,6 +115,24 @@ struct ConfigClampedEvent {
     std::string contract_reference;
 };
 
+/// Emitted when `ssf::SsfReceiver::poll` (§32.7) returns normally leaving at
+/// least one SET unjudged (§19.1, contract 1.60 SHOULD; §34.2 P1).
+///
+/// An unjudged SET is not an error the caller sees: poll() returns, and the
+/// transmitter offers the SET again. Without this event a JWKS or replay-store
+/// outage is invisible until the backlog grows. Counts only: no `jti`, no SET.
+/// One event per failure category present in the batch.
+struct SsfUnjudgedEvent {
+    /// The operation name, `ssf.poll`.
+    std::string operation;
+    /// How many SETs of the batch this category left unjudged.
+    std::size_t unjudged = 0;
+    /// What left them unjudged: `key_fetch` (a JWKS or discovery fetch that
+    /// failed or is held off for the minute) or `replay_store` (a store that
+    /// could not answer, and the SETs after it that were not put to it).
+    std::string category;
+};
+
 /// One §19.1 event.
 ///
 /// A closed `std::variant` rather than a class hierarchy: no code outside this
@@ -121,7 +140,7 @@ struct ConfigClampedEvent {
 /// secret" guarantee above hold by construction. Dispatch with `std::visit` or
 /// `std::holds_alternative`.
 using TelemetryEvent = std::variant<RequestStartEvent, RequestEndEvent, RetryEvent, RefreshEvent,
-                                    ConfigClampedEvent>;
+                                    ConfigClampedEvent, SsfUnjudgedEvent>;
 
 /// A caller-supplied telemetry sink (§19).
 ///

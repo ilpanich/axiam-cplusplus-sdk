@@ -6,10 +6,12 @@
 // the test: no key literal, and a signature this suite did not make cannot
 // verify.
 
+#include <chrono>
 #include <memory>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -625,8 +627,9 @@ AXIAM_TEST("§32.8 helper (8), contract 1.59 P1: a two-SET batch whose second SE
 
 AXIAM_TEST("§32.7 contract 1.59 P1/P3: a store that cannot answer leaves that SET unjudged, and the earlier ones returned") {
     Rig rig;
-    const std::string first = axtest::random_secret("jti-", 16);
-    const std::string second = axtest::random_secret("jti-", 16);
+    // The `sets` map is judged in key order: `first` sorts before `second`.
+    const std::string first = axtest::random_secret("jti-a-", 16);
+    const std::string second = axtest::random_secret("jti-b-", 16);
     rig.poll = [&](const HttpRequest&) {
         return json_response(200, json{{"sets",
                                         {{first, set_for(rig.key, claims(first))},
@@ -702,8 +705,9 @@ AXIAM_TEST("§32.8 helper (6), contract 1.60 B1/P4: a store that cannot answer i
 
 AXIAM_TEST("§32.8 helper (6), contract 1.60 B1/P4: poll returns a SET whose store cannot answer in neither events nor refused, records nothing, acknowledges nothing") {
     Rig rig;
-    const std::string good = axtest::random_secret("jti-", 16);
-    const std::string down = axtest::random_secret("jti-", 16);
+    // Judged in key order: `good` first, so it is recorded before the store fails.
+    const std::string good = axtest::random_secret("jti-a-", 16);
+    const std::string down = axtest::random_secret("jti-b-", 16);
     rig.poll = [&](const HttpRequest&) {
         return json_response(200, json{{"sets",
                                         {{good, set_for(rig.key, claims(good))},
@@ -738,6 +742,117 @@ AXIAM_TEST("§32.8 helper (6), contract 1.60 B1/P4: poll returns a SET whose sto
                 again.refused[0].reason == ssf::SetFailureReason::kReplayed);  // `good` was recorded
     AXIAM_REQUIRE(again.events.size() == 1);
     AXIAM_CHECK(again.events[0].jti == down);
+}
+
+AXIAM_TEST("§32.8 helper (6), contract 1.60 P1 (C-3): after the store fails, the batch asks it nothing more; poll emits ssf_unjudged") {
+    Rig rig;
+    const std::string down = axtest::random_secret("jti-a-", 16);
+    const std::string after = axtest::random_secret("jti-b-", 16);
+    const std::string forged = axtest::random_secret("jti-c-", 16);
+    axtest::TestKey stranger;  // a kid the JWKS does not hold: refused at step 4
+    stranger.kid = axtest::random_secret("kid-", 4);
+    rig.poll = [&](const HttpRequest&) {
+        return json_response(200, json{{"sets",
+                                        {{down, set_for(rig.key, claims(down))},
+                                         {after, set_for(rig.key, claims(after))},
+                                         {forged, set_for(stranger, claims(forged))}}}}
+                                      .dump());
+    };
+    struct CountingStore : ssf::ReplayStore {
+        int asked = 0;
+        bool check_and_record(const std::string&, std::chrono::seconds) override {
+            ++asked;
+            throw std::runtime_error("replay store unavailable");
+        }
+    };
+    auto store = std::make_shared<CountingStore>();
+    std::vector<SsfUnjudgedEvent> seen;
+    rig.client();  // installs the router
+    auto client = Client::builder()
+                      .base_url(kBase)
+                      .tenant_id("6f3e0a5c-1b2d-4e8f-9a7b-0c1d2e3f4a5b")
+                      .transport(axtest::make_fake(rig.st))
+                      .telemetry_hook([&seen](const TelemetryEvent& ev) {
+                          if (const auto* e = std::get_if<SsfUnjudgedEvent>(&ev)) seen.push_back(*e);
+                      })
+                      .build();
+    auto cfg = rig.config();
+    cfg.replay_store = store;
+    ssf::SsfReceiver receiver(client, cfg);
+
+    const auto result = receiver.poll("s-1");
+    AXIAM_CHECK(store->asked == 1);  // the first failure, and nothing after it
+    AXIAM_CHECK(result.events.empty());
+    AXIAM_REQUIRE(result.unjudged.size() == 2);
+    AXIAM_CHECK(result.unjudged[0].jti == down && result.unjudged[1].jti == after);
+    AXIAM_REQUIRE(result.refused.size() == 1);  // steps 1 - 8 still judge the rest
+    AXIAM_CHECK(result.refused[0].jti == forged &&
+                result.refused[0].reason == SetFailureReason::kInvalidKey);
+
+    // §19.1: one event, counts only -- no jti, no SET.
+    AXIAM_REQUIRE(seen.size() == 1);
+    AXIAM_CHECK(seen[0].operation == "ssf.poll");
+    AXIAM_CHECK(seen[0].unjudged == 2);
+    AXIAM_CHECK(seen[0].category == "replay_store");
+
+    // A key-fetch outage is the other category; a fully judged batch emits nothing.
+    seen.clear();
+    rig.jwks_status = 503;
+    auto fresh_cfg = rig.config();
+    ssf::SsfReceiver cold(client, fresh_cfg);
+    const auto outage = cold.poll("s-1");
+    AXIAM_CHECK(outage.unjudged.size() == 3);  // the forged one too: its key fetch failed
+    AXIAM_REQUIRE(seen.size() == 1);
+    AXIAM_CHECK(seen[0].category == "key_fetch" && seen[0].unjudged == 3);
+
+    seen.clear();
+    rig.poll = [](const HttpRequest&) {
+        return json_response(200, R"({"sets":{},"moreAvailable":false})");
+    };
+    receiver.poll("s-1");
+    AXIAM_CHECK(seen.empty());
+}
+
+AXIAM_TEST("§32.8 helper (7), contract 1.60 P6: the key cache expires within ten minutes, and a failed refresh is rate-limited") {
+    Rig rig;
+    auto client = rig.client();
+    ssf::SsfReceiver receiver(client, rig.config());
+    auto clock = std::chrono::steady_clock::now();
+    receiver._set_clock_for_testing([&clock] { return clock; });
+    const auto verify = [&] {
+        return receiver.verify_set(set_for(rig.key, claims(axtest::random_secret("jti-", 16))));
+    };
+
+    verify();
+    AXIAM_CHECK(rig.jwks_fetches() == 1);
+    clock += std::chrono::minutes(9);
+    verify();
+    AXIAM_CHECK(rig.jwks_fetches() == 1);  // still inside the lifetime: no fetch
+
+    // Ten minutes after the fill the cache has expired: the next SET fetches again,
+    // and that successful refresh is not counted toward the once-a-minute limit.
+    clock += std::chrono::minutes(1);
+    verify();
+    AXIAM_CHECK(rig.jwks_fetches() == 2);
+    axtest::TestKey stranger;
+    stranger.kid = axtest::random_secret("kid-", 4);
+    AXIAM_CHECK(refusal(receiver, set_for(stranger, claims(axtest::random_secret("jti-", 16)))) ==
+                SetFailureReason::kInvalidKey);
+    AXIAM_CHECK(rig.jwks_fetches() == 3);  // the unknown kid still got its one refetch
+
+    // The transmitter removed the key: once the cache expires it is no longer trusted.
+    // A refresh that fails is no verdict, and holds the next fetch off for the minute.
+    clock += std::chrono::minutes(10);
+    rig.jwks_status = 503;
+    AXIAM_REQUIRE_THROWS_AS(verify(), NetworkError);
+    AXIAM_CHECK(rig.jwks_fetches() == 4);
+    rig.jwks_status = 200;
+    rig.jwks_body = R"({"keys":[]})";
+    AXIAM_REQUIRE_THROWS_AS(verify(), NetworkError);  // inside the minute: no fetch
+    AXIAM_CHECK(rig.jwks_fetches() == 4);
+    clock += std::chrono::seconds(61);
+    AXIAM_CHECK(refusal(receiver, set_for(rig.key, claims(axtest::random_secret("jti-", 16)))) ==
+                SetFailureReason::kInvalidKey);  // refreshed: the removed key verifies nothing
 }
 
 AXIAM_TEST("§32.7: poll is never retried on a 400, and is on a 503 (retry enabled)") {

@@ -253,7 +253,9 @@ public:
     ///     a minute [invalid_key]. A FAILED fetch, the one that fills an empty
     ///     cache included, also waits out the minute: until it has passed, a SET
     ///     needing that fetch raises NetworkError without a request (contract
-    ///     1.59, §34.2 P6), so a JWKS outage is not one fetch per SET;
+    ///     1.59, §34.2 P6), so a JWKS outage is not one fetch per SET. The key
+    ///     cache expires ten minutes after the successful fetch that filled it,
+    ///     and the next SET fetches again (contract 1.60, P6);
     ///  5. the Ed25519 signature [invalid_key];
     ///  6. `iss` equal to the configured issuer [invalid_issuer];
     ///  7. `aud` equal to, or an array containing, the audience [invalid_audience];
@@ -289,14 +291,18 @@ public:
     /// the JWKS or discovery fetch, a replay store that cannot answer — leaves
     /// that SET in SsfPollResult::unjudged, in neither `events` nor `refused`,
     /// with its `jti` unrecorded; the rest of the batch is still judged and
-    /// returned. Do not acknowledge an unjudged SET: the transmitter offers it
-    /// again.
+    /// returned. After the first replay-store failure the store is asked nothing
+    /// more for the batch: every later SET that passes steps 1 - 8 is unjudged
+    /// too (contract 1.60). Do not acknowledge an unjudged SET: the transmitter
+    /// offers it again. A poll that leaves any SET unjudged emits §19's
+    /// SsfUnjudgedEvent (one per failure category; counts only).
     ///
     /// @throws AuthError, with no request sent, when no access_token_provider is set.
     SsfPollResult poll(const std::string& stream_id, const SsfPollOptions& options = {});
 
-    /// TEST SEAM — the monotonic clock the once-a-minute JWKS fetch limit reads
-    /// (§32.7 step 4), so a test can step past the minute without sleeping.
+    /// TEST SEAM — the monotonic clock the once-a-minute JWKS fetch limit and
+    /// the ten-minute key-cache lifetime read (§32.7 step 4, §34.2 P6), so a
+    /// test can step past either without sleeping.
     /// NEVER called in production; nothing in src/ writes it.
     void _set_clock_for_testing(std::function<std::chrono::steady_clock::time_point()> now);
 
