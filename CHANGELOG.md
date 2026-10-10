@@ -11,7 +11,7 @@ for the AXIAM **REST** surface over libcurl, with strict TLS and §6.1 mTLS clie
 certificates, plus the §22 reactor protocol core over a transport you supply. It conforms
 to `CONTRACT.md` §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27,
 §28, §28.12, §29, §30, §31, §32, §33 and §34 at **contract 1.60** (re-vendored with
-`openapi.json` and `management-registry.json` from axiam `3ed6547`), with the MUST-level §16
+`openapi.json` and `management-registry.json` from axiam `8df0e11`), with the MUST-level §16
 retry policy and §18 deterministic shutdown, and §32.7 and §33.2 signed (PS256, ES256,
 EdDSA). The management surface is 190 operations across 28 namespaces. gRPC (including
 §1.1, §1.1.1 and §10.3) and the §8 AMQP consumer are not shipped. This release closes the
