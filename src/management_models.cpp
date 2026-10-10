@@ -3138,7 +3138,10 @@ void to_json(nlohmann::json& j, const FederationConfigResponse& value) {
 }
 
 void from_json(const nlohmann::json& j, FederationConfigResponse& value) {
-    value.allow_sha1_signatures = j.at("allow_sha1_signatures").get<bool>();
+    value.allow_sha1_signatures = false;
+    if (auto it = j.find("allow_sha1_signatures"); it != j.end() && !it->is_null()) {
+        value.allow_sha1_signatures = it->get<bool>();
+    }
     value.allow_tenant_inheritance = j.at("allow_tenant_inheritance").get<bool>();
     value.allowed_algorithms = j.at("allowed_algorithms").get<std::vector<std::string>>();
     value.allowed_issuer_tenants = j.at("allowed_issuer_tenants").get<std::vector<std::string>>();
@@ -5871,20 +5874,24 @@ void to_json(nlohmann::json& j, const UpdateFederationConfigRequest& value) {
         j["allowed_issuer_tenants"] = *value.allowed_issuer_tenants;
     }
     if (value.apple_key_id) {
-        j["apple_key_id"] = *value.apple_key_id;
+        if (*value.apple_key_id) j["apple_key_id"] = **value.apple_key_id;
+        else j["apple_key_id"] = nullptr;
     }
     if (value.apple_team_id) {
-        j["apple_team_id"] = *value.apple_team_id;
+        if (*value.apple_team_id) j["apple_team_id"] = **value.apple_team_id;
+        else j["apple_team_id"] = nullptr;
     }
     if (value.attribute_map) {
         auto parsed = nlohmann::json::parse(*value.attribute_map, nullptr, false);
         if (!parsed.is_discarded()) j["attribute_map"] = parsed;
     }
     if (value.authorization_endpoint) {
-        j["authorization_endpoint"] = *value.authorization_endpoint;
+        if (*value.authorization_endpoint) j["authorization_endpoint"] = **value.authorization_endpoint;
+        else j["authorization_endpoint"] = nullptr;
     }
     if (value.button_icon) {
-        j["button_icon"] = *value.button_icon;
+        if (*value.button_icon) j["button_icon"] = **value.button_icon;
+        else j["button_icon"] = nullptr;
     }
     if (value.client_id) {
         j["client_id"] = *value.client_id;
@@ -5896,19 +5903,23 @@ void to_json(nlohmann::json& j, const UpdateFederationConfigRequest& value) {
         j["enabled"] = *value.enabled;
     }
     if (value.idp_metadata_signing_cert_pem) {
-        j["idp_metadata_signing_cert_pem"] = *value.idp_metadata_signing_cert_pem;
+        if (*value.idp_metadata_signing_cert_pem) j["idp_metadata_signing_cert_pem"] = **value.idp_metadata_signing_cert_pem;
+        else j["idp_metadata_signing_cert_pem"] = nullptr;
     }
     if (value.idp_signing_cert_pem) {
-        j["idp_signing_cert_pem"] = *value.idp_signing_cert_pem;
+        if (*value.idp_signing_cert_pem) j["idp_signing_cert_pem"] = **value.idp_signing_cert_pem;
+        else j["idp_signing_cert_pem"] = nullptr;
     }
     if (value.metadata_url) {
-        j["metadata_url"] = *value.metadata_url;
+        if (*value.metadata_url) j["metadata_url"] = **value.metadata_url;
+        else j["metadata_url"] = nullptr;
     }
     if (value.provider) {
         j["provider"] = *value.provider;
     }
     if (value.provider_slug) {
-        j["provider_slug"] = *value.provider_slug;
+        if (*value.provider_slug) j["provider_slug"] = **value.provider_slug;
+        else j["provider_slug"] = nullptr;
     }
     if (value.require_pkce) {
         j["require_pkce"] = *value.require_pkce;
@@ -5917,13 +5928,15 @@ void to_json(nlohmann::json& j, const UpdateFederationConfigRequest& value) {
         j["scopes"] = *value.scopes;
     }
     if (value.token_endpoint) {
-        j["token_endpoint"] = *value.token_endpoint;
+        if (*value.token_endpoint) j["token_endpoint"] = **value.token_endpoint;
+        else j["token_endpoint"] = nullptr;
     }
     if (value.token_exchange) {
         j["token_exchange"] = *value.token_exchange;
     }
     if (value.userinfo_endpoint) {
-        j["userinfo_endpoint"] = *value.userinfo_endpoint;
+        if (*value.userinfo_endpoint) j["userinfo_endpoint"] = **value.userinfo_endpoint;
+        else j["userinfo_endpoint"] = nullptr;
     }
 }
 
@@ -5940,20 +5953,24 @@ void from_json(const nlohmann::json& j, UpdateFederationConfigRequest& value) {
     if (auto it = j.find("allowed_issuer_tenants"); it != j.end() && !it->is_null()) {
         value.allowed_issuer_tenants = it->get<std::vector<std::string>>();
     }
-    if (auto it = j.find("apple_key_id"); it != j.end() && !it->is_null()) {
-        value.apple_key_id = it->get<std::string>();
+    if (auto it = j.find("apple_key_id"); it != j.end()) {
+        if (it->is_null()) value.apple_key_id.emplace(std::nullopt);
+        else value.apple_key_id.emplace(it->get<std::string>());
     }
-    if (auto it = j.find("apple_team_id"); it != j.end() && !it->is_null()) {
-        value.apple_team_id = it->get<std::string>();
+    if (auto it = j.find("apple_team_id"); it != j.end()) {
+        if (it->is_null()) value.apple_team_id.emplace(std::nullopt);
+        else value.apple_team_id.emplace(it->get<std::string>());
     }
     if (auto it = j.find("attribute_map"); it != j.end() && !it->is_null()) {
         value.attribute_map = it->dump();
     }
-    if (auto it = j.find("authorization_endpoint"); it != j.end() && !it->is_null()) {
-        value.authorization_endpoint = it->get<std::string>();
+    if (auto it = j.find("authorization_endpoint"); it != j.end()) {
+        if (it->is_null()) value.authorization_endpoint.emplace(std::nullopt);
+        else value.authorization_endpoint.emplace(it->get<std::string>());
     }
-    if (auto it = j.find("button_icon"); it != j.end() && !it->is_null()) {
-        value.button_icon = it->get<std::string>();
+    if (auto it = j.find("button_icon"); it != j.end()) {
+        if (it->is_null()) value.button_icon.emplace(std::nullopt);
+        else value.button_icon.emplace(it->get<std::string>());
     }
     if (auto it = j.find("client_id"); it != j.end() && !it->is_null()) {
         value.client_id = it->get<std::string>();
@@ -5964,20 +5981,24 @@ void from_json(const nlohmann::json& j, UpdateFederationConfigRequest& value) {
     if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
         value.enabled = it->get<bool>();
     }
-    if (auto it = j.find("idp_metadata_signing_cert_pem"); it != j.end() && !it->is_null()) {
-        value.idp_metadata_signing_cert_pem = it->get<std::string>();
+    if (auto it = j.find("idp_metadata_signing_cert_pem"); it != j.end()) {
+        if (it->is_null()) value.idp_metadata_signing_cert_pem.emplace(std::nullopt);
+        else value.idp_metadata_signing_cert_pem.emplace(it->get<std::string>());
     }
-    if (auto it = j.find("idp_signing_cert_pem"); it != j.end() && !it->is_null()) {
-        value.idp_signing_cert_pem = it->get<std::string>();
+    if (auto it = j.find("idp_signing_cert_pem"); it != j.end()) {
+        if (it->is_null()) value.idp_signing_cert_pem.emplace(std::nullopt);
+        else value.idp_signing_cert_pem.emplace(it->get<std::string>());
     }
-    if (auto it = j.find("metadata_url"); it != j.end() && !it->is_null()) {
-        value.metadata_url = it->get<std::string>();
+    if (auto it = j.find("metadata_url"); it != j.end()) {
+        if (it->is_null()) value.metadata_url.emplace(std::nullopt);
+        else value.metadata_url.emplace(it->get<std::string>());
     }
     if (auto it = j.find("provider"); it != j.end() && !it->is_null()) {
         value.provider = it->get<std::string>();
     }
-    if (auto it = j.find("provider_slug"); it != j.end() && !it->is_null()) {
-        value.provider_slug = it->get<std::string>();
+    if (auto it = j.find("provider_slug"); it != j.end()) {
+        if (it->is_null()) value.provider_slug.emplace(std::nullopt);
+        else value.provider_slug.emplace(it->get<std::string>());
     }
     if (auto it = j.find("require_pkce"); it != j.end() && !it->is_null()) {
         value.require_pkce = it->get<bool>();
@@ -5985,14 +6006,16 @@ void from_json(const nlohmann::json& j, UpdateFederationConfigRequest& value) {
     if (auto it = j.find("scopes"); it != j.end() && !it->is_null()) {
         value.scopes = it->get<std::vector<std::string>>();
     }
-    if (auto it = j.find("token_endpoint"); it != j.end() && !it->is_null()) {
-        value.token_endpoint = it->get<std::string>();
+    if (auto it = j.find("token_endpoint"); it != j.end()) {
+        if (it->is_null()) value.token_endpoint.emplace(std::nullopt);
+        else value.token_endpoint.emplace(it->get<std::string>());
     }
     if (auto it = j.find("token_exchange"); it != j.end() && !it->is_null()) {
         value.token_exchange = it->get<TokenExchangeTrustRequest>();
     }
-    if (auto it = j.find("userinfo_endpoint"); it != j.end() && !it->is_null()) {
-        value.userinfo_endpoint = it->get<std::string>();
+    if (auto it = j.find("userinfo_endpoint"); it != j.end()) {
+        if (it->is_null()) value.userinfo_endpoint.emplace(std::nullopt);
+        else value.userinfo_endpoint.emplace(it->get<std::string>());
     }
 }
 

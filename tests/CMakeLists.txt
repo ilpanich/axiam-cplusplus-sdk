@@ -37,6 +37,10 @@ add_executable(axiam_cpp_tests
   # calls out by name -- SubjectAltName's externally-tagged shape, a subject-side
   # inherit's open-default decode, and CertificateType's open-enum successor value.
   test_contract_151_models.cpp
+  # CONTRACT.md §27.15 (contract 1.60): window_minutes passed through unclamped,
+  # allow_sha1_signatures read as false when absent, idp_metadata_signing_cert_pem,
+  # and note 8's tri-state nullable members on federation.update_config.
+  test_contract_160_models.cpp
   # CONTRACT.md §5.2 rule 1 (contract 1.51): the acting-tenant helper -- sent when
   # set, absent when not, gated on a held login result, and part of the §17 memo key.
   test_acting_tenant.cpp

@@ -136,6 +136,30 @@ AXIAM_TEST("§31.8 (3): update without a credential sends none; with one sends i
                             std::invalid_argument);
 }
 
+AXIAM_TEST("§31.8 (3) (contract 1.60): expected_updated_at is sent exactly as given, absent when unset, and a 409 surfaces") {
+    auto fixture = axtest::mgmt::signed_in_three(
+        200, target_body().dump(), 200, target_body().dump(), 409,
+        R"({"error":"conflict","message":"the SCIM target changed since it was read"})");
+    auto s = fixture.client.scim_targets();
+
+    s.update("t-1", input(std::nullopt));
+    AXIAM_CHECK(!json::parse(fixture.state->last().body).contains("expected_updated_at"));
+
+    // Not the server's own rendering of the instant: the string is passed through
+    // unchanged, never re-formatted (fractional seconds and an offset kept).
+    const std::string read_at = "2026-10-05T02:00:00.123456+02:00";
+    auto guarded = input(std::nullopt);
+    guarded.expected_updated_at = read_at;
+    s.update("t-1", guarded);
+    AXIAM_CHECK(fixture.state->last().method == "PUT");
+    AXIAM_CHECK(json::parse(fixture.state->last().body).at("expected_updated_at") == read_at);
+
+    // §31.3 rule 4: an overtaken write is 409, surfaced once and never retried.
+    const auto before = fixture.state->count();
+    AXIAM_CHECK(what_of<ConflictError>([&] { s.update("t-1", guarded); }).rfind("caught:", 0) == 0);
+    AXIAM_CHECK(fixture.state->count() - before == 1);
+}
+
 AXIAM_TEST("§31.2 / P12.2 (B5): an unknown auth or scope type decodes but is never sent (std::invalid_argument)") {
     auto fixture = axtest::mgmt::signed_in(
         200, target_body({{"auth", {{"type", "mutual_tls"}, {"cert_ref", "x"}}},
@@ -271,7 +295,10 @@ AXIAM_TEST("§31: ScimTargetResponse::to_input() keeps every member but the cred
     AXIAM_CHECK(!in.credential.has_value());
     AXIAM_CHECK(in.push_groups == std::optional<bool>(true));
     AXIAM_CHECK(in.deprovision == std::optional<DeprovisionPolicy>(DeprovisionPolicy::Delete_));
+    // §31.3 rule 4 (contract 1.60): the read-modify-write form sends the version it read.
+    AXIAM_CHECK(in.expected_updated_at == std::optional<std::string>(t.updated_at));
     const json encoded = in;
+    AXIAM_CHECK(encoded.at("expected_updated_at") == "2026-10-05T00:00:00Z");
     AXIAM_CHECK(encoded.at("auth").at("token_url") == "https://idp.example.com/token");
     AXIAM_CHECK(encoded.at("scope") == json({{"type", "groups"}, {"group_ids", {"g-1"}}}));
 }

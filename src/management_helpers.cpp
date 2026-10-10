@@ -89,6 +89,9 @@ ScimTargetInput ScimTargetResponse::to_input() const {
     out.enabled = enabled;
     out.push_groups = push_groups;
     out.user_name_from = user_name_from;
+    // §31.3 rule 4 (contract 1.60): the read-modify-write form sends the version it
+    // read, so an administrator's write that landed since is a 409, not overwritten.
+    out.expected_updated_at = updated_at;
     return out;
 }
 

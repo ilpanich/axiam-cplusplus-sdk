@@ -2613,7 +2613,9 @@ struct TokenExchangeTrustResponse {
 /// Federation config response -- omits client_secret.
 struct FederationConfigResponse {
     /// SAML only: whether IdP responses signed with SHA-1 are accepted (default `false`; #531).
-    bool allow_sha1_signatures;
+    /// A response that lacks it (a server older than the field) decodes as `false` (CONTRACT.md
+    /// §27.15, contract 1.60).
+    bool allow_sha1_signatures = false;
     /// Whether tenants of this organization may inherit this provider.
     bool allow_tenant_inheritance;
     /// Accepted signing algorithms. Returned for OIDC and SAML; meaningless, and therefore
@@ -4092,7 +4094,9 @@ struct ScimTargetResponse {
 
     /// The replacement body for `scim_targets.update` holding every member of this read.
     /// `credential` is absent: no read carries it, and absent keeps the stored one -- unless
-    /// the update moves the URL (§31.3 rule 2).
+    /// the update moves the URL (§31.3 rule 2). `expected_updated_at` is this read's
+    /// `updated_at`, so the update is refused `409` if another write landed since (§31.3 rule
+    /// 4, contract 1.60); reset it to send an unconditional replacement.
     ScimTargetInput to_input() const;
 };
 
@@ -4756,16 +4760,24 @@ struct UpdateFederationConfigRequest {
     std::optional<std::vector<std::string>> allowed_algorithms = std::nullopt;
     /// Accepted external IdP tenants for a templated issuer. Replaced wholesale. Optional.
     std::optional<std::vector<std::string>> allowed_issuer_tenants = std::nullopt;
-    /// Apple Key ID. Explicit `null` clears it. Optional.
-    std::optional<std::string> apple_key_id = std::nullopt;
-    /// Apple Team ID. Explicit `null` clears it. Optional.
-    std::optional<std::string> apple_team_id = std::nullopt;
+    /// Apple Key ID. Explicit `null` clears it. Tri-state (§27.4 rule 5, null is not absent):
+    /// `std::nullopt` omits the member; an engaged value holding `std::nullopt` is JSON `null`;
+    /// a value is a value.
+    std::optional<std::optional<std::string>> apple_key_id = std::nullopt;
+    /// Apple Team ID. Explicit `null` clears it. Tri-state (§27.4 rule 5, null is not absent):
+    /// `std::nullopt` omits the member; an engaged value holding `std::nullopt` is JSON `null`;
+    /// a value is a value.
+    std::optional<std::optional<std::string>> apple_team_id = std::nullopt;
     /// The server's `attribute_map` field. Optional.
     std::optional<std::string> attribute_map = std::nullopt;
-    /// OAuth2-variant authorization endpoint. Explicit `null` clears it. Optional.
-    std::optional<std::string> authorization_endpoint = std::nullopt;
-    /// Sign-in-button icon for a generic provider. Explicit `null` clears it. Optional.
-    std::optional<std::string> button_icon = std::nullopt;
+    /// OAuth2-variant authorization endpoint. Explicit `null` clears it. Tri-state (§27.4 rule
+    /// 5, null is not absent): `std::nullopt` omits the member; an engaged value holding
+    /// `std::nullopt` is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> authorization_endpoint = std::nullopt;
+    /// Sign-in-button icon for a generic provider. Explicit `null` clears it. Tri-state (§27.4
+    /// rule 5, null is not absent): `std::nullopt` omits the member; an engaged value holding
+    /// `std::nullopt` is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> button_icon = std::nullopt;
     /// The server's `client_id` field. Optional.
     std::optional<std::string> client_id = std::nullopt;
     /// The server's `client_secret` field -- a ONE-TIME secret (§27.5). Optional.
@@ -4775,28 +4787,39 @@ struct UpdateFederationConfigRequest {
     /// SAML only: the IdP metadata signing certificate (#530). Explicit `null` clears it;
     /// omitted leaves it. Clearing it is audited (`federation.metadata_signing_cert_cleared`),
     /// and so is replacing it with a different certificate
-    /// (`federation.metadata_signing_cert_changed`). Optional.
-    std::optional<std::string> idp_metadata_signing_cert_pem = std::nullopt;
+    /// (`federation.metadata_signing_cert_changed`). Tri-state (§27.4 rule 5, null is not
+    /// absent): `std::nullopt` omits the member; an engaged value holding `std::nullopt` is
+    /// JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> idp_metadata_signing_cert_pem = std::nullopt;
     /// PEM-encoded X.509 certificate for verifying SAML assertions (CQ-B40/REQ-14 AC-5).
-    /// Explicit `null` clears the stored cert; omitted leaves it. Optional.
-    std::optional<std::string> idp_signing_cert_pem = std::nullopt;
+    /// Explicit `null` clears the stored cert; omitted leaves it. Tri-state (§27.4 rule 5, null
+    /// is not absent): `std::nullopt` omits the member; an engaged value holding `std::nullopt`
+    /// is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> idp_signing_cert_pem = std::nullopt;
     /// OIDC discovery or SAML metadata URL. Explicit `null` clears it; omitted leaves it.
-    /// Optional.
-    std::optional<std::string> metadata_url = std::nullopt;
+    /// Tri-state (§27.4 rule 5, null is not absent): `std::nullopt` omits the member; an
+    /// engaged value holding `std::nullopt` is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> metadata_url = std::nullopt;
     /// The server's `provider` field. Optional.
     std::optional<std::string> provider = std::nullopt;
-    /// Operator-chosen identifier for a `generic_*` kind. Explicit `null` clears it. Optional.
-    std::optional<std::string> provider_slug = std::nullopt;
+    /// Operator-chosen identifier for a `generic_*` kind. Explicit `null` clears it. Tri-state
+    /// (§27.4 rule 5, null is not absent): `std::nullopt` omits the member; an engaged value
+    /// holding `std::nullopt` is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> provider_slug = std::nullopt;
     /// Send PKCE on the authorization request. Optional.
     std::optional<bool> require_pkce = std::nullopt;
     /// Scopes to request. Replaced wholesale; empty restores the per-kind default. Optional.
     std::optional<std::vector<std::string>> scopes = std::nullopt;
-    /// OAuth2-variant token endpoint. Explicit `null` clears it. Optional.
-    std::optional<std::string> token_endpoint = std::nullopt;
+    /// OAuth2-variant token endpoint. Explicit `null` clears it. Tri-state (§27.4 rule 5, null
+    /// is not absent): `std::nullopt` omits the member; an engaged value holding `std::nullopt`
+    /// is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> token_endpoint = std::nullopt;
     /// The server's `token_exchange` field. Optional.
     std::optional<TokenExchangeTrustRequest> token_exchange = std::nullopt;
-    /// OAuth2-variant userinfo endpoint. Explicit `null` clears it. Optional.
-    std::optional<std::string> userinfo_endpoint = std::nullopt;
+    /// OAuth2-variant userinfo endpoint. Explicit `null` clears it. Tri-state (§27.4 rule 5,
+    /// null is not absent): `std::nullopt` omits the member; an engaged value holding
+    /// `std::nullopt` is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> userinfo_endpoint = std::nullopt;
 };
 
 /// The `UpdateGroup` schema from the server's OpenAPI document.

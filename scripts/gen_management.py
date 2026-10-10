@@ -89,6 +89,24 @@ EXPLICIT_NULL_FIELDS: set[tuple[str, str]] = {
     # absent member, so a server that stopped sending the member is noticed.
     ("SamlIdpInfo", "active_credential_id"),
     ("SamlIdpInfo", "next_credential_id"),
+    # §27.15 note 8 (contract 1.60): on `federation.update_config` each of these ten
+    # is CLEARED by an explicit `null` and left unchanged when omitted. The body's
+    # other members cannot be cleared (the server reads their `null` as absent), so
+    # they stay plain optionals that are only ever omitted.
+    *(("UpdateFederationConfigRequest", wire) for wire in (
+        "metadata_url", "idp_signing_cert_pem", "idp_metadata_signing_cert_pem",
+        "provider_slug", "authorization_endpoint", "token_endpoint", "userinfo_endpoint",
+        "apple_team_id", "apple_key_id", "button_icon",
+    )),
+}
+
+# Required RESPONSE members a server older than the field does not send, where the
+# contract names the value an absent member reads as. Declared as the plain type with
+# that default, decoded leniently (absent or `null` keeps the default), so a caller
+# never has to tell "older server" from "off". §27.15 note 6 (contract 1.60):
+# `FederationConfigResponse.allow_sha1_signatures` "decodes as `false`" when absent.
+ABSENT_DEFAULTS: dict[tuple[str, str], str] = {
+    ("FederationConfigResponse", "allow_sha1_signatures"): "false",
 }
 
 # Call-site documentation the contract makes an SDK repeat (§29.3, §30.3, §31.3,
@@ -297,7 +315,9 @@ MODEL_MEMBERS: dict[str, list[tuple[str, str]]] = {
     "ScimTargetResponse": [(
         "The replacement body for `scim_targets.update` holding every member of this "
         "read. `credential` is absent: no read carries it, and absent keeps the stored "
-        "one -- unless the update moves the URL (§31.3 rule 2).",
+        "one -- unless the update moves the URL (§31.3 rule 2). `expected_updated_at` is "
+        "this read's `updated_at`, so the update is refused `409` if another write landed "
+        "since (§31.3 rule 4, contract 1.60); reset it to send an unconditional replacement.",
         "ScimTargetInput to_input() const;",
     )],
     "ScimTargetAuth": [
@@ -864,6 +884,7 @@ def fields_of(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]]
             "ref": info["ref"], "required": wire in required, "schema": sub,
             "secret": wire in secrets,
             "explicit_null": (schema_name, wire) in EXPLICIT_NULL_FIELDS,
+            "absent_default": ABSENT_DEFAULTS.get((schema_name, wire)),
             "description": sub.get("description") if isinstance(sub, dict) else None,
         })
     return out, description
@@ -896,6 +917,9 @@ FIELD_NOTES: dict[str, str] = {
 def field_doc(f: dict[str, Any]) -> str:
     """The one-line description for a member, plus any FIELD_NOTES entry."""
     base = _field_doc(f)
+    if f.get("absent_default"):
+        base += (f" A response that lacks it (a server older than the field) decodes as "
+                 f"`{f['absent_default']}` (CONTRACT.md \u00a727.15, contract 1.60).")
     note = FIELD_NOTES.get(f["wire"])
     return f"{base} {note}" if note else base
 
@@ -1163,6 +1187,8 @@ def emit_models_header() -> str:
             default = "" if f["required"] else " = std::nullopt"
             if f["required"] and name in REQUIRED_CTOR:
                 default = "{}"
+            if f.get("absent_default"):
+                default = f" = {f['absent_default']}"
             out.append(f"    {declared(f)} {f['name']}{default};")
         for text, decl in MODEL_MEMBERS.get(name, []):
             out.append("")
@@ -1333,6 +1359,14 @@ def emit_from_json_member(f: dict[str, Any]) -> list[str]:
         read = f'j.at("{w}").get<{f["decl"]}>()'
         opt_read = f'it->get<{f["decl"]}>()'
 
+    if f["required"] and f.get("absent_default"):
+        # ABSENT_DEFAULTS: absent or null keeps the contract's default, never throws.
+        return [
+            f"    value.{n} = {f['absent_default']};",
+            f'    if (auto it = j.find("{w}"); it != j.end() && !it->is_null()) {{',
+            f"        value.{n} = {opt_read};",
+            "    }",
+        ]
     if f["required"]:
         return [f"    value.{n} = {read};"]
     return [
