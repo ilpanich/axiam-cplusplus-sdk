@@ -282,10 +282,22 @@ SecurityEvent SsfReceiver::State::verify(const std::string& set,
         refuse(SetFailureReason::kInvalidRequest, "the poll key is not the SET's jti");
     }
 
-    // 9. Recorded only now, once everything else passed.
-    if (!config.replay_store->check_and_record(id, config.replay_window)) {
-        refuse(SetFailureReason::kReplayed, "this jti was already accepted");
+    // 9. Recorded only now, once everything else passed. The store has three answers
+    //    (§34.2 P4): seen, not seen, and CANNOT ANSWER -- which a C++ store gives by
+    //    throwing. That is no verdict: it is raised as the §2 NetworkError, never as a
+    //    SetVerificationError (so it carries no reason code and can never be read as
+    //    `replayed`, which poll() would hand back to the transmitter as a refusal), and
+    //    poll() leaves the SET unjudged and unrecorded.
+    bool first_sight = false;
+    try {
+        first_sight = config.replay_store->check_and_record(id, config.replay_window);
+    } catch (const std::exception& e) {
+        throw NetworkError(std::string("ssf: the replay store could not answer: ") + e.what(),
+                           "replay_store_unavailable");
+    } catch (...) {
+        throw NetworkError("ssf: the replay store could not answer", "replay_store_unavailable");
     }
+    if (!first_sight) refuse(SetFailureReason::kReplayed, "this jti was already accepted");
 
     SecurityEvent out;
     out.jti = id;

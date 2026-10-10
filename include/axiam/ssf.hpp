@@ -116,9 +116,14 @@ public:
     virtual ~ReplayStore() = default;
     /// Record `jti` for `window` and return true, or return false WITHOUT
     /// recording when it is already held. Must be atomic: two concurrent calls
-    /// with one `jti` must not both see true. When the store cannot answer,
-    /// THROW, having recorded nothing: verify_set() then fails closed, and
-    /// poll() leaves the SET unjudged (contract 1.59, §34.2 P1, P4).
+    /// with one `jti` must not both see true. A store has THREE answers (seen,
+    /// not seen, cannot answer) and this interface gives the third by throwing:
+    /// when the store cannot answer, THROW, having recorded nothing. That is no
+    /// verdict (contract 1.60, §34.2 P4): verify_set() raises it as a NetworkError
+    /// with no reason code -- the SET is neither refused nor accepted, and is
+    /// never read as `replayed` -- and poll() leaves the SET unjudged, unrecorded
+    /// and unacknowledged, so the transmitter offers it again. Never answer
+    /// `false` ("already seen") for a store that is merely unavailable.
     virtual bool check_and_record(const std::string& jti, std::chrono::seconds window) = 0;
 };
 
@@ -262,7 +267,8 @@ public:
     ///
     /// @throws SetVerificationError for a refused SET.
     /// @throws NetworkError when the JWKS (or the discovery document) could not
-    ///         be fetched — which is not a verdict on the SET.
+    ///         be fetched, or the ReplayStore could not answer — which is not a
+    ///         verdict on the SET (§34.2 P3, P4).
     SecurityEvent verify_set(const std::string& set);
 
     /// Poll the stream's RFC 8936 endpoint, `{base_url}/ssf/v1/poll/{stream_id}`,
