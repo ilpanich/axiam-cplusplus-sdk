@@ -6,6 +6,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-10
+
 The AXIAM C++ SDK at 1.0.0 is a C++17 client (tested through C++23, with g++ and clang++)
 for the AXIAM **REST** surface over libcurl, with strict TLS and §6.1 mTLS client
 certificates, plus the §22 reactor protocol core over a transport you supply. It conforms
@@ -120,6 +122,28 @@ silent change on the wire.
 - **`HttpRequest::replayable`** for custom `Transport` implementations: `true` only on a
   request the SDK itself may send again (see Fixed).
 
+- The four revocation and introspection discovery members; a refresh's scope is the response's (contract 1.60 §21.5, §12.1)
+
+- Federation update nulls clear; allow_sha1_signatures absent reads false; to_input() sends expected_updated_at (contract 1.60 §27.15, §31)
+
+- A local refusal is std::invalid_argument; an unseen event-type URI round-trips (contract 1.60 B5, B4, P12.2)
+
+- The four replacement inputs cannot be built without their required members (R-27, F-4)
+
+- expose() is the single public accessor; docs persist the rotated token with it (R-19, F-8)
+
+- CIBA initiation, polling and ping helpers, signed form (CONTRACT §33, §21.3.1)
+
+- SSF stream management and the receiver helper (CONTRACT §32, §32.7)
+
+- scim_targets namespace semantics and required tests (CONTRACT §31)
+
+- Saml namespace semantics and required tests (CONTRACT §29)
+
+- Directory namespace semantics and generator infra (CONTRACT §30)
+
+- RFC 7592 client configuration operations (CONTRACT §28.12)
+
 ### Changed
 
 - **Management reads follow §16 (§27.4 rule 8).** A `GET` is retried on `408` and `429`
@@ -139,6 +163,28 @@ silent change on the wire.
   carries the contract's call-site and field notes, the tri-state members and the local
   prechecks as tables, and the drift check gates the release.
 
+- re-vendor at axiam 8df0e11 (the R1W1 tls_client_auth note, the spec digest)
+
+- README at contract 1.60; the 1.0.0 changelog; the vcpkg port at the declared version
+
+- re-vendor contract 1.60, the spec and the registry (axiam 3ed6547)
+
+- The actor token is the exchanging client's own client_credentials token (contract 1.60 §15.2 rule 9)
+
+- re-vendor CONTRACT.md at contract 1.60
+
+- Contract 1.59 conformance statement and changelog (F-59-11)
+
+- §31.3 rule 2 on scim_targets.create, the ECDSA note on sp_signing_cert_pem (R-29, F-6, F-7)
+
+- re-vendor CONTRACT.md at contract 1.59 (axiam fe369eb)
+
+- Contract 1.58 conformance statement, usage, changelog
+
+- re-vendor contract 1.58 artifacts and regenerate §27 surface
+
+- re-vendor openapi.json + management-registry.json after utoipa 6
+
 ### Fixed
 
 - **A never-retried write arrives exactly once (contract 1.60 A6, §34.2 P11).**
@@ -156,6 +202,24 @@ silent change on the wire.
 - **After a replay store fails, a `poll` batch asks it nothing more (§34.2 P1, contract
   1.60).** Every later SET that passes steps 1 – 8 is unjudged; one that fails them is
   still refused.
+
+- The key cache expires within ten minutes; a failed store ends the batch's store calls; poll emits ssf_unjudged (contract 1.60 P6, P1, §19.1)
+
+- A replay store that cannot answer is raised as NetworkError and is no verdict (contract 1.60 B1, P3, P4)
+
+- A never-retried write goes on a fresh connection and arrives once (contract 1.60 A6, P11)
+
+- Reads are retried on 408 and 429 and honour Retry-After (R-30, F-11)
+
+- Event types are strings; an unknown value is refused locally, never sent as "" (R-22, F-5)
+
+- RFC 7592 update sends only the lists the read carried, mistyped ones as read (R-23, F-10)
+
+- A 5xx on ciba_poll is transient whatever its body (R-11, F-2)
+
+- A failed JWKS fetch, the cold-cache fill included, waits out the minute (R-8, F-13)
+
+- Poll never keeps a jti it does not return; unjudged SETs listed (R-1, F-1)
 
 ### Security
 
