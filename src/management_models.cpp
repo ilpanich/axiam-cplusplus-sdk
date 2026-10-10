@@ -2154,6 +2154,9 @@ void from_json(const nlohmann::json& j, TokenExchangeTrustRequest& value) {
 
 void to_json(nlohmann::json& j, const CreateFederationConfigRequest& value) {
     j = nlohmann::json::object();
+    if (value.allow_sha1_signatures) {
+        j["allow_sha1_signatures"] = *value.allow_sha1_signatures;
+    }
     if (value.allow_tenant_inheritance) {
         j["allow_tenant_inheritance"] = *value.allow_tenant_inheritance;
     }
@@ -2181,6 +2184,9 @@ void to_json(nlohmann::json& j, const CreateFederationConfigRequest& value) {
     }
     j["client_id"] = value.client_id;
     j["client_secret"] = detail::reveal(value.client_secret);
+    if (value.idp_metadata_signing_cert_pem) {
+        j["idp_metadata_signing_cert_pem"] = *value.idp_metadata_signing_cert_pem;
+    }
     if (value.idp_signing_cert_pem) {
         j["idp_signing_cert_pem"] = *value.idp_signing_cert_pem;
     }
@@ -2213,6 +2219,9 @@ void to_json(nlohmann::json& j, const CreateFederationConfigRequest& value) {
 }
 
 void from_json(const nlohmann::json& j, CreateFederationConfigRequest& value) {
+    if (auto it = j.find("allow_sha1_signatures"); it != j.end() && !it->is_null()) {
+        value.allow_sha1_signatures = it->get<bool>();
+    }
     if (auto it = j.find("allow_tenant_inheritance"); it != j.end() && !it->is_null()) {
         value.allow_tenant_inheritance = it->get<bool>();
     }
@@ -2239,6 +2248,9 @@ void from_json(const nlohmann::json& j, CreateFederationConfigRequest& value) {
     }
     value.client_id = j.at("client_id").get<std::string>();
     value.client_secret = Sensitive<std::string>(j.at("client_secret").get<std::string>());
+    if (auto it = j.find("idp_metadata_signing_cert_pem"); it != j.end() && !it->is_null()) {
+        value.idp_metadata_signing_cert_pem = it->get<std::string>();
+    }
     if (auto it = j.find("idp_signing_cert_pem"); it != j.end() && !it->is_null()) {
         value.idp_signing_cert_pem = it->get<std::string>();
     }
@@ -2309,6 +2321,9 @@ void to_json(nlohmann::json& j, const CreateNotificationRuleRequest& value) {
     j["events"] = value.events;
     j["name"] = value.name;
     j["recipient_emails"] = value.recipient_emails;
+    if (value.window_minutes) {
+        j["window_minutes"] = *value.window_minutes;
+    }
 }
 
 void from_json(const nlohmann::json& j, CreateNotificationRuleRequest& value) {
@@ -2316,6 +2331,9 @@ void from_json(const nlohmann::json& j, CreateNotificationRuleRequest& value) {
     value.events = j.at("events").get<std::vector<NotificationEventType>>();
     value.name = j.at("name").get<std::string>();
     value.recipient_emails = j.at("recipient_emails").get<std::vector<std::string>>();
+    if (auto it = j.find("window_minutes"); it != j.end() && !it->is_null()) {
+        value.window_minutes = it->get<std::int64_t>();
+    }
 }
 
 void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value) {
@@ -3070,6 +3088,7 @@ void from_json(const nlohmann::json& j, TokenExchangeTrustResponse& value) {
 
 void to_json(nlohmann::json& j, const FederationConfigResponse& value) {
     j = nlohmann::json::object();
+    j["allow_sha1_signatures"] = value.allow_sha1_signatures;
     j["allow_tenant_inheritance"] = value.allow_tenant_inheritance;
     j["allowed_algorithms"] = value.allowed_algorithms;
     j["allowed_issuer_tenants"] = value.allowed_issuer_tenants;
@@ -3092,6 +3111,9 @@ void to_json(nlohmann::json& j, const FederationConfigResponse& value) {
     j["enabled"] = value.enabled;
     j["has_bundled_mark"] = value.has_bundled_mark;
     j["id"] = value.id;
+    if (value.idp_metadata_signing_cert_pem) {
+        j["idp_metadata_signing_cert_pem"] = *value.idp_metadata_signing_cert_pem;
+    }
     if (value.metadata_url) {
         j["metadata_url"] = *value.metadata_url;
     }
@@ -3116,6 +3138,7 @@ void to_json(nlohmann::json& j, const FederationConfigResponse& value) {
 }
 
 void from_json(const nlohmann::json& j, FederationConfigResponse& value) {
+    value.allow_sha1_signatures = j.at("allow_sha1_signatures").get<bool>();
     value.allow_tenant_inheritance = j.at("allow_tenant_inheritance").get<bool>();
     value.allowed_algorithms = j.at("allowed_algorithms").get<std::vector<std::string>>();
     value.allowed_issuer_tenants = j.at("allowed_issuer_tenants").get<std::vector<std::string>>();
@@ -3138,6 +3161,9 @@ void from_json(const nlohmann::json& j, FederationConfigResponse& value) {
     value.enabled = j.at("enabled").get<bool>();
     value.has_bundled_mark = j.at("has_bundled_mark").get<bool>();
     value.id = j.at("id").get<std::string>();
+    if (auto it = j.find("idp_metadata_signing_cert_pem"); it != j.end() && !it->is_null()) {
+        value.idp_metadata_signing_cert_pem = it->get<std::string>();
+    }
     if (auto it = j.find("metadata_url"); it != j.end() && !it->is_null()) {
         value.metadata_url = it->get<std::string>();
     }
@@ -3602,6 +3628,7 @@ void to_json(nlohmann::json& j, const NotificationRuleResponse& value) {
     j["recipient_emails"] = value.recipient_emails;
     j["tenant_id"] = value.tenant_id;
     j["updated_at"] = value.updated_at;
+    j["window_minutes"] = value.window_minutes;
 }
 
 void from_json(const nlohmann::json& j, NotificationRuleResponse& value) {
@@ -3614,6 +3641,7 @@ void from_json(const nlohmann::json& j, NotificationRuleResponse& value) {
     value.recipient_emails = j.at("recipient_emails").get<std::vector<std::string>>();
     value.tenant_id = j.at("tenant_id").get<std::string>();
     value.updated_at = j.at("updated_at").get<std::string>();
+    value.window_minutes = j.at("window_minutes").get<std::int64_t>();
 }
 
 void to_json(nlohmann::json& j, const OAuth2ClientCreatedResponse& value) {
@@ -4723,6 +4751,9 @@ void to_json(nlohmann::json& j, const ScimTargetInput& value) {
     if (value.enabled) {
         j["enabled"] = *value.enabled;
     }
+    if (value.expected_updated_at) {
+        j["expected_updated_at"] = *value.expected_updated_at;
+    }
     j["name"] = value.name;
     if (value.push_groups) {
         j["push_groups"] = *value.push_groups;
@@ -4744,6 +4775,9 @@ void from_json(const nlohmann::json& j, ScimTargetInput& value) {
     }
     if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
         value.enabled = it->get<bool>();
+    }
+    if (auto it = j.find("expected_updated_at"); it != j.end() && !it->is_null()) {
+        value.expected_updated_at = it->get<std::string>();
     }
     value.name = j.at("name").get<std::string>();
     if (auto it = j.find("push_groups"); it != j.end() && !it->is_null()) {
@@ -5824,6 +5858,9 @@ void from_json(const nlohmann::json& j, UpdateDirectoryConfig& value) {
 
 void to_json(nlohmann::json& j, const UpdateFederationConfigRequest& value) {
     j = nlohmann::json::object();
+    if (value.allow_sha1_signatures) {
+        j["allow_sha1_signatures"] = *value.allow_sha1_signatures;
+    }
     if (value.allow_tenant_inheritance) {
         j["allow_tenant_inheritance"] = *value.allow_tenant_inheritance;
     }
@@ -5858,6 +5895,9 @@ void to_json(nlohmann::json& j, const UpdateFederationConfigRequest& value) {
     if (value.enabled) {
         j["enabled"] = *value.enabled;
     }
+    if (value.idp_metadata_signing_cert_pem) {
+        j["idp_metadata_signing_cert_pem"] = *value.idp_metadata_signing_cert_pem;
+    }
     if (value.idp_signing_cert_pem) {
         j["idp_signing_cert_pem"] = *value.idp_signing_cert_pem;
     }
@@ -5888,6 +5928,9 @@ void to_json(nlohmann::json& j, const UpdateFederationConfigRequest& value) {
 }
 
 void from_json(const nlohmann::json& j, UpdateFederationConfigRequest& value) {
+    if (auto it = j.find("allow_sha1_signatures"); it != j.end() && !it->is_null()) {
+        value.allow_sha1_signatures = it->get<bool>();
+    }
     if (auto it = j.find("allow_tenant_inheritance"); it != j.end() && !it->is_null()) {
         value.allow_tenant_inheritance = it->get<bool>();
     }
@@ -5920,6 +5963,9 @@ void from_json(const nlohmann::json& j, UpdateFederationConfigRequest& value) {
     }
     if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
         value.enabled = it->get<bool>();
+    }
+    if (auto it = j.find("idp_metadata_signing_cert_pem"); it != j.end() && !it->is_null()) {
+        value.idp_metadata_signing_cert_pem = it->get<std::string>();
     }
     if (auto it = j.find("idp_signing_cert_pem"); it != j.end() && !it->is_null()) {
         value.idp_signing_cert_pem = it->get<std::string>();
@@ -5993,6 +6039,9 @@ void to_json(nlohmann::json& j, const UpdateNotificationRuleRequest& value) {
     if (value.recipient_emails) {
         j["recipient_emails"] = *value.recipient_emails;
     }
+    if (value.window_minutes) {
+        j["window_minutes"] = *value.window_minutes;
+    }
 }
 
 void from_json(const nlohmann::json& j, UpdateNotificationRuleRequest& value) {
@@ -6010,6 +6059,9 @@ void from_json(const nlohmann::json& j, UpdateNotificationRuleRequest& value) {
     }
     if (auto it = j.find("recipient_emails"); it != j.end() && !it->is_null()) {
         value.recipient_emails = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("window_minutes"); it != j.end() && !it->is_null()) {
+        value.window_minutes = it->get<std::int64_t>();
     }
 }
 

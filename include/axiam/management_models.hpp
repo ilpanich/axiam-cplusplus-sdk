@@ -1950,6 +1950,11 @@ struct TokenExchangeTrustRequest {
 
 /// The `CreateFederationConfigRequest` schema from the server's OpenAPI document.
 struct CreateFederationConfigRequest {
+    /// SAML only: accept IdP responses signed with SHA-1 (`rsa-sha1`). Default `false` — since
+    /// 1.0.0 the SP verifier accepts only SHA-2 signatures. The escape hatch for an IdP that
+    /// cannot sign with SHA-2 yet; refused on a non-SAML config, and audited
+    /// (`federation.sha1_signatures_allowed`) when set to `true`. Optional.
+    std::optional<bool> allow_sha1_signatures = std::nullopt;
     /// Whether tenants of this organization may inherit this provider. Only meaningful on a
     /// config in the organization-scope tenant. Optional.
     std::optional<bool> allow_tenant_inheritance = std::nullopt;
@@ -1979,6 +1984,11 @@ struct CreateFederationConfigRequest {
     std::string client_id;
     /// OAuth2 client secret registered with the external IdP.
     Sensitive<std::string> client_secret;
+    /// SAML only: the PEM certificate the IdP signs its metadata document with (#530). When
+    /// set, the metadata must carry one SHA-2 signature on its `EntityDescriptor` root that
+    /// verifies against it, or no sign-in starts. Omitted: the metadata is not
+    /// signature-checked. Optional.
+    std::optional<std::string> idp_metadata_signing_cert_pem = std::nullopt;
     /// PEM-encoded X.509 certificate for verifying SAML assertions or OIDC signatures
     /// (CQ-B40/REQ-14 AC-5). Required for SAML configs. Optional.
     std::optional<std::string> idp_signing_cert_pem = std::nullopt;
@@ -2043,6 +2053,10 @@ struct CreateNotificationRuleRequest {
     std::string name;
     /// Email addresses to notify.
     std::vector<std::string> recipient_emails;
+    /// Minutes in which one event type mails each recipient at most once: the first event of a
+    /// window is mailed, the rest are counted and the next mail says how many were not sent
+    /// (#551). 1 … 1440; 15 when omitted. Optional.
+    std::optional<std::int64_t> window_minutes = std::nullopt;
 };
 
 /// The `CreateOAuth2ClientRequest` schema from the server's OpenAPI document.
@@ -2598,6 +2612,8 @@ struct TokenExchangeTrustResponse {
 
 /// Federation config response -- omits client_secret.
 struct FederationConfigResponse {
+    /// SAML only: whether IdP responses signed with SHA-1 are accepted (default `false`; #531).
+    bool allow_sha1_signatures;
     /// Whether tenants of this organization may inherit this provider.
     bool allow_tenant_inheritance;
     /// Accepted signing algorithms. Returned for OIDC and SAML; meaningless, and therefore
@@ -2630,6 +2646,9 @@ struct FederationConfigResponse {
     bool has_bundled_mark;
     /// The server's `id` field.
     std::string id;
+    /// SAML only: the certificate the IdP's metadata must be signed with (#530); `null` when
+    /// the metadata is not signature-checked. Optional.
+    std::optional<std::string> idp_metadata_signing_cert_pem = std::nullopt;
     /// The server's `metadata_url` field. Optional.
     std::optional<std::string> metadata_url = std::nullopt;
     /// Whether AXIAM mints this provider's client secret itself, per exchange, rather than
@@ -3037,6 +3056,9 @@ struct NotificationRuleResponse {
     std::string tenant_id;
     /// The server's `updated_at` field.
     std::string updated_at;
+    /// Minutes in which one event type mails each recipient at most once; further events are
+    /// counted and reported by the next mail (#551).
+    std::int64_t window_minutes;
 };
 
 /// Response for client creation -- includes the one-time plaintext secret.
@@ -4008,6 +4030,13 @@ struct ScimTargetInput {
     std::optional<DeprovisionPolicy> deprovision = std::nullopt;
     /// `true` by default. A disabled target receives nothing. Optional.
     std::optional<bool> enabled = std::nullopt;
+    /// The `updated_at` of the target as the client read it (P23W5-09, T-416). **Update only;
+    /// create ignores it.** When present, the replacement lands only if the target still has
+    /// that version, else `409` (reload and retry): two administrators who opened the form at
+    /// the same version cannot silently overwrite each other. When absent the replacement is
+    /// conditional on the version the server reads during the request — last-writer-wins
+    /// between administrators, as before. Optional.
+    std::optional<std::string> expected_updated_at = std::nullopt;
     /// 1–128 bytes.
     std::string name{};
     /// Push groups too (every group for `all_users`, the listed ones for `groups`). `false` by
@@ -4718,21 +4747,24 @@ struct UpdateDirectoryConfig {
 /// disengaged one is OMITTED from the request entirely, rather than sent as null (§27.4 rule
 /// 5). On a sparse update those say opposite things, and only omission means "leave it alone".
 struct UpdateFederationConfigRequest {
+    /// SAML only: accept IdP responses signed with SHA-1. Refused on a non-SAML config; turning
+    /// it on is audited (`federation.sha1_signatures_allowed`). Optional.
+    std::optional<bool> allow_sha1_signatures = std::nullopt;
     /// Whether tenants may inherit this organization-level provider. Optional.
     std::optional<bool> allow_tenant_inheritance = std::nullopt;
     /// Accepted signature algorithms (CQ-B40/REQ-14 AC-5). Optional.
     std::optional<std::vector<std::string>> allowed_algorithms = std::nullopt;
     /// Accepted external IdP tenants for a templated issuer. Replaced wholesale. Optional.
     std::optional<std::vector<std::string>> allowed_issuer_tenants = std::nullopt;
-    /// Apple Key ID. `Some(None)` clears it. Optional.
+    /// Apple Key ID. Explicit `null` clears it. Optional.
     std::optional<std::string> apple_key_id = std::nullopt;
-    /// Apple Team ID. `Some(None)` clears it. Optional.
+    /// Apple Team ID. Explicit `null` clears it. Optional.
     std::optional<std::string> apple_team_id = std::nullopt;
     /// The server's `attribute_map` field. Optional.
     std::optional<std::string> attribute_map = std::nullopt;
-    /// OAuth2-variant authorization endpoint. `Some(None)` clears it. Optional.
+    /// OAuth2-variant authorization endpoint. Explicit `null` clears it. Optional.
     std::optional<std::string> authorization_endpoint = std::nullopt;
-    /// Sign-in-button icon for a generic provider. `Some(None)` clears it. Optional.
+    /// Sign-in-button icon for a generic provider. Explicit `null` clears it. Optional.
     std::optional<std::string> button_icon = std::nullopt;
     /// The server's `client_id` field. Optional.
     std::optional<std::string> client_id = std::nullopt;
@@ -4740,24 +4772,30 @@ struct UpdateFederationConfigRequest {
     std::optional<Sensitive<std::string>> client_secret = std::nullopt;
     /// The server's `enabled` field. Optional.
     std::optional<bool> enabled = std::nullopt;
+    /// SAML only: the IdP metadata signing certificate (#530). Explicit `null` clears it;
+    /// omitted leaves it. Clearing it is audited (`federation.metadata_signing_cert_cleared`),
+    /// and so is replacing it with a different certificate
+    /// (`federation.metadata_signing_cert_changed`). Optional.
+    std::optional<std::string> idp_metadata_signing_cert_pem = std::nullopt;
     /// PEM-encoded X.509 certificate for verifying SAML assertions (CQ-B40/REQ-14 AC-5).
-    /// `Some(None)` clears the stored cert. Optional.
+    /// Explicit `null` clears the stored cert; omitted leaves it. Optional.
     std::optional<std::string> idp_signing_cert_pem = std::nullopt;
-    /// The server's `metadata_url` field. Optional.
+    /// OIDC discovery or SAML metadata URL. Explicit `null` clears it; omitted leaves it.
+    /// Optional.
     std::optional<std::string> metadata_url = std::nullopt;
     /// The server's `provider` field. Optional.
     std::optional<std::string> provider = std::nullopt;
-    /// Operator-chosen identifier for a `generic_*` kind. `Some(None)` clears it. Optional.
+    /// Operator-chosen identifier for a `generic_*` kind. Explicit `null` clears it. Optional.
     std::optional<std::string> provider_slug = std::nullopt;
     /// Send PKCE on the authorization request. Optional.
     std::optional<bool> require_pkce = std::nullopt;
     /// Scopes to request. Replaced wholesale; empty restores the per-kind default. Optional.
     std::optional<std::vector<std::string>> scopes = std::nullopt;
-    /// OAuth2-variant token endpoint. `Some(None)` clears it. Optional.
+    /// OAuth2-variant token endpoint. Explicit `null` clears it. Optional.
     std::optional<std::string> token_endpoint = std::nullopt;
     /// The server's `token_exchange` field. Optional.
     std::optional<TokenExchangeTrustRequest> token_exchange = std::nullopt;
-    /// OAuth2-variant userinfo endpoint. `Some(None)` clears it. Optional.
+    /// OAuth2-variant userinfo endpoint. Explicit `null` clears it. Optional.
     std::optional<std::string> userinfo_endpoint = std::nullopt;
 };
 
@@ -4791,6 +4829,8 @@ struct UpdateNotificationRuleRequest {
     std::optional<std::string> name = std::nullopt;
     /// The server's `recipient_emails` field. Optional.
     std::optional<std::vector<std::string>> recipient_emails = std::nullopt;
+    /// The rule's notification window in minutes, 1 … 1440 (#551). Optional.
+    std::optional<std::int64_t> window_minutes = std::nullopt;
 };
 
 /// The `UpdateOAuth2ClientRequest` schema from the server's OpenAPI document.
