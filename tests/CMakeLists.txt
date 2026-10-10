@@ -37,6 +37,10 @@ add_executable(axiam_cpp_tests
   # calls out by name -- SubjectAltName's externally-tagged shape, a subject-side
   # inherit's open-default decode, and CertificateType's open-enum successor value.
   test_contract_151_models.cpp
+  # CONTRACT.md §27.15 (contract 1.60): window_minutes passed through unclamped,
+  # allow_sha1_signatures read as false when absent, idp_metadata_signing_cert_pem,
+  # and note 8's tri-state nullable members on federation.update_config.
+  test_contract_160_models.cpp
   # CONTRACT.md §5.2 rule 1 (contract 1.51): the acting-tenant helper -- sent when
   # set, absent when not, gated on a held login result, and part of the §17 memo key.
   test_acting_tenant.cpp
@@ -125,6 +129,9 @@ add_executable(axiam_cpp_tests
   test_integration_curl.cpp
   test_transport_concurrency.cpp
   test_transport_reuse.cpp
+  # CONTRACT.md §34.2 P11 / §34.4 A6 (contract 1.60): a never-retried write goes on a fresh
+  # connection and arrives exactly once at a server that reads it and drops it.
+  test_transport_fresh_write.cpp
 )
 
 # test_version_policy.cpp reads CMakeLists.txt and the CI workflow, so it needs the

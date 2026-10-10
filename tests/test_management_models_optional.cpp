@@ -630,6 +630,7 @@ AXIAM_TEST("management model CreateFederationConfigRequest withholds optionals i
     // An explicit JSON null says the same thing as an absent key, and must not be
     // read as a value.
     auto nulls = minimal;
+    nulls["allow_sha1_signatures"] = nullptr;
     nulls["allow_tenant_inheritance"] = nullptr;
     nulls["allowed_algorithms"] = nullptr;
     nulls["allowed_issuer_tenants"] = nullptr;
@@ -638,6 +639,7 @@ AXIAM_TEST("management model CreateFederationConfigRequest withholds optionals i
     nulls["attribute_map"] = nullptr;
     nulls["authorization_endpoint"] = nullptr;
     nulls["button_icon"] = nullptr;
+    nulls["idp_metadata_signing_cert_pem"] = nullptr;
     nulls["idp_signing_cert_pem"] = nullptr;
     nulls["metadata_url"] = nullptr;
     nulls["provider_kind"] = nullptr;
@@ -914,7 +916,7 @@ AXIAM_TEST("management model EmailTestResult withholds optionals it was not give
 AXIAM_TEST("management model FederationConfigResponse withholds optionals it was not given") {
     // Every REQUIRED property, and not one optional property.
     const auto minimal = nlohmann::json::parse(
-        R"json({"allow_tenant_inheritance": true, "allowed_algorithms": ["example"], "allowed_issuer_tenants": ["example"], "attribute_map": {}, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "effective_scopes": ["example"], "enabled": true, "has_bundled_mark": true, "id": "11111111-1111-4111-8111-111111111111", "mints_client_secret": true, "pkce_required": true, "protocol": "example", "provider": "example", "provider_kind": "example", "scopes": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"allow_sha1_signatures": false, "allow_tenant_inheritance": true, "allowed_algorithms": ["example"], "allowed_issuer_tenants": ["example"], "attribute_map": {}, "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "effective_scopes": ["example"], "enabled": true, "has_bundled_mark": true, "id": "11111111-1111-4111-8111-111111111111", "mints_client_secret": true, "pkce_required": true, "protocol": "example", "provider": "example", "provider_kind": "example", "scopes": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z"})json");
 
     const nlohmann::json encoded = minimal.get<FederationConfigResponse>();
     // Byte-identical: an optional the server did not send must not reappear as a
@@ -928,6 +930,7 @@ AXIAM_TEST("management model FederationConfigResponse withholds optionals it was
     nulls["apple_team_id"] = nullptr;
     nulls["authorization_endpoint"] = nullptr;
     nulls["button_icon"] = nullptr;
+    nulls["idp_metadata_signing_cert_pem"] = nullptr;
     nulls["metadata_url"] = nullptr;
     nulls["provider_slug"] = nullptr;
     nulls["token_endpoint"] = nullptr;
@@ -1511,28 +1514,22 @@ AXIAM_TEST("management model UpdateFederationConfigRequest withholds optionals i
     AXIAM_CHECK(encoded == minimal);
 
     // An explicit JSON null says the same thing as an absent key, and must not be
-    // read as a value.
+    // read as a value -- for the members that cannot be cleared. The ten nullable
+    // members §27.15 note 8 names (contract 1.60) are tri-state instead: their null
+    // CLEARS, and is pinned by tests/test_contract_160_models.cpp.
     auto nulls = minimal;
+    nulls["allow_sha1_signatures"] = nullptr;
     nulls["allow_tenant_inheritance"] = nullptr;
     nulls["allowed_algorithms"] = nullptr;
     nulls["allowed_issuer_tenants"] = nullptr;
-    nulls["apple_key_id"] = nullptr;
-    nulls["apple_team_id"] = nullptr;
     nulls["attribute_map"] = nullptr;
-    nulls["authorization_endpoint"] = nullptr;
-    nulls["button_icon"] = nullptr;
     nulls["client_id"] = nullptr;
     nulls["client_secret"] = nullptr;
     nulls["enabled"] = nullptr;
-    nulls["idp_signing_cert_pem"] = nullptr;
-    nulls["metadata_url"] = nullptr;
     nulls["provider"] = nullptr;
-    nulls["provider_slug"] = nullptr;
     nulls["require_pkce"] = nullptr;
     nulls["scopes"] = nullptr;
-    nulls["token_endpoint"] = nullptr;
     nulls["token_exchange"] = nullptr;
-    nulls["userinfo_endpoint"] = nullptr;
     const nlohmann::json from_nulls = nulls.get<UpdateFederationConfigRequest>();
     AXIAM_CHECK(from_nulls == minimal);
 }
@@ -1575,6 +1572,7 @@ AXIAM_TEST("management model UpdateNotificationRuleRequest withholds optionals i
     nulls["events"] = nullptr;
     nulls["name"] = nullptr;
     nulls["recipient_emails"] = nullptr;
+    nulls["window_minutes"] = nullptr;
     const nlohmann::json from_nulls = nulls.get<UpdateNotificationRuleRequest>();
     AXIAM_CHECK(from_nulls == minimal);
 }

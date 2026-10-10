@@ -15,7 +15,9 @@
 // They are different operations with different risk, and the SDK supplies no
 // default actor token and never substitutes its own session for one. If you pass
 // nothing, you asked for impersonation, and the server refuses unless this
-// client is registered for it.
+// client is registered for it. The actor token is this same client's
+// `client_credentials` token (§15.2 rule 9) -- set AXIAM_DELEGATE=1 and this
+// example obtains it with login_client_credentials().
 //
 // Everything else here is about NOT helping: `unauthorized_client` is surfaced
 // verbatim, `invalid_scope` is not a hint to retry with fewer scopes, no refresh
@@ -65,8 +67,18 @@ int main() {
         params.subject_token_type = axiam::kAccessTokenType;
         // Present → delegation. Absent → impersonation. Nothing in between, and
         // no default.
-        const std::string actor = env_or("AXIAM_ACTOR_TOKEN", "");
-        if (!actor.empty()) params.actor_token = axiam::Sensitive<std::string>(actor);
+        //
+        // §15.2 rule 9 (contract 1.60): the actor token must have been issued to
+        // THIS client, the one authenticating the exchange -- anything else (another
+        // client's token, a console sign-in, a service account's token) is answered
+        // `400 invalid_request`, "actor_token was not issued to the exchanging
+        // client", which this SDK surfaces unchanged and never repairs. The usual
+        // actor is this client's own client_credentials token, whose `sub` (and so
+        // the issued token's `act.sub`) is its client_id. The caller obtains it and
+        // passes it; the SDK supplies none.
+        if (!env_or("AXIAM_DELEGATE", "").empty()) {
+            params.actor_token = client.login_client_credentials().access_token;
+        }
         params.scopes = {"invoices:read"};
         const std::string audience = env_or("AXIAM_AUDIENCE", "");
         if (!audience.empty()) params.audience = audience;

@@ -89,6 +89,24 @@ EXPLICIT_NULL_FIELDS: set[tuple[str, str]] = {
     # absent member, so a server that stopped sending the member is noticed.
     ("SamlIdpInfo", "active_credential_id"),
     ("SamlIdpInfo", "next_credential_id"),
+    # §27.15 note 8 (contract 1.60): on `federation.update_config` each of these ten
+    # is CLEARED by an explicit `null` and left unchanged when omitted. The body's
+    # other members cannot be cleared (the server reads their `null` as absent), so
+    # they stay plain optionals that are only ever omitted.
+    *(("UpdateFederationConfigRequest", wire) for wire in (
+        "metadata_url", "idp_signing_cert_pem", "idp_metadata_signing_cert_pem",
+        "provider_slug", "authorization_endpoint", "token_endpoint", "userinfo_endpoint",
+        "apple_team_id", "apple_key_id", "button_icon",
+    )),
+}
+
+# Required RESPONSE members a server older than the field does not send, where the
+# contract names the value an absent member reads as. Declared as the plain type with
+# that default, decoded leniently (absent or `null` keeps the default), so a caller
+# never has to tell "older server" from "off". §27.15 note 6 (contract 1.60):
+# `FederationConfigResponse.allow_sha1_signatures` "decodes as `false`" when absent.
+ABSENT_DEFAULTS: dict[tuple[str, str], str] = {
+    ("FederationConfigResponse", "allow_sha1_signatures"): "false",
 }
 
 # Call-site documentation the contract makes an SDK repeat (§29.3, §30.3, §31.3,
@@ -297,7 +315,9 @@ MODEL_MEMBERS: dict[str, list[tuple[str, str]]] = {
     "ScimTargetResponse": [(
         "The replacement body for `scim_targets.update` holding every member of this "
         "read. `credential` is absent: no read carries it, and absent keeps the stored "
-        "one -- unless the update moves the URL (§31.3 rule 2).",
+        "one -- unless the update moves the URL (§31.3 rule 2). `expected_updated_at` is "
+        "this read's `updated_at`, so the update is refused `409` if another write landed "
+        "since (§31.3 rule 4, contract 1.60); reset it to send an unconditional replacement.",
         "ScimTargetInput to_input() const;",
     )],
     "ScimTargetAuth": [
@@ -584,9 +604,11 @@ ENUMS, UNIONS = _classify()
 #: strings with the six URIs as named constants" -- an enumerator per URI loses the
 #: value of a URI this SDK's spec copy does not list (it decodes to ``Unknown``), so a
 #: stream carrying a newer event type cannot be read, shown or reasoned about. As a
-#: string the value survives decoding; it is still never SENT unless it is one of the
-#: listed values (§32.2, contract 1.59 §34.2 P12.2) -- the generated serializer
-#: refuses it locally.
+#: string the value survives decoding AND is sent back as the caller holds it
+#: (contract 1.60 §34.2 P12.2 (b), B4): an unseen URI read from the server round-trips
+#: through ``update_stream`` unchanged and the server judges it. No client-side list of
+#: URIs gates a request, because such a list goes stale; ``is_known_*`` only reports
+#: whether a value is one of the constants.
 STRING_ENUMS = {"SsfEventType"}
 
 
@@ -862,6 +884,7 @@ def fields_of(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]]
             "ref": info["ref"], "required": wire in required, "schema": sub,
             "secret": wire in secrets,
             "explicit_null": (schema_name, wire) in EXPLICIT_NULL_FIELDS,
+            "absent_default": ABSENT_DEFAULTS.get((schema_name, wire)),
             "description": sub.get("description") if isinstance(sub, dict) else None,
         })
     return out, description
@@ -894,6 +917,9 @@ FIELD_NOTES: dict[str, str] = {
 def field_doc(f: dict[str, Any]) -> str:
     """The one-line description for a member, plus any FIELD_NOTES entry."""
     base = _field_doc(f)
+    if f.get("absent_default"):
+        base += (f" A response that lacks it (a server older than the field) decodes as "
+                 f"`{f['absent_default']}` (CONTRACT.md \u00a727.15, contract 1.60).")
     note = FIELD_NOTES.get(f["wire"])
     return f"{base} {note}" if note else base
 
@@ -1005,10 +1031,12 @@ def emit_string_enum_header(name: str, rendered: str, values: list[str]) -> list
         + "\n\n"
         f"Modelled as a **string**, with the values this SDK's spec copy lists as named "
         f"constants in `{snake(rendered)}` (CONTRACT.md \u00a732.2): a value the server "
-        "sends that is not listed decodes as itself, never as a lossy `Unknown`. It is "
-        f"still never SENT: a request carrying a value is_known_{snake(rendered)}() "
-        "rejects is refused locally with NetworkError before any request (\u00a734.2 "
-        "P12.2)."))
+        "sends that is not listed decodes as itself, never as a lossy `Unknown`, and is "
+        "sent back unchanged -- an unseen value read from the server survives a "
+        "read-modify-write, and the server judges it (contract 1.60 \u00a734.2 P12.2 (b)). "
+        "This SDK keeps no client-side list that refuses a value the caller typed: such a "
+        f"list goes stale. is_known_{snake(rendered)}() only reports whether a value is "
+        "one of the constants."))
     out.append(f"using {rendered} = std::string;")
     out.append("")
     out.extend(doc(f"The {len(values)} `{rendered}` values this SDK's spec copy lists."))
@@ -1018,35 +1046,20 @@ def emit_string_enum_header(name: str, rendered: str, values: list[str]) -> list
     out.append(f"}}  // namespace {snake(rendered)}")
     out.append("")
     out.extend(doc(
-        f"True when `value` is one of the `{snake(rendered)}` constants -- the only values "
-        "a request may carry."))
+        f"True when `value` is one of the `{snake(rendered)}` constants. Informational: a "
+        "request may carry any value (contract 1.60 B4)."))
     out.append(f"bool is_known_{snake(rendered)}(const std::string& value);")
     out.append("")
     return out
 
 
 def emit_string_enum_source(name: str, rendered: str, values: list[str]) -> list[str]:
-    """``is_known_*`` and the request-path refusal for a STRING_ENUMS member."""
+    """``is_known_*`` for a STRING_ENUMS member. Nothing on the request path: see STRING_ENUMS."""
     fn = snake(rendered)
     out = [f"bool is_known_{fn}(const std::string& value) {{"]
     for v in values:
         out.append(f"    if (value == {fn}::k{enum_value(v)}) return true;")
     out.append("    return false;")
-    out.append("}")
-    out.append("")
-    out.extend(comment(
-        "CONTRACT.md \u00a732.2 / contract 1.59 \u00a734.2 P12.2: decoded as itself, but "
-        "a value this SDK does not know is refused LOCALLY, before any request.", ""))
-    out.append(f"static const std::string& send_{fn}(const std::string& value) {{")
-    out.append(f"    if (!is_known_{fn}(value)) {{")
-    out.append(f'        throw NetworkError("{rendered}: a value this SDK does not know is never '
-               'sent (CONTRACT.md \u00a732.2, \u00a734.2 P12.2)", "sdk_programming_error");')
-    out.append("    }")
-    out.append("    return value;")
-    out.append("}")
-    out.append(f"static const std::vector<std::string>& send_{fn}(const std::vector<std::string>& values) {{")
-    out.append(f"    for (const auto& value : values) send_{fn}(value);")
-    out.append("    return values;")
     out.append("}")
     out.append("")
     return out
@@ -1109,7 +1122,8 @@ def emit_models_header() -> str:
             f"The wire spelling of a {rendered}, for display and logs; never fails.\n\n"
             f"`{rendered}::{enum_value('unknown')}` spells as the empty string, which no "
             "server value is -- and it is never SENT: a request carrying it is refused "
-            "locally with NetworkError before any request, never written as `\"\"` for the "
+            "locally with std::invalid_argument (contract 1.60 B5) before any request, never "
+            "written as `\"\"` for the "
             "server to refuse (CONTRACT.md \u00a734.2 P12.2, contract 1.59)."))
         out.append(f"std::string to_wire({rendered} value);")
         out.append("")
@@ -1156,7 +1170,7 @@ def emit_models_header() -> str:
             summary += (
                 f"\n\nAn EXTERNALLY TAGGED union (CONTRACT.md §27.13): sent as exactly "
                 f"ONE of {tags}, never neither and never both. `to_json()` refuses "
-                "(`NetworkError`, before any request) a value that holds neither or "
+                "(`std::invalid_argument`, before any request) a value that holds neither or "
                 "both -- it does not silently drop one, and it does not send `{}` or "
                 "both keys.")
         elif sparse:
@@ -1173,6 +1187,8 @@ def emit_models_header() -> str:
             default = "" if f["required"] else " = std::nullopt"
             if f["required"] and name in REQUIRED_CTOR:
                 default = "{}"
+            if f.get("absent_default"):
+                default = f" = {f['absent_default']}"
             out.append(f"    {declared(f)} {f['name']}{default};")
         for text, decl in MODEL_MEMBERS.get(name, []):
             out.append("")
@@ -1266,8 +1282,7 @@ def emit_to_json_member(f: dict[str, Any]) -> list[str]:
 
     if f.get("explicit_null"):
         # §27.4 rule 5: disengaged omits; engaged-with-nullopt is JSON null.
-        engaged = (f"send_{snake(f['ref'])}(**value.{n})" if f.get("ref") in STRING_ENUMS
-                   else f"**value.{n}")
+        engaged = f"**value.{n}"
         return [
             f"    if (value.{n}) {{",
             f'        if (*value.{n}) j["{w}"] = {engaged};',
@@ -1291,9 +1306,6 @@ def emit_to_json_member(f: dict[str, Any]) -> list[str]:
         expr = f"detail::reveal({ref})"
     elif kind == "enum":
         expr = f"send_wire({ref})"
-    elif f.get("ref") in STRING_ENUMS:
-        # A string-modelled enum, alone or in a list: only a listed value is sent.
-        expr = f"send_{snake(f['ref'])}({ref})"
     else:
         expr = ref
 
@@ -1347,6 +1359,14 @@ def emit_from_json_member(f: dict[str, Any]) -> list[str]:
         read = f'j.at("{w}").get<{f["decl"]}>()'
         opt_read = f'it->get<{f["decl"]}>()'
 
+    if f["required"] and f.get("absent_default"):
+        # ABSENT_DEFAULTS: absent or null keeps the contract's default, never throws.
+        return [
+            f"    value.{n} = {f['absent_default']};",
+            f'    if (auto it = j.find("{w}"); it != j.end() && !it->is_null()) {{',
+            f"        value.{n} = {opt_read};",
+            "    }",
+        ]
     if f["required"]:
         return [f"    value.{n} = {read};"]
     return [
@@ -1364,7 +1384,7 @@ def emit_models_source() -> str:
     out.append("#include <utility>")
     out.append("")
     # CONTRACT 1.52 N3 (C-12): an externally-tagged union's to_json() (below) refuses
-    # a neither/both value with NetworkError, before any request -- the same error
+    # a neither/both value with std::invalid_argument, before any request -- C++'s ValidationError (B5);
     # §27.4 rule 2 uses for a client-side refusal.
     out.append('#include "axiam/errors.hpp"')
     out.append('#include "management_json.hpp"')
@@ -1416,9 +1436,8 @@ def emit_models_source() -> str:
             "goes through here.", ""))
         out.append(f"static std::string send_wire({rendered} value) {{")
         out.append(f"    if (value == {rendered}::{enum_value('unknown')}) {{")
-        out.append(f'        throw NetworkError("{rendered}: a value this SDK does not know is '
-                   'never sent (CONTRACT.md \u00a734.2 P12.2)", '
-                   '"sdk_programming_error");')
+        out.append(f'        throw std::invalid_argument("{rendered}: a value this SDK does not know is '
+                   'never sent (CONTRACT.md \u00a734.2 P12.2)");')
         out.append("    }")
         out.append("    return to_wire(value);")
         out.append("}")
@@ -1454,10 +1473,9 @@ def emit_models_source() -> str:
             tag_list = ", ".join(f"`{k}`" for k, _ in tagged)
             out.append(f"    if (({engaged}) != 1) {{")
             out.append(
-                f'        throw NetworkError("{rendered} must set exactly one of '
+                f'        throw std::invalid_argument("{rendered} must set exactly one of '
                 f'{tag_list}, never neither and never both '
-                f'(CONTRACT.md §27.13 / CONTRACT 1.52 N3 (C-12))", '
-                '"sdk_programming_error");'
+                f'(CONTRACT.md §27.13 / CONTRACT 1.52 N3 (C-12))");'
             )
             out.append("    }")
         if any(f["kind"] == "union_raw" for f in fields):
@@ -1473,9 +1491,8 @@ def emit_models_source() -> str:
                     "message.", "    "))
                 out.append(f"    if ({known}) {{")
                 out.append(
-                    f'        throw NetworkError("{rendered}: `{tag}` must be one of {names}; '
-                    'a variant this SDK does not know is never sent (CONTRACT.md §31.2)", '
-                    '"sdk_programming_error");')
+                    f'        throw std::invalid_argument("{rendered}: `{tag}` must be one of {names}; '
+                    'a variant this SDK does not know is never sent (CONTRACT.md §31.2)");')
                 out.append("    }")
             out.extend(comment(
                 "A union is forwarded EXACTLY as received. Re-encoding from the two "
@@ -2442,7 +2459,8 @@ def emit_models_test() -> str:
                 out.append(f'    AXIAM_CHECK(is_known_{ns}({ns}::k{enum_value(v)}));')
             out.extend(comment(
                 "A value the spec copy does not list, and the empty string, are not known: "
-                "they decode as themselves and are never sent (\u00a734.2 P12.2).", "    "))
+                "they decode as themselves and are sent back unchanged (contract 1.60 "
+                "\u00a734.2 P12.2 (b)).", "    "))
             out.append(f'    AXIAM_CHECK(!is_known_{ns}("__not_a_{ns}__"));')
             out.append(f'    AXIAM_CHECK(!is_known_{ns}(""));')
             out.append("}")
@@ -2471,7 +2489,7 @@ def emit_models_test() -> str:
             "is refused locally, with no request (\u00a732.2, contract 1.59 \u00a734.2 "
             "P12.2): the JSON hook every request body goes through throws.", "    "))
         out.append(f'    AXIAM_CHECK(to_wire({unknown}).empty());')
-        out.append(f'    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json({unknown}), axiam::NetworkError);')
+        out.append(f'    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json({unknown}), std::invalid_argument);')
         out.append("")
         out.extend(comment(
             "The JSON hooks must agree with the wire functions, or a model carrying "

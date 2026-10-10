@@ -34,8 +34,9 @@ enum class ActorType {
 /// The wire spelling of a ActorType, for display and logs; never fails.
 ///
 /// `ActorType::Unknown` spells as the empty string, which no server value is -- and it is never
-/// SENT: a request carrying it is refused locally with NetworkError before any request, never
-/// written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// SENT: a request carrying it is refused locally with std::invalid_argument (contract 1.60 B5)
+/// before any request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2,
+/// contract 1.59).
 std::string to_wire(ActorType value);
 
 /// Parse a wire value into a ActorType.
@@ -66,8 +67,9 @@ enum class AttestationMode {
 /// The wire spelling of a AttestationMode, for display and logs; never fails.
 ///
 /// `AttestationMode::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(AttestationMode value);
 
 /// Parse a wire value into a AttestationMode.
@@ -102,8 +104,9 @@ enum class AttributeSource {
 /// The wire spelling of a AttributeSource, for display and logs; never fails.
 ///
 /// `AttributeSource::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(AttributeSource value);
 
 /// Parse a wire value into a AttributeSource.
@@ -130,8 +133,9 @@ enum class AuditOutcome {
 /// The wire spelling of a AuditOutcome, for display and logs; never fails.
 ///
 /// `AuditOutcome::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(AuditOutcome value);
 
 /// Parse a wire value into a AuditOutcome.
@@ -169,9 +173,9 @@ enum class AuthnRequestParamsMode {
 /// The wire spelling of a AuthnRequestParamsMode, for display and logs; never fails.
 ///
 /// `AuthnRequestParamsMode::Unknown` spells as the empty string, which no server value is --
-/// and it is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// and it is never SENT: a request carrying it is refused locally with std::invalid_argument
+/// (contract 1.60 B5) before any request, never written as `""` for the server to refuse
+/// (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(AuthnRequestParamsMode value);
 
 /// Parse a wire value into a AuthnRequestParamsMode.
@@ -198,9 +202,9 @@ enum class CertificateStatus {
 /// The wire spelling of a CertificateStatus, for display and logs; never fails.
 ///
 /// `CertificateStatus::Unknown` spells as the empty string, which no server value is -- and it
-/// is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// is never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(CertificateStatus value);
 
 /// Parse a wire value into a CertificateStatus.
@@ -228,8 +232,9 @@ enum class CertificateType {
 /// The wire spelling of a CertificateType, for display and logs; never fails.
 ///
 /// `CertificateType::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(CertificateType value);
 
 /// Parse a wire value into a CertificateType.
@@ -264,9 +269,9 @@ enum class CertificationLevel {
 /// The wire spelling of a CertificationLevel, for display and logs; never fails.
 ///
 /// `CertificationLevel::Unknown` spells as the empty string, which no server value is -- and it
-/// is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// is never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(CertificationLevel value);
 
 /// Parse a wire value into a CertificationLevel.
@@ -296,9 +301,9 @@ enum class CibaDeliveryMode {
 /// The wire spelling of a CibaDeliveryMode, for display and logs; never fails.
 ///
 /// `CibaDeliveryMode::Unknown` spells as the empty string, which no server value is -- and it
-/// is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// is never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(CibaDeliveryMode value);
 
 /// Parse a wire value into a CibaDeliveryMode.
@@ -331,9 +336,9 @@ enum class CibaRequestSigningAlg {
 /// The wire spelling of a CibaRequestSigningAlg, for display and logs; never fails.
 ///
 /// `CibaRequestSigningAlg::Unknown` spells as the empty string, which no server value is -- and
-/// it is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// it is never SENT: a request carrying it is refused locally with std::invalid_argument
+/// (contract 1.60 B5) before any request, never written as `""` for the server to refuse
+/// (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(CibaRequestSigningAlg value);
 
 /// Parse a wire value into a CibaRequestSigningAlg.
@@ -372,9 +377,9 @@ enum class ClientAuthMethod {
 /// The wire spelling of a ClientAuthMethod, for display and logs; never fails.
 ///
 /// `ClientAuthMethod::Unknown` spells as the empty string, which no server value is -- and it
-/// is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// is never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(ClientAuthMethod value);
 
 /// Parse a wire value into a ClientAuthMethod.
@@ -411,8 +416,9 @@ enum class ClientProfile {
 /// The wire spelling of a ClientProfile, for display and logs; never fails.
 ///
 /// `ClientProfile::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(ClientProfile value);
 
 /// Parse a wire value into a ClientProfile.
@@ -439,9 +445,9 @@ enum class DeprovisionPolicy {
 /// The wire spelling of a DeprovisionPolicy, for display and logs; never fails.
 ///
 /// `DeprovisionPolicy::Unknown` spells as the empty string, which no server value is -- and it
-/// is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// is never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(DeprovisionPolicy value);
 
 /// Parse a wire value into a DeprovisionPolicy.
@@ -472,8 +478,9 @@ enum class DirectoryKind {
 /// The wire spelling of a DirectoryKind, for display and logs; never fails.
 ///
 /// `DirectoryKind::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(DirectoryKind value);
 
 /// Parse a wire value into a DirectoryKind.
@@ -500,8 +507,9 @@ enum class FailurePolicy {
 /// The wire spelling of a FailurePolicy, for display and logs; never fails.
 ///
 /// `FailurePolicy::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(FailurePolicy value);
 
 /// Parse a wire value into a FailurePolicy.
@@ -527,8 +535,9 @@ enum class KeyAlgorithm {
 /// The wire spelling of a KeyAlgorithm, for display and logs; never fails.
 ///
 /// `KeyAlgorithm::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(KeyAlgorithm value);
 
 /// Parse a wire value into a KeyAlgorithm.
@@ -569,8 +578,9 @@ enum class ManagedBy {
 /// The wire spelling of a ManagedBy, for display and logs; never fails.
 ///
 /// `ManagedBy::Unknown` spells as the empty string, which no server value is -- and it is never
-/// SENT: a request carrying it is refused locally with NetworkError before any request, never
-/// written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// SENT: a request carrying it is refused locally with std::invalid_argument (contract 1.60 B5)
+/// before any request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2,
+/// contract 1.59).
 std::string to_wire(ManagedBy value);
 
 /// Parse a wire value into a ManagedBy.
@@ -597,8 +607,9 @@ enum class MfaMethodType {
 /// The wire spelling of a MfaMethodType, for display and logs; never fails.
 ///
 /// `MfaMethodType::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(MfaMethodType value);
 
 /// Parse a wire value into a MfaMethodType.
@@ -624,8 +635,9 @@ enum class NameIdFormat {
 /// The wire spelling of a NameIdFormat, for display and logs; never fails.
 ///
 /// `NameIdFormat::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(NameIdFormat value);
 
 /// Parse a wire value into a NameIdFormat.
@@ -667,9 +679,9 @@ enum class NotificationEventType {
 /// The wire spelling of a NotificationEventType, for display and logs; never fails.
 ///
 /// `NotificationEventType::Unknown` spells as the empty string, which no server value is -- and
-/// it is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// it is never SENT: a request carrying it is refused locally with std::invalid_argument
+/// (contract 1.60 B5) before any request, never written as `""` for the server to refuse
+/// (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(NotificationEventType value);
 
 /// Parse a wire value into a NotificationEventType.
@@ -710,9 +722,9 @@ enum class PermissionEffect {
 /// The wire spelling of a PermissionEffect, for display and logs; never fails.
 ///
 /// `PermissionEffect::Unknown` spells as the empty string, which no server value is -- and it
-/// is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// is never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(PermissionEffect value);
 
 /// Parse a wire value into a PermissionEffect.
@@ -738,8 +750,9 @@ enum class PgpKeyAlgorithm {
 /// The wire spelling of a PgpKeyAlgorithm, for display and logs; never fails.
 ///
 /// `PgpKeyAlgorithm::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(PgpKeyAlgorithm value);
 
 /// Parse a wire value into a PgpKeyAlgorithm.
@@ -765,8 +778,9 @@ enum class PgpKeyPurpose {
 /// The wire spelling of a PgpKeyPurpose, for display and logs; never fails.
 ///
 /// `PgpKeyPurpose::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(PgpKeyPurpose value);
 
 /// Parse a wire value into a PgpKeyPurpose.
@@ -792,8 +806,9 @@ enum class PgpKeyStatus {
 /// The wire spelling of a PgpKeyStatus, for display and logs; never fails.
 ///
 /// `PgpKeyStatus::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(PgpKeyStatus value);
 
 /// Parse a wire value into a PgpKeyStatus.
@@ -819,8 +834,9 @@ enum class ReactorMode {
 /// The wire spelling of a ReactorMode, for display and logs; never fails.
 ///
 /// `ReactorMode::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(ReactorMode value);
 
 /// Parse a wire value into a ReactorMode.
@@ -849,8 +865,9 @@ enum class SamlBinding {
 /// The wire spelling of a SamlBinding, for display and logs; never fails.
 ///
 /// `SamlBinding::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(SamlBinding value);
 
 /// Parse a wire value into a SamlBinding.
@@ -878,9 +895,9 @@ enum class SamlIdpCredentialStatus {
 /// The wire spelling of a SamlIdpCredentialStatus, for display and logs; never fails.
 ///
 /// `SamlIdpCredentialStatus::Unknown` spells as the empty string, which no server value is --
-/// and it is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// and it is never SENT: a request carrying it is refused locally with std::invalid_argument
+/// (contract 1.60 B5) before any request, never written as `""` for the server to refuse
+/// (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(SamlIdpCredentialStatus value);
 
 /// Parse a wire value into a SamlIdpCredentialStatus.
@@ -906,8 +923,9 @@ enum class SamlIdpSlot {
 /// The wire spelling of a SamlIdpSlot, for display and logs; never fails.
 ///
 /// `SamlIdpSlot::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(SamlIdpSlot value);
 
 /// Parse a wire value into a SamlIdpSlot.
@@ -935,8 +953,9 @@ enum class ScimTokenStatus {
 /// The wire spelling of a ScimTokenStatus, for display and logs; never fails.
 ///
 /// `ScimTokenStatus::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(ScimTokenStatus value);
 
 /// Parse a wire value into a ScimTokenStatus.
@@ -962,8 +981,9 @@ enum class SettingsScope {
 /// The wire spelling of a SettingsScope, for display and logs; never fails.
 ///
 /// `SettingsScope::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(SettingsScope value);
 
 /// Parse a wire value into a SettingsScope.
@@ -989,9 +1009,9 @@ enum class SsfDeliveryMethod {
 /// The wire spelling of a SsfDeliveryMethod, for display and logs; never fails.
 ///
 /// `SsfDeliveryMethod::Unknown` spells as the empty string, which no server value is -- and it
-/// is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// is never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(SsfDeliveryMethod value);
 
 /// Parse a wire value into a SsfDeliveryMethod.
@@ -1014,9 +1034,10 @@ SsfDeliveryMethod ssf_delivery_method_from_wire(const std::string& value);
 ///
 /// Modelled as a **string**, with the values this SDK's spec copy lists as named constants in
 /// `ssf_event_type` (CONTRACT.md §32.2): a value the server sends that is not listed decodes as
-/// itself, never as a lossy `Unknown`. It is still never SENT: a request carrying a value
-/// is_known_ssf_event_type() rejects is refused locally with NetworkError before any request
-/// (§34.2 P12.2).
+/// itself, never as a lossy `Unknown`, and is sent back unchanged -- an unseen value read from
+/// the server survives a read-modify-write, and the server judges it (contract 1.60 §34.2 P12.2
+/// (b)). This SDK keeps no client-side list that refuses a value the caller typed: such a list
+/// goes stale. is_known_ssf_event_type() only reports whether a value is one of the constants.
 using SsfEventType = std::string;
 
 /// The 6 `SsfEventType` values this SDK's spec copy lists.
@@ -1029,8 +1050,8 @@ inline constexpr const char kAccountEnabled[] = "https://schemas.openid.net/sece
 inline constexpr const char kAccountPurged[] = "https://schemas.openid.net/secevent/risc/event-type/account-purged";
 }  // namespace ssf_event_type
 
-/// True when `value` is one of the `ssf_event_type` constants -- the only values a request may
-/// carry.
+/// True when `value` is one of the `ssf_event_type` constants. Informational: a request may
+/// carry any value (contract 1.60 B4).
 bool is_known_ssf_event_type(const std::string& value);
 
 /// Who set a stream's current status. A status an administrator set to anything but `enabled`
@@ -1044,8 +1065,9 @@ enum class SsfStatusActor {
 /// The wire spelling of a SsfStatusActor, for display and logs; never fails.
 ///
 /// `SsfStatusActor::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(SsfStatusActor value);
 
 /// Parse a wire value into a SsfStatusActor.
@@ -1072,8 +1094,9 @@ enum class SsfStreamStatus {
 /// The wire spelling of a SsfStreamStatus, for display and logs; never fails.
 ///
 /// `SsfStreamStatus::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(SsfStreamStatus value);
 
 /// Parse a wire value into a SsfStreamStatus.
@@ -1099,9 +1122,9 @@ enum class SsfSubjectFormat {
 /// The wire spelling of a SsfSubjectFormat, for display and logs; never fails.
 ///
 /// `SsfSubjectFormat::Unknown` spells as the empty string, which no server value is -- and it
-/// is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// is never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(SsfSubjectFormat value);
 
 /// Parse a wire value into a SsfSubjectFormat.
@@ -1132,8 +1155,9 @@ enum class TenantKind {
 /// The wire spelling of a TenantKind, for display and logs; never fails.
 ///
 /// `TenantKind::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(TenantKind value);
 
 /// Parse a wire value into a TenantKind.
@@ -1162,8 +1186,9 @@ enum class TenantStatus {
 /// The wire spelling of a TenantStatus, for display and logs; never fails.
 ///
 /// `TenantStatus::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(TenantStatus value);
 
 /// Parse a wire value into a TenantStatus.
@@ -1190,9 +1215,9 @@ enum class UnknownAaguidAction {
 /// The wire spelling of a UnknownAaguidAction, for display and logs; never fails.
 ///
 /// `UnknownAaguidAction::Unknown` spells as the empty string, which no server value is -- and
-/// it is never SENT: a request carrying it is refused locally with NetworkError before any
-/// request, never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract
-/// 1.59).
+/// it is never SENT: a request carrying it is refused locally with std::invalid_argument
+/// (contract 1.60 B5) before any request, never written as `""` for the server to refuse
+/// (CONTRACT.md §34.2 P12.2, contract 1.59).
 std::string to_wire(UnknownAaguidAction value);
 
 /// Parse a wire value into a UnknownAaguidAction.
@@ -1219,8 +1244,9 @@ enum class UserNameSource {
 /// The wire spelling of a UserNameSource, for display and logs; never fails.
 ///
 /// `UserNameSource::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(UserNameSource value);
 
 /// Parse a wire value into a UserNameSource.
@@ -1250,8 +1276,9 @@ enum class UserStatus {
 /// The wire spelling of a UserStatus, for display and logs; never fails.
 ///
 /// `UserStatus::Unknown` spells as the empty string, which no server value is -- and it is
-/// never SENT: a request carrying it is refused locally with NetworkError before any request,
-/// never written as `""` for the server to refuse (CONTRACT.md §34.2 P12.2, contract 1.59).
+/// never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
 std::string to_wire(UserStatus value);
 
 /// Parse a wire value into a UserStatus.
@@ -1862,9 +1889,9 @@ struct CreateCaCertificateRequest {
 /// refused. URI and e-mail names are not offered — nothing in AXIAM consumes them yet.
 ///
 /// An EXTERNALLY TAGGED union (CONTRACT.md §27.13): sent as exactly ONE of `dns`, `ip`, never
-/// neither and never both. `to_json()` refuses (`NetworkError`, before any request) a value
-/// that holds neither or both -- it does not silently drop one, and it does not send `{}` or
-/// both keys.
+/// neither and never both. `to_json()` refuses (`std::invalid_argument`, before any request) a
+/// value that holds neither or both -- it does not silently drop one, and it does not send `{}`
+/// or both keys.
 struct SubjectAltName {
     /// A DNS name, e.g. `api.lakeside.internal` or `*.lakeside.internal`. Optional.
     std::optional<std::string> dns = std::nullopt;
@@ -1923,6 +1950,11 @@ struct TokenExchangeTrustRequest {
 
 /// The `CreateFederationConfigRequest` schema from the server's OpenAPI document.
 struct CreateFederationConfigRequest {
+    /// SAML only: accept IdP responses signed with SHA-1 (`rsa-sha1`). Default `false` — since
+    /// 1.0.0 the SP verifier accepts only SHA-2 signatures. The escape hatch for an IdP that
+    /// cannot sign with SHA-2 yet; refused on a non-SAML config, and audited
+    /// (`federation.sha1_signatures_allowed`) when set to `true`. Optional.
+    std::optional<bool> allow_sha1_signatures = std::nullopt;
     /// Whether tenants of this organization may inherit this provider. Only meaningful on a
     /// config in the organization-scope tenant. Optional.
     std::optional<bool> allow_tenant_inheritance = std::nullopt;
@@ -1952,6 +1984,11 @@ struct CreateFederationConfigRequest {
     std::string client_id;
     /// OAuth2 client secret registered with the external IdP.
     Sensitive<std::string> client_secret;
+    /// SAML only: the PEM certificate the IdP signs its metadata document with (#530). When
+    /// set, the metadata must carry one SHA-2 signature on its `EntityDescriptor` root that
+    /// verifies against it, or no sign-in starts. Omitted: the metadata is not
+    /// signature-checked. Optional.
+    std::optional<std::string> idp_metadata_signing_cert_pem = std::nullopt;
     /// PEM-encoded X.509 certificate for verifying SAML assertions or OIDC signatures
     /// (CQ-B40/REQ-14 AC-5). Required for SAML configs. Optional.
     std::optional<std::string> idp_signing_cert_pem = std::nullopt;
@@ -2016,6 +2053,10 @@ struct CreateNotificationRuleRequest {
     std::string name;
     /// Email addresses to notify.
     std::vector<std::string> recipient_emails;
+    /// Minutes in which one event type mails each recipient at most once: the first event of a
+    /// window is mailed, the rest are counted and the next mail says how many were not sent
+    /// (#551). 1 … 1440; 15 when omitted. Optional.
+    std::optional<std::int64_t> window_minutes = std::nullopt;
 };
 
 /// The `CreateOAuth2ClientRequest` schema from the server's OpenAPI document.
@@ -2571,6 +2612,10 @@ struct TokenExchangeTrustResponse {
 
 /// Federation config response -- omits client_secret.
 struct FederationConfigResponse {
+    /// SAML only: whether IdP responses signed with SHA-1 are accepted (default `false`; #531).
+    /// A response that lacks it (a server older than the field) decodes as `false` (CONTRACT.md
+    /// §27.15, contract 1.60).
+    bool allow_sha1_signatures = false;
     /// Whether tenants of this organization may inherit this provider.
     bool allow_tenant_inheritance;
     /// Accepted signing algorithms. Returned for OIDC and SAML; meaningless, and therefore
@@ -2603,6 +2648,9 @@ struct FederationConfigResponse {
     bool has_bundled_mark;
     /// The server's `id` field.
     std::string id;
+    /// SAML only: the certificate the IdP's metadata must be signed with (#530); `null` when
+    /// the metadata is not signature-checked. Optional.
+    std::optional<std::string> idp_metadata_signing_cert_pem = std::nullopt;
     /// The server's `metadata_url` field. Optional.
     std::optional<std::string> metadata_url = std::nullopt;
     /// Whether AXIAM mints this provider's client secret itself, per exchange, rather than
@@ -3010,6 +3058,9 @@ struct NotificationRuleResponse {
     std::string tenant_id;
     /// The server's `updated_at` field.
     std::string updated_at;
+    /// Minutes in which one event type mails each recipient at most once; further events are
+    /// counted and reported by the next mail (#551).
+    std::int64_t window_minutes;
 };
 
 /// Response for client creation -- includes the one-time plaintext secret.
@@ -3981,6 +4032,13 @@ struct ScimTargetInput {
     std::optional<DeprovisionPolicy> deprovision = std::nullopt;
     /// `true` by default. A disabled target receives nothing. Optional.
     std::optional<bool> enabled = std::nullopt;
+    /// The `updated_at` of the target as the client read it (P23W5-09, T-416). **Update only;
+    /// create ignores it.** When present, the replacement lands only if the target still has
+    /// that version, else `409` (reload and retry): two administrators who opened the form at
+    /// the same version cannot silently overwrite each other. When absent the replacement is
+    /// conditional on the version the server reads during the request — last-writer-wins
+    /// between administrators, as before. Optional.
+    std::optional<std::string> expected_updated_at = std::nullopt;
     /// 1–128 bytes.
     std::string name{};
     /// Push groups too (every group for `all_users`, the listed ones for `groups`). `false` by
@@ -4036,7 +4094,9 @@ struct ScimTargetResponse {
 
     /// The replacement body for `scim_targets.update` holding every member of this read.
     /// `credential` is absent: no read carries it, and absent keeps the stored one -- unless
-    /// the update moves the URL (§31.3 rule 2).
+    /// the update moves the URL (§31.3 rule 2). `expected_updated_at` is this read's
+    /// `updated_at`, so the update is refused `409` if another write landed since (§31.3 rule
+    /// 4, contract 1.60); reset it to send an unconditional replacement.
     ScimTargetInput to_input() const;
 };
 
@@ -4691,47 +4751,75 @@ struct UpdateDirectoryConfig {
 /// disengaged one is OMITTED from the request entirely, rather than sent as null (§27.4 rule
 /// 5). On a sparse update those say opposite things, and only omission means "leave it alone".
 struct UpdateFederationConfigRequest {
+    /// SAML only: accept IdP responses signed with SHA-1. Refused on a non-SAML config; turning
+    /// it on is audited (`federation.sha1_signatures_allowed`). Optional.
+    std::optional<bool> allow_sha1_signatures = std::nullopt;
     /// Whether tenants may inherit this organization-level provider. Optional.
     std::optional<bool> allow_tenant_inheritance = std::nullopt;
     /// Accepted signature algorithms (CQ-B40/REQ-14 AC-5). Optional.
     std::optional<std::vector<std::string>> allowed_algorithms = std::nullopt;
     /// Accepted external IdP tenants for a templated issuer. Replaced wholesale. Optional.
     std::optional<std::vector<std::string>> allowed_issuer_tenants = std::nullopt;
-    /// Apple Key ID. `Some(None)` clears it. Optional.
-    std::optional<std::string> apple_key_id = std::nullopt;
-    /// Apple Team ID. `Some(None)` clears it. Optional.
-    std::optional<std::string> apple_team_id = std::nullopt;
+    /// Apple Key ID. Explicit `null` clears it. Tri-state (§27.4 rule 5, null is not absent):
+    /// `std::nullopt` omits the member; an engaged value holding `std::nullopt` is JSON `null`;
+    /// a value is a value.
+    std::optional<std::optional<std::string>> apple_key_id = std::nullopt;
+    /// Apple Team ID. Explicit `null` clears it. Tri-state (§27.4 rule 5, null is not absent):
+    /// `std::nullopt` omits the member; an engaged value holding `std::nullopt` is JSON `null`;
+    /// a value is a value.
+    std::optional<std::optional<std::string>> apple_team_id = std::nullopt;
     /// The server's `attribute_map` field. Optional.
     std::optional<std::string> attribute_map = std::nullopt;
-    /// OAuth2-variant authorization endpoint. `Some(None)` clears it. Optional.
-    std::optional<std::string> authorization_endpoint = std::nullopt;
-    /// Sign-in-button icon for a generic provider. `Some(None)` clears it. Optional.
-    std::optional<std::string> button_icon = std::nullopt;
+    /// OAuth2-variant authorization endpoint. Explicit `null` clears it. Tri-state (§27.4 rule
+    /// 5, null is not absent): `std::nullopt` omits the member; an engaged value holding
+    /// `std::nullopt` is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> authorization_endpoint = std::nullopt;
+    /// Sign-in-button icon for a generic provider. Explicit `null` clears it. Tri-state (§27.4
+    /// rule 5, null is not absent): `std::nullopt` omits the member; an engaged value holding
+    /// `std::nullopt` is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> button_icon = std::nullopt;
     /// The server's `client_id` field. Optional.
     std::optional<std::string> client_id = std::nullopt;
     /// The server's `client_secret` field -- a ONE-TIME secret (§27.5). Optional.
     std::optional<Sensitive<std::string>> client_secret = std::nullopt;
     /// The server's `enabled` field. Optional.
     std::optional<bool> enabled = std::nullopt;
+    /// SAML only: the IdP metadata signing certificate (#530). Explicit `null` clears it;
+    /// omitted leaves it. Clearing it is audited (`federation.metadata_signing_cert_cleared`),
+    /// and so is replacing it with a different certificate
+    /// (`federation.metadata_signing_cert_changed`). Tri-state (§27.4 rule 5, null is not
+    /// absent): `std::nullopt` omits the member; an engaged value holding `std::nullopt` is
+    /// JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> idp_metadata_signing_cert_pem = std::nullopt;
     /// PEM-encoded X.509 certificate for verifying SAML assertions (CQ-B40/REQ-14 AC-5).
-    /// `Some(None)` clears the stored cert. Optional.
-    std::optional<std::string> idp_signing_cert_pem = std::nullopt;
-    /// The server's `metadata_url` field. Optional.
-    std::optional<std::string> metadata_url = std::nullopt;
+    /// Explicit `null` clears the stored cert; omitted leaves it. Tri-state (§27.4 rule 5, null
+    /// is not absent): `std::nullopt` omits the member; an engaged value holding `std::nullopt`
+    /// is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> idp_signing_cert_pem = std::nullopt;
+    /// OIDC discovery or SAML metadata URL. Explicit `null` clears it; omitted leaves it.
+    /// Tri-state (§27.4 rule 5, null is not absent): `std::nullopt` omits the member; an
+    /// engaged value holding `std::nullopt` is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> metadata_url = std::nullopt;
     /// The server's `provider` field. Optional.
     std::optional<std::string> provider = std::nullopt;
-    /// Operator-chosen identifier for a `generic_*` kind. `Some(None)` clears it. Optional.
-    std::optional<std::string> provider_slug = std::nullopt;
+    /// Operator-chosen identifier for a `generic_*` kind. Explicit `null` clears it. Tri-state
+    /// (§27.4 rule 5, null is not absent): `std::nullopt` omits the member; an engaged value
+    /// holding `std::nullopt` is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> provider_slug = std::nullopt;
     /// Send PKCE on the authorization request. Optional.
     std::optional<bool> require_pkce = std::nullopt;
     /// Scopes to request. Replaced wholesale; empty restores the per-kind default. Optional.
     std::optional<std::vector<std::string>> scopes = std::nullopt;
-    /// OAuth2-variant token endpoint. `Some(None)` clears it. Optional.
-    std::optional<std::string> token_endpoint = std::nullopt;
+    /// OAuth2-variant token endpoint. Explicit `null` clears it. Tri-state (§27.4 rule 5, null
+    /// is not absent): `std::nullopt` omits the member; an engaged value holding `std::nullopt`
+    /// is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> token_endpoint = std::nullopt;
     /// The server's `token_exchange` field. Optional.
     std::optional<TokenExchangeTrustRequest> token_exchange = std::nullopt;
-    /// OAuth2-variant userinfo endpoint. `Some(None)` clears it. Optional.
-    std::optional<std::string> userinfo_endpoint = std::nullopt;
+    /// OAuth2-variant userinfo endpoint. Explicit `null` clears it. Tri-state (§27.4 rule 5,
+    /// null is not absent): `std::nullopt` omits the member; an engaged value holding
+    /// `std::nullopt` is JSON `null`; a value is a value.
+    std::optional<std::optional<std::string>> userinfo_endpoint = std::nullopt;
 };
 
 /// The `UpdateGroup` schema from the server's OpenAPI document.
@@ -4764,6 +4852,8 @@ struct UpdateNotificationRuleRequest {
     std::optional<std::string> name = std::nullopt;
     /// The server's `recipient_emails` field. Optional.
     std::optional<std::vector<std::string>> recipient_emails = std::nullopt;
+    /// The rule's notification window in minutes, 1 … 1440 (#551). Optional.
+    std::optional<std::int64_t> window_minutes = std::nullopt;
 };
 
 /// The `UpdateOAuth2ClientRequest` schema from the server's OpenAPI document.

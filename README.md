@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32 and §33 at contract 1.59, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33 and §34 at contract 1.60, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
 Contract 1.53–1.58 ships here **without a carve-out**: [§28.12](#2812-rfc-7592-client-configuration)'s RFC 7592 client configuration; the four management namespaces [`saml` (§29), `directory` (§30), `scim_targets` (§31) and `ssf` (§32)](#directory-saml-ssf-and-scim-targets-29--32); the [SSF receiver helper (§32.7)](#ssf-receiver-327) and [CIBA (§33)](#ciba-33) — both MAY for C++ — including the signed request form under all three algorithms (PS256, ES256, EdDSA) over the OpenSSL this SDK already links; and §21.3.1's seventh `mtls_endpoint_aliases` member. The management surface is **190 operations across 28 namespaces**.
 
@@ -25,6 +25,27 @@ strings (P12.2), the RFC 7592 update sends only what the read carried (P12.4), t
 replacement inputs cannot be built without their required members, `Sensitive<T>::expose()`
 is the public accessor (§7 rule 3), and management reads follow §16 (`408`, `429`,
 `Retry-After`).
+
+Contract 1.60 (§34.4, the answers to the ports' questions, and §27.15) changes no wire
+shape either. This SDK sends every never-retried write on a fresh connection that is not
+reused (§34.2 P11); a local refusal of a value you passed is `std::invalid_argument`
+(P12.2, B5); SSF event types are sent as the strings you hold (B4); a replay store that
+cannot answer is no verdict and is raised as `NetworkError` (B1, P3, P4), and after it the
+`poll` batch asks the store nothing more (P1); the SSF key cache expires ten minutes after
+the fetch that filled it (P6); a `poll` that leaves SETs unjudged emits `SsfUnjudgedEvent`
+(§19.1). On the management surface: `window_minutes` on notification rules, passed through
+and never clamped; `allow_sha1_signatures` and `idp_metadata_signing_cert_pem` on the
+federation configuration (a response without `allow_sha1_signatures` reads `false`), and
+the ten nullable members of `UpdateFederationConfigRequest` are tri-state, so an explicit
+`null` clears and an omitted member leaves the stored value (§27.15 note 8);
+`expected_updated_at` on `ScimTargetInput`, which `ScimTargetResponse::to_input()` fills
+(§31.3 rule 4). The discovery document's four revocation and introspection members are
+optional (§21.5), a refresh's `scope` is the response's (§12.1), and the `actor_token` of a
+token exchange is this client's own `client_credentials` token (§15.2 rule 9). §35
+(certificate revocation lists) is informative and needs nothing from an SDK.
+
+From 1.0.0 the SDK is stable and follows [Semantic Versioning](https://semver.org/): a
+breaking change to the public API waits for the next major version.
 
 Sections are named individually rather than folded into ranges: widening a
 range silently turns a statement that was true when written into a different
@@ -388,6 +409,16 @@ operation this policy exists for. `login`, `verify_mfa`, `logout`, `refresh` and
 `authenticate_device` are never retried automatically, both because they change
 state and because their credentials are single-use.
 
+**A write that is never retried arrives once** (contract 1.60, §34.2 P11). "Never retried"
+includes libcurl's own transparent re-send of a request over a pooled connection that
+turned out dead — which could deliver a write the server already applied. So every request
+that is not a `GET` and that the SDK does not itself repeat (`HttpRequest::replayable`
+false: every `login`, `logout`, `refresh`, management write, OAuth2 grant that §16.2 names
+ineligible, …) goes on a fresh connection (`CURLOPT_FRESH_CONNECT`) that is not reused
+afterwards (`CURLOPT_FORBID_REUSE`); a server that reads it and drops the connection
+unanswered receives it exactly once. `GET`s and the requests §16 does retry keep the
+keep-alive pool.
+
 The policy is 3 attempts, 200 ms base, 5 s cap, **full jitter** over
 `[0, backoff]`, and `Retry-After` honored as a **floor** — it can lengthen a wait,
 never shorten one, so a `Retry-After: 0` cannot defeat the backoff. Only the
@@ -416,8 +447,9 @@ auto client = axiam::Client::builder()
 > **clamped** to 5 s, and the clamp is announced through the `ConfigClampedEvent`
 > rather than applied in silence.
 
-`TelemetryEvent` is a closed `std::variant` over five structs with fixed member
-lists and no maps, which is what makes "no event carries a token" checkable by
+`TelemetryEvent` is a closed `std::variant` over six structs with fixed member
+lists and no maps (the sixth, `SsfUnjudgedEvent`, is new in 1.0.0: a visitor with an
+exhaustive overload set needs a case for it), which is what makes "no event carries a token" checkable by
 reading one declaration. Events carry the *path template*
 (`/api/v1/authz/check`), never a URL with ids substituted in — a metric label
 with a UUID in it is a cardinality bomb — and a retried call emits one
@@ -1172,6 +1204,21 @@ const auto exchanged = client.token_exchange(params);
   named. There is no default: an empty value throws `AuthError` client-side
   with no wire call, because a default would be the SDK choosing for you. Pass
   `kAccessTokenType` for the same-domain exchange.
+- **The actor token is this client's own** (§15.2 rule 9, contract 1.60). Delegation
+  (`params.actor_token` set) names the client authenticating the exchange as the
+  actor, so the token must have been issued to *that* client — normally its own
+  `client_credentials` token. This SDK supplies none; you fetch and pass it:
+
+  ```cpp
+  params.actor_token = client.login_client_credentials().access_token;  // same client_id
+  const auto delegated = client.token_exchange(params);
+  ```
+
+  A token issued to another client, a console sign-in or a service account's token
+  is answered `400 invalid_request` ("actor_token was not issued to the exchanging
+  client"); it surfaces unchanged as an `OAuthProtocolError`, with exactly one
+  request — never retried, never re-sent without the actor token (that would turn a
+  delegation into an impersonation).
 - **No actor token.** Delegation across a trust boundary is unsupported in v1;
   sending one is `invalid_request`, which the SDK will not work around by
   dropping it and re-sending.
@@ -1770,8 +1817,9 @@ It is never mapped to one of the **known** enumerators: reading a new value as
 whichever enumerator happens to be first turns a new server state into a wrong
 one, and on this surface these values gate access. `to_wire(Unknown)` is the
 empty string, for display only: **`Unknown` is never sent** — a request carrying it
-is refused locally with `NetworkError`, before any request, rather than written as
-`""` for the server to refuse (contract 1.59, §34.2 P12.2). **A `switch` over one of
+is refused locally with `std::invalid_argument` (the SDK's validation error, never a
+bare `NetworkError`), before any request, rather than written as `""` for the server
+to refuse (contract 1.59 and 1.60, §34.2 P12.2). **A `switch` over one of
 these enums needs an `Unknown` arm:**
 
 ```cpp
@@ -2245,7 +2293,11 @@ Doxygen repeats the contract's call-site warnings. Secrets on the way in are `Se
 and a decoder meeting one drops it.
 
 **Directory (§30)** — `update` is a sparse `PATCH`; `group_base_dn` / `group_filter` are
-tri-state (`std::optional<std::optional<std::string>>`), so "clear" is expressible:
+tri-state (`std::optional<std::optional<std::string>>`), so "clear" is expressible —
+and so are the ten nullable members of `federation().update_config`'s
+`UpdateFederationConfigRequest` (§27.15 note 8: `metadata_url`, `idp_signing_cert_pem`,
+`idp_metadata_signing_cert_pem`, `provider_slug`, the three OAuth2 endpoints,
+`apple_team_id`, `apple_key_id`, `button_icon`):
 
 ```cpp
 using namespace axiam::management;
@@ -2312,13 +2364,16 @@ client.ssf().update_stream(stream_id, stream);
 ```
 
 `ScimTargetAuth` / `ScimTargetScope` are open unions: an unknown `type` decodes, and
-sending one is refused locally (`NetworkError`, before any request). Open enums decode
-an unknown value as `Unknown`, and a request carrying `Unknown` is refused the same way
-(§34.2 P12.2) — replace it before writing a read back. SSF event types are **strings**
-(`SsfEventType` is `std::string`, the six URIs named in
+sending one is refused locally (`std::invalid_argument`, before any request). Open enums
+decode an unknown value as `Unknown`, and a request carrying `Unknown` is refused the same
+way (§34.2 P12.2, B5) — replace it before writing a read back. SSF event types are
+**strings** (`SsfEventType` is `std::string`, the six URIs named in
 `axiam::management::ssf_event_type::k…`, §32.2): an event type this SDK does not list
-decodes as itself, and `is_known_ssf_event_type()` tells you whether a value may be sent
-— one that may not is refused locally too.
+decodes as itself and is **sent back unchanged** — a read-modify-write of a stream
+carrying a URI this SDK has never seen keeps it, and the server judges it (contract 1.60
+B4). This SDK keeps no client-side list that refuses a URI you type, because such a list
+goes stale; `is_known_ssf_event_type()` only tells you whether a value is one of the six
+constants.
 
 ## SSF receiver (§32.7)
 
@@ -2370,7 +2425,9 @@ document whose `issuer` matches) — a `jwk` / `x5c` header is never read; an un
 `kid` triggers one refetch at most once a minute; a JWKS fetch failure is a
 `NetworkError`, not a verdict, and — the first fill of an empty cache included — holds
 the next fetch off for that same minute, so a JWKS outage is not one fetch per SET
-(§34.2 P6). **A verified SET is recorded**, so one re-offered unacked
+(§34.2 P6). The key cache expires ten minutes after the successful fetch that filled it,
+and the next SET fetches again, so a key the transmitter removed stops verifying (contract
+1.60, P6). **A verified SET is recorded**, so one re-offered unacked
 reads `replayed`: acknowledge what you processed, and acknowledge a `replayed` refusal
 too rather than reporting it (contract 1.59, §34.2 P2). `poll` sends only the members you set,
 acknowledges nothing itself, is retried per §16 on transport/408/429/5xx only, and
@@ -2379,8 +2436,15 @@ never carries the client's session. **`poll` never keeps a `jti` it does not ret
 listed in `unjudged`, in neither `events` nor `refused`, and its `jti` is not recorded,
 so the transmitter offers it again; the rest of the batch is still returned. The replay
 store is pluggable (`ReplayStore::check_and_record`, atomic) for a receiver running
-several instances; a store that cannot answer throws, which `verify_set` raises (fail
-closed) and `poll` reports as unjudged. The default `MemoryReplayStore` is bounded in
+several instances. A store has three answers — seen, not seen, **cannot answer** — and this
+interface gives the third by throwing: `verify_set` raises it as a `NetworkError` with no
+reason code (it is never read as `replayed`, which `poll` would hand back as a refusal and
+you would acknowledge), and `poll` lists the SET as unjudged, unrecorded and unacknowledged
+(§34.2 P4, §32.8 helper test 6). After the first store failure in a batch the store is
+asked nothing more: every later SET that passes steps 1 – 8 is unjudged too (contract
+1.60, P1). A `poll` that returns leaving SETs unjudged emits §19's `SsfUnjudgedEvent` —
+`ssf.poll`, the count and the category (`key_fetch` or `replay_store`), never a `jti` —
+because the caller sees no error for it. The default `MemoryReplayStore` is bounded in
 time by the replay window and **unbounded in count** (§34.2 P4).
 
 ## CIBA (§33)

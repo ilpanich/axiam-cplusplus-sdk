@@ -66,6 +66,13 @@ void sink(const axiam::TelemetryEvent& event) {
         std::cerr << "WARN: " << e->setting << "=" << e->requested
                   << " was clamped to " << e->effective << " (" << e->contract_reference
                   << ")\n";
+
+    } else if (const auto* e = std::get_if<axiam::SsfUnjudgedEvent>(&event)) {
+        // §19.1 (contract 1.60): ssf.poll returned normally but left SETs
+        // unjudged -- a JWKS or replay-store outage the caller sees no error
+        // for. The transmitter re-offers them; alert if this keeps firing.
+        std::cerr << "WARN: " << e->operation << " left " << e->unjudged
+                  << " SET(s) unjudged (" << e->category << ")\n";
     }
     // RequestStartEvent is deliberately unhandled here: RequestEndEvent carries
     // the same identity plus the outcome, so counting both would double-count.
@@ -142,6 +149,7 @@ int main() {
  *   RefreshEvent       → counter   "axiam.token.refresh"     labels: role
  *   ConfigClampedEvent → a log line at WARN, not a metric: it fires once at
  *                        construction and its whole value is being READ.
+ *   SsfUnjudgedEvent   → counter   "axiam.ssf.unjudged"      labels: category
  *
  * Label with `path_template`, never with the request URL: a metric label
  * carrying a UUID is a cardinality bomb. The hook runs on the calling thread,

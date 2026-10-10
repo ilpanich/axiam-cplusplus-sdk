@@ -13,6 +13,13 @@
 namespace axiam::ssf {
 namespace {
 
+/// The NetworkError cause of a replay store that could not answer (§34.2 P4).
+constexpr const char* kReplayStoreUnavailable = "replay_store_unavailable";
+
+/// §34.2 P6 (contract 1.60): the SSF key cache expires no later than ten
+/// minutes after the successful fetch that filled it.
+constexpr std::chrono::minutes kKeyCacheLifetime{10};
+
 /// `j[key]` when it is a string. `json::value(key, default)` is not a safe
 /// substitute: it THROWS the vendored library's type_error when the member is
 /// present with another type, which would carry a hostile document's shape out
@@ -80,6 +87,11 @@ struct SsfReceiver::State {
     /// included (§34.2 P6). A successful fill does not count: it is not "the
     /// refetch", and leaves the one refetch available.
     std::optional<std::chrono::steady_clock::time_point> last_limited_fetch;
+    /// When the cache was last filled by a SUCCESSFUL fetch. §34.2 P6 (contract
+    /// 1.60): the cache expires no later than kKeyCacheLifetime after it, and the
+    /// next SET fetches again -- a cache that never expired kept verifying with a
+    /// key the transmitter had removed.
+    std::chrono::steady_clock::time_point loaded_at{};
     std::function<std::chrono::steady_clock::time_point()> now = [] {
         return std::chrono::steady_clock::now();
     };
@@ -136,7 +148,7 @@ struct SsfReceiver::State {
         return uri;
     }
 
-    void load_keys() {
+    void load_keys(std::chrono::steady_clock::time_point at) {
         const auto doc = fetch_object(resolve_jwks_uri(), "JWKS");
         std::map<std::string, std::string> fresh;
         const auto list = doc.find("keys");
@@ -154,6 +166,7 @@ struct SsfReceiver::State {
         }
         keys = std::move(fresh);
         have_keys = true;
+        loaded_at = at;
     }
 
     /// Step 4: the key for `kid`, with at most one limited fetch per minute.
@@ -162,6 +175,14 @@ struct SsfReceiver::State {
         const auto at = now();
         const bool limited =
             last_limited_fetch && at - *last_limited_fetch < std::chrono::seconds(60);
+        // §34.2 P6 (contract 1.60): an expired cache is refreshed exactly like an
+        // empty one is filled -- a successful refresh does not count toward the
+        // once-a-minute limit, a failed one does, and until the minute after a
+        // failure has passed a SET makes no fetch and is no verdict.
+        if (have_keys && at - loaded_at >= kKeyCacheLifetime) {
+            have_keys = false;
+            keys.clear();
+        }
         if (!have_keys) {
             if (limited) {
                 throw NetworkError(
@@ -170,7 +191,7 @@ struct SsfReceiver::State {
                     "jwks_unavailable");
             }
             try {
-                load_keys();
+                load_keys(at);
             } catch (...) {
                 last_limited_fetch = at;  // a failed fill counts toward the limit
                 throw;
@@ -179,12 +200,15 @@ struct SsfReceiver::State {
         if (auto it = keys.find(kid); it != keys.end()) return it->second;
         if (limited) return std::nullopt;
         last_limited_fetch = at;
-        load_keys();
+        load_keys(at);
         if (auto it = keys.find(kid); it != keys.end()) return it->second;
         return std::nullopt;
     }
 
-    SecurityEvent verify(const std::string& set, const std::string* expected_jti);
+    /// `ask_store` false: steps 1 - 8 only, and a SET that passes them is raised
+    /// unjudged rather than put to a store that already failed in this batch (P1).
+    SecurityEvent verify(const std::string& set, const std::string* expected_jti,
+                         bool ask_store = true);
 };
 
 namespace {
@@ -214,7 +238,7 @@ bool typ_is_secevent(const nlohmann::json& header) {
 }  // namespace
 
 SecurityEvent SsfReceiver::State::verify(const std::string& set,
-                                         const std::string* expected_jti) {
+                                         const std::string* expected_jti, bool ask_store) {
     // 1. Exactly three parts, every one of them base64url, the first two JSON
     //    objects.
     const auto dot1 = set.find('.');
@@ -282,10 +306,28 @@ SecurityEvent SsfReceiver::State::verify(const std::string& set,
         refuse(SetFailureReason::kInvalidRequest, "the poll key is not the SET's jti");
     }
 
-    // 9. Recorded only now, once everything else passed.
-    if (!config.replay_store->check_and_record(id, config.replay_window)) {
-        refuse(SetFailureReason::kReplayed, "this jti was already accepted");
+    // 9. Recorded only now, once everything else passed. The store has three answers
+    //    (§34.2 P4): seen, not seen, and CANNOT ANSWER -- which a C++ store gives by
+    //    throwing. That is no verdict: it is raised as the §2 NetworkError, never as a
+    //    SetVerificationError (so it carries no reason code and can never be read as
+    //    `replayed`, which poll() would hand back to the transmitter as a refusal), and
+    //    poll() leaves the SET unjudged and unrecorded.
+    if (!ask_store) {
+        throw NetworkError(
+            "ssf: the replay store could not answer earlier in this poll batch and is not "
+            "asked again (CONTRACT.md §34.2 P1)",
+            kReplayStoreUnavailable);
     }
+    bool first_sight = false;
+    try {
+        first_sight = config.replay_store->check_and_record(id, config.replay_window);
+    } catch (const std::exception& e) {
+        throw NetworkError(std::string("ssf: the replay store could not answer: ") + e.what(),
+                           kReplayStoreUnavailable);
+    } catch (...) {
+        throw NetworkError("ssf: the replay store could not answer", kReplayStoreUnavailable);
+    }
+    if (!first_sight) refuse(SetFailureReason::kReplayed, "this jti was already accepted");
 
     SecurityEvent out;
     out.jti = id;
@@ -365,6 +407,7 @@ SsfPollResult SsfReceiver::poll(const std::string& stream_id, const SsfPollOptio
     req.sessionless = true;
 
     const int budget = impl.retry_enabled ? detail::kRetryMaxAttempts : 1;
+    req.replayable = budget > 1;  // §34.2 P11: only a request the SDK itself repeats keeps the pool
     HttpResponse resp;
     for (int attempt = 1;; ++attempt) {
         resp = impl.transport(req);
@@ -388,6 +431,9 @@ SsfPollResult SsfReceiver::poll(const std::string& stream_id, const SsfPollOptio
         throw NetworkError("ssf.poll: the response is not a JSON object", "malformed_body");
     }
     SsfPollResult out;
+    bool store_failed = false;
+    std::size_t by_key_fetch = 0;
+    std::size_t by_store = 0;
     const auto more = reply.find("moreAvailable");
     out.more_available = more != reply.end() && more->is_boolean() && more->get<bool>();
     const auto sets = reply.find("sets");
@@ -402,18 +448,34 @@ SsfPollResult SsfReceiver::poll(const std::string& stream_id, const SsfPollOptio
             // fetch or a replay store that failed — leaves the SET unjudged and
             // its jti unrecorded (verify() records only at step 9, and a store
             // that throws has recorded nothing), so the transmitter offers it
-            // again instead of the next poll reading it `replayed`.
+            // again instead of the next poll reading it `replayed`. After the
+            // first store failure the store is asked nothing more for this batch
+            // (contract 1.60): every later SET that passes steps 1 - 8 is
+            // unjudged too, and one that fails them is still refused.
             try {
-                out.events.push_back(state_->verify(it.value().get<std::string>(), &jti));
+                out.events.push_back(
+                    state_->verify(it.value().get<std::string>(), &jti, !store_failed));
             } catch (const SetVerificationError& e) {
                 out.refused.push_back({jti, e.reason()});
+            } catch (const NetworkError& e) {
+                const bool store = e.cause() == kReplayStoreUnavailable;
+                store_failed = store_failed || store;
+                ++(store ? by_store : by_key_fetch);
+                out.unjudged.push_back({jti, e.what()});
             } catch (const std::exception& e) {
+                ++by_key_fetch;
                 out.unjudged.push_back({jti, e.what()});
             } catch (...) {
+                ++by_key_fetch;
                 out.unjudged.push_back({jti, "unknown failure"});
             }
         }
     }
+    // §19.1 (contract 1.60, SHOULD): a poll that returns leaving SETs unjudged
+    // says so, because the caller sees no error. One event per category; counts
+    // only -- no jti, no SET.
+    if (by_key_fetch > 0) impl.emit(SsfUnjudgedEvent{"ssf.poll", by_key_fetch, "key_fetch"});
+    if (by_store > 0) impl.emit(SsfUnjudgedEvent{"ssf.poll", by_store, "replay_store"});
     return out;
 }
 

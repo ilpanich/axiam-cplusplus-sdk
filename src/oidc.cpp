@@ -647,6 +647,17 @@ OidcConfiguration Client::oidc_discover() {
     cfg.code_challenge_methods_supported = string_array(j, "code_challenge_methods_supported");
     cfg.token_endpoint_auth_signing_alg_values_supported =
         string_array(j, "token_endpoint_auth_signing_alg_values_supported");
+    // §21.5 (contract 1.60): `openapi.json` marks these four required because
+    // this server always sends them; a server before 1.0.0 sends none, so each
+    // is read as optional. Informational: authentication is unchanged.
+    cfg.revocation_endpoint_auth_methods_supported =
+        string_array(j, "revocation_endpoint_auth_methods_supported");
+    cfg.revocation_endpoint_auth_signing_alg_values_supported =
+        string_array(j, "revocation_endpoint_auth_signing_alg_values_supported");
+    cfg.introspection_endpoint_auth_methods_supported =
+        string_array(j, "introspection_endpoint_auth_methods_supported");
+    cfg.introspection_endpoint_auth_signing_alg_values_supported =
+        string_array(j, "introspection_endpoint_auth_signing_alg_values_supported");
 
     p_->oidc_config = cfg;
     p_->oidc_config_expires_at = std::chrono::steady_clock::now() + p_->oidc_discovery_ttl;
@@ -860,6 +871,7 @@ std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
     req.body = form.str();
 
     const int budget = (retryable && impl.retry_enabled) ? detail::kRetryMaxAttempts : 1;
+    req.replayable = budget > 1;  // §34.2 P11: a request this SDK sends twice may keep the pool
     HttpResponse resp;
     for (int attempt = 1; attempt <= budget; ++attempt) {
         resp = impl.send_raw(req);
@@ -1115,6 +1127,7 @@ std::string token_admin_call(Client::Impl& impl, const OidcConfiguration& config
     req.body = form.str();
 
     const int budget = (retryable && impl.retry_enabled) ? detail::kRetryMaxAttempts : 1;
+    req.replayable = budget > 1;  // §34.2 P11: a request this SDK sends twice may keep the pool
     HttpResponse resp;
     for (int attempt = 1; attempt <= budget; ++attempt) {
         resp = impl.send_raw(req);
@@ -2024,6 +2037,7 @@ HttpResponse registration_request(Client::Impl& impl, const char* method,
     // Rule 5: only the read may be repeated, and only per §16 — never on a 4xx
     // other than 408/429, which retry_should_retry() already excludes.
     const int budget = (retryable && impl.retry_enabled) ? detail::kRetryMaxAttempts : 1;
+    req.replayable = budget > 1;  // §34.2 P11: a request this SDK sends twice may keep the pool
     for (int attempt = 1;; ++attempt) {
         HttpResponse resp = impl.transport(req);
         const std::optional<long> status =
@@ -2312,6 +2326,7 @@ CibaPollOutcome ciba_poll_once(Client::Impl& impl, const OidcConfiguration& conf
 
     CibaPollOutcome out;
     const int budget = impl.retry_enabled ? detail::kRetryMaxAttempts : 1;
+    req.replayable = budget > 1;  // §34.2 P11
     for (int attempt = 1;; ++attempt) {
         HttpResponse resp = impl.transport(req);
         const std::optional<long> status =

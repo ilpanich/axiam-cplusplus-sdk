@@ -583,6 +583,32 @@ AXIAM_TEST("§15.7 an actor token with an external subject token is refused with
                   std::string::npos);
 }
 
+AXIAM_TEST("§15.6 (contract 1.60) / §15.2 rule 9: an actor_token not issued to the exchanging client surfaces unchanged, one request, no rewriting") {
+    Fixture f;
+    f.replies->token_script = {
+        {400,
+         R"({"error":"invalid_request","error_description":"actor_token was not issued to the exchanging client"})"}};
+    auto client = make_client(f);
+    try {
+        client.token_exchange(exchange("another-clients-actor-token", {"invoices:read"}));
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OAuthProtocolError& e) {
+        // Surfaced as every OAuth2 invalid_request is (§15.3): the code and the
+        // server's description, unchanged.
+        AXIAM_REQUIRE(e.error_code() == "invalid_request");
+        AXIAM_REQUIRE(e.error_description() == "actor_token was not issued to the exchanging client");
+    }
+
+    // Exactly one request. Not retried, not re-sent without the actor token (which would
+    // turn the delegation the caller asked for into an impersonation they did not), and
+    // not repaired by substituting a token of the SDK's own (rule 9, rule 1).
+    AXIAM_REQUIRE(f.replies->token_calls == 1);
+    const auto req = last_request(*f.st, "/oauth2/token");
+    AXIAM_REQUIRE(req.body.find("actor_token=another-clients-actor-token") != std::string::npos);
+    AXIAM_REQUIRE(req.body.find("scope=invoices%3Aread") != std::string::npos);
+    AXIAM_REQUIRE(!req.replayable);  // §34.2 P11: a never-retried write, on a fresh connection
+}
+
 AXIAM_TEST("§15.7 a refused subject_token_type is never retried as another") {
     // A refresh token is a re-authentication credential and an ID token is an
     // assertion to a client about a login; neither is a bearer credential for an
@@ -691,6 +717,29 @@ AXIAM_TEST("§9 rule 2 concurrent refreshes of one token make exactly one wire c
     AXIAM_REQUIRE(f.replies->token_calls == 1);
     // ...and every worker got that one outcome, whole.
     AXIAM_REQUIRE(ok.load() == 8);
+}
+
+AXIAM_TEST("§12.1 (contract 1.60) a refresh's scope is the response's, never the original grant's") {
+    // The server intersects the grant with the client's registration at every
+    // refresh, so a narrowed registration answers a narrower `scope` (and, once
+    // `openid` is gone, no ID token). The token set carries what the response
+    // said -- not what the caller asked for, nor what the grant once held.
+    Fixture f;
+    f.replies->token_script = {
+        {200, R"({"access_token":"narrowed","token_type":"Bearer","expires_in":900,)"
+              R"("scope":"profile","refresh_token":"rotated"})"},
+        {200, R"({"access_token":"unscoped","token_type":"Bearer","expires_in":900})"}};
+    auto client = make_client(f);
+
+    const auto narrowed = client.oidc_refresh(axiam::Sensitive<std::string>("grant-token"),
+                                              std::string("openid profile email"));
+    AXIAM_REQUIRE(narrowed.scope == std::optional<std::string>("profile"));
+    AXIAM_REQUIRE(!narrowed.id_token.has_value());
+
+    // A response that states no scope is not filled in from the request.
+    const auto unstated = client.oidc_refresh(axiam::Sensitive<std::string>("rotated"),
+                                              std::string("openid profile"));
+    AXIAM_REQUIRE(!unstated.scope.has_value());
 }
 
 AXIAM_TEST("§9 rule 2 distinct refresh tokens do not contend, and a burst is not a cache") {

@@ -184,8 +184,9 @@ struct CurlTransport::Impl {
     //     minimum on Linux) before libcurl notices and retries on a new socket.
     //
     // These are all connection-scoped, so they are set once per handle.
-    // `FORBID_REUSE`/`FRESH_CONNECT` are explicitly pinned OFF: nothing in this
-    // SDK may opt out of keep-alive, and pinning them documents that.
+    // `FORBID_REUSE`/`FRESH_CONNECT` start OFF here and are then set per request in
+    // transfer(): ON for a write the SDK never retries (§34.2 P11), OFF for everything
+    // else, so keep-alive still serves every GET and every request the SDK repeats.
     static void apply_connection_reuse_options(CURL* h) {
         if (h == nullptr) return;
 
@@ -416,6 +417,22 @@ HttpResponse CurlTransport::transfer(void* curl_handle, const HttpRequest& req) 
         curl_easy_setopt(h, CURLOPT_SSLKEY_BLOB, &key_blob);
         curl_easy_setopt(h, CURLOPT_SSLKEYTYPE, "PEM");
     }
+
+    // ---- §34.2 P11 (contract 1.60, A6; R-17): a write the SDK never retries arrives once. ----
+    //
+    // libcurl re-sends a request by itself when a REUSED connection turns out dead before
+    // any byte of the reply (the server closed an idle keep-alive connection, or read the
+    // write and dropped it): a second delivery of a write that may already have been
+    // applied, and no §16 switch controls it. The remedy where the library has no switch is
+    // a fresh connection that nothing reuses afterwards: FRESH_CONNECT forbids picking up a
+    // pooled connection (so there is no stale one to fail on and be re-sent over) and
+    // FORBID_REUSE closes this one when the transfer ends (so the next write does not
+    // inherit it either). A GET, and a request the SDK itself repeats (`replayable`), keep
+    // the pool -- and since the handle is reused, the options are set BOTH ways on every
+    // request rather than once, or one write would leave the next GET on a closed pool.
+    const bool never_resent = req.method != "GET" && !req.replayable;
+    curl_easy_setopt(h, CURLOPT_FRESH_CONNECT, never_resent ? 1L : 0L);
+    curl_easy_setopt(h, CURLOPT_FORBID_REUSE, never_resent ? 1L : 0L);
 
     curl_easy_setopt(h, CURLOPT_CONNECTTIMEOUT_MS, impl_->cfg.connect_timeout_ms);
     curl_easy_setopt(h, CURLOPT_TIMEOUT_MS, impl_->cfg.request_timeout_ms);

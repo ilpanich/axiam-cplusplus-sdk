@@ -1084,7 +1084,7 @@ AXIAM_TEST("management oauth2_clients.list_registration_tokens reaches its route
 
 AXIAM_TEST("management federation.list_configs reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"items": [{"allow_tenant_inheritance": true, "allowed_algorithms": ["example"], "allowed_issuer_tenants": ["example"], "apple_key_id": "example", "apple_team_id": "example", "attribute_map": {}, "authorization_endpoint": "example", "button_icon": "example", "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "effective_scopes": ["example"], "enabled": true, "has_bundled_mark": true, "id": "11111111-1111-4111-8111-111111111111", "metadata_url": "example", "mints_client_secret": true, "pkce_required": true, "protocol": "example", "provider": "example", "provider_kind": "example", "provider_slug": "example", "scopes": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "token_endpoint": "example", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z", "userinfo_endpoint": "example"}], "total": 1, "offset": 0, "limit": 50})json");
+        R"json({"items": [{"allow_sha1_signatures": true, "allow_tenant_inheritance": true, "allowed_algorithms": ["example"], "allowed_issuer_tenants": ["example"], "apple_key_id": "example", "apple_team_id": "example", "attribute_map": {}, "authorization_endpoint": "example", "button_icon": "example", "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "effective_scopes": ["example"], "enabled": true, "has_bundled_mark": true, "id": "11111111-1111-4111-8111-111111111111", "idp_metadata_signing_cert_pem": "example", "metadata_url": "example", "mints_client_secret": true, "pkce_required": true, "protocol": "example", "provider": "example", "provider_kind": "example", "provider_slug": "example", "scopes": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "token_endpoint": "example", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z", "userinfo_endpoint": "example"}], "total": 1, "offset": 0, "limit": 50})json");
     const auto result = fixture.client.management().federation().list_configs();
     (void) result;
 
@@ -1094,7 +1094,7 @@ AXIAM_TEST("management federation.list_configs reaches its route") {
 
 AXIAM_TEST("management federation.create_config reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"allow_tenant_inheritance": true, "allowed_algorithms": ["example"], "allowed_issuer_tenants": ["example"], "apple_key_id": "example", "apple_team_id": "example", "attribute_map": {}, "authorization_endpoint": "example", "button_icon": "example", "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "effective_scopes": ["example"], "enabled": true, "has_bundled_mark": true, "id": "11111111-1111-4111-8111-111111111111", "metadata_url": "example", "mints_client_secret": true, "pkce_required": true, "protocol": "example", "provider": "example", "provider_kind": "example", "provider_slug": "example", "scopes": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "token_endpoint": "example", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z", "userinfo_endpoint": "example"})json");
+        R"json({"allow_sha1_signatures": true, "allow_tenant_inheritance": true, "allowed_algorithms": ["example"], "allowed_issuer_tenants": ["example"], "apple_key_id": "example", "apple_team_id": "example", "attribute_map": {}, "authorization_endpoint": "example", "button_icon": "example", "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "effective_scopes": ["example"], "enabled": true, "has_bundled_mark": true, "id": "11111111-1111-4111-8111-111111111111", "idp_metadata_signing_cert_pem": "example", "metadata_url": "example", "mints_client_secret": true, "pkce_required": true, "protocol": "example", "provider": "example", "provider_kind": "example", "provider_slug": "example", "scopes": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "token_endpoint": "example", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z", "userinfo_endpoint": "example"})json");
     CreateFederationConfigRequest body{};
     const auto result = fixture.client.management().federation().create_config(body);
     (void) result;
@@ -1105,7 +1105,7 @@ AXIAM_TEST("management federation.create_config reaches its route") {
 
 AXIAM_TEST("management federation.get_config reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"allow_tenant_inheritance": true, "allowed_algorithms": ["example"], "allowed_issuer_tenants": ["example"], "apple_key_id": "example", "apple_team_id": "example", "attribute_map": {}, "authorization_endpoint": "example", "button_icon": "example", "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "effective_scopes": ["example"], "enabled": true, "has_bundled_mark": true, "id": "11111111-1111-4111-8111-111111111111", "metadata_url": "example", "mints_client_secret": true, "pkce_required": true, "protocol": "example", "provider": "example", "provider_kind": "example", "provider_slug": "example", "scopes": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "token_endpoint": "example", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z", "userinfo_endpoint": "example"})json");
+        R"json({"allow_sha1_signatures": true, "allow_tenant_inheritance": true, "allowed_algorithms": ["example"], "allowed_issuer_tenants": ["example"], "apple_key_id": "example", "apple_team_id": "example", "attribute_map": {}, "authorization_endpoint": "example", "button_icon": "example", "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "effective_scopes": ["example"], "enabled": true, "has_bundled_mark": true, "id": "11111111-1111-4111-8111-111111111111", "idp_metadata_signing_cert_pem": "example", "metadata_url": "example", "mints_client_secret": true, "pkce_required": true, "protocol": "example", "provider": "example", "provider_kind": "example", "provider_slug": "example", "scopes": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "token_endpoint": "example", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z", "userinfo_endpoint": "example"})json");
     const auto result = fixture.client.management().federation().get_config("11111111-1111-4111-8111-111111111111");
     (void) result;
 
@@ -1115,7 +1115,7 @@ AXIAM_TEST("management federation.get_config reaches its route") {
 
 AXIAM_TEST("management federation.update_config reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"allow_tenant_inheritance": true, "allowed_algorithms": ["example"], "allowed_issuer_tenants": ["example"], "apple_key_id": "example", "apple_team_id": "example", "attribute_map": {}, "authorization_endpoint": "example", "button_icon": "example", "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "effective_scopes": ["example"], "enabled": true, "has_bundled_mark": true, "id": "11111111-1111-4111-8111-111111111111", "metadata_url": "example", "mints_client_secret": true, "pkce_required": true, "protocol": "example", "provider": "example", "provider_kind": "example", "provider_slug": "example", "scopes": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "token_endpoint": "example", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z", "userinfo_endpoint": "example"})json");
+        R"json({"allow_sha1_signatures": true, "allow_tenant_inheritance": true, "allowed_algorithms": ["example"], "allowed_issuer_tenants": ["example"], "apple_key_id": "example", "apple_team_id": "example", "attribute_map": {}, "authorization_endpoint": "example", "button_icon": "example", "client_id": "example", "created_at": "2026-08-26T00:00:00Z", "effective_scopes": ["example"], "enabled": true, "has_bundled_mark": true, "id": "11111111-1111-4111-8111-111111111111", "idp_metadata_signing_cert_pem": "example", "metadata_url": "example", "mints_client_secret": true, "pkce_required": true, "protocol": "example", "provider": "example", "provider_kind": "example", "provider_slug": "example", "scopes": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "token_endpoint": "example", "token_exchange": {"accepted_audiences": ["example"], "enabled": true, "max_lifetime_secs": 1, "max_token_age_secs": 1, "scope_map": {}, "subject_mapping": "example"}, "updated_at": "2026-08-26T00:00:00Z", "userinfo_endpoint": "example"})json");
     UpdateFederationConfigRequest body{};
     const auto result = fixture.client.management().federation().update_config("11111111-1111-4111-8111-111111111111", body);
     (void) result;
@@ -1174,7 +1174,7 @@ AXIAM_TEST("management federation.oidc_callback reaches its route") {
 
 AXIAM_TEST("management notification_rules.list reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["login_failure"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "recipient_emails": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+        R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["login_failure"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "recipient_emails": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "window_minutes": 1}], "total": 1, "offset": 0, "limit": 50})json");
     const auto result = fixture.client.management().notification_rules().list();
     (void) result;
 
@@ -1184,7 +1184,7 @@ AXIAM_TEST("management notification_rules.list reaches its route") {
 
 AXIAM_TEST("management notification_rules.create reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["login_failure"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "recipient_emails": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["login_failure"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "recipient_emails": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "window_minutes": 1})json");
     CreateNotificationRuleRequest body{};
     const auto result = fixture.client.management().notification_rules().create(body);
     (void) result;
@@ -1195,7 +1195,7 @@ AXIAM_TEST("management notification_rules.create reaches its route") {
 
 AXIAM_TEST("management notification_rules.get reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["login_failure"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "recipient_emails": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["login_failure"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "recipient_emails": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "window_minutes": 1})json");
     const auto result = fixture.client.management().notification_rules().get("11111111-1111-4111-8111-111111111111");
     (void) result;
 
@@ -1205,7 +1205,7 @@ AXIAM_TEST("management notification_rules.get reaches its route") {
 
 AXIAM_TEST("management notification_rules.update reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["login_failure"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "recipient_emails": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z"})json");
+        R"json({"created_at": "2026-08-26T00:00:00Z", "description": "example", "enabled": true, "events": ["login_failure"], "id": "11111111-1111-4111-8111-111111111111", "name": "example", "recipient_emails": ["example"], "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "window_minutes": 1})json");
     UpdateNotificationRuleRequest body{};
     const auto result = fixture.client.management().notification_rules().update("11111111-1111-4111-8111-111111111111", body);
     (void) result;

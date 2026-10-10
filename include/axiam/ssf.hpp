@@ -116,9 +116,14 @@ public:
     virtual ~ReplayStore() = default;
     /// Record `jti` for `window` and return true, or return false WITHOUT
     /// recording when it is already held. Must be atomic: two concurrent calls
-    /// with one `jti` must not both see true. When the store cannot answer,
-    /// THROW, having recorded nothing: verify_set() then fails closed, and
-    /// poll() leaves the SET unjudged (contract 1.59, §34.2 P1, P4).
+    /// with one `jti` must not both see true. A store has THREE answers (seen,
+    /// not seen, cannot answer) and this interface gives the third by throwing:
+    /// when the store cannot answer, THROW, having recorded nothing. That is no
+    /// verdict (contract 1.60, §34.2 P4): verify_set() raises it as a NetworkError
+    /// with no reason code -- the SET is neither refused nor accepted, and is
+    /// never read as `replayed` -- and poll() leaves the SET unjudged, unrecorded
+    /// and unacknowledged, so the transmitter offers it again. Never answer
+    /// `false` ("already seen") for a store that is merely unavailable.
     virtual bool check_and_record(const std::string& jti, std::chrono::seconds window) = 0;
 };
 
@@ -248,7 +253,9 @@ public:
     ///     a minute [invalid_key]. A FAILED fetch, the one that fills an empty
     ///     cache included, also waits out the minute: until it has passed, a SET
     ///     needing that fetch raises NetworkError without a request (contract
-    ///     1.59, §34.2 P6), so a JWKS outage is not one fetch per SET;
+    ///     1.59, §34.2 P6), so a JWKS outage is not one fetch per SET. The key
+    ///     cache expires ten minutes after the successful fetch that filled it,
+    ///     and the next SET fetches again (contract 1.60, P6);
     ///  5. the Ed25519 signature [invalid_key];
     ///  6. `iss` equal to the configured issuer [invalid_issuer];
     ///  7. `aud` equal to, or an array containing, the audience [invalid_audience];
@@ -262,7 +269,8 @@ public:
     ///
     /// @throws SetVerificationError for a refused SET.
     /// @throws NetworkError when the JWKS (or the discovery document) could not
-    ///         be fetched — which is not a verdict on the SET.
+    ///         be fetched, or the ReplayStore could not answer — which is not a
+    ///         verdict on the SET (§34.2 P3, P4).
     SecurityEvent verify_set(const std::string& set);
 
     /// Poll the stream's RFC 8936 endpoint, `{base_url}/ssf/v1/poll/{stream_id}`,
@@ -283,14 +291,18 @@ public:
     /// the JWKS or discovery fetch, a replay store that cannot answer — leaves
     /// that SET in SsfPollResult::unjudged, in neither `events` nor `refused`,
     /// with its `jti` unrecorded; the rest of the batch is still judged and
-    /// returned. Do not acknowledge an unjudged SET: the transmitter offers it
-    /// again.
+    /// returned. After the first replay-store failure the store is asked nothing
+    /// more for the batch: every later SET that passes steps 1 - 8 is unjudged
+    /// too (contract 1.60). Do not acknowledge an unjudged SET: the transmitter
+    /// offers it again. A poll that leaves any SET unjudged emits §19's
+    /// SsfUnjudgedEvent (one per failure category; counts only).
     ///
     /// @throws AuthError, with no request sent, when no access_token_provider is set.
     SsfPollResult poll(const std::string& stream_id, const SsfPollOptions& options = {});
 
-    /// TEST SEAM — the monotonic clock the once-a-minute JWKS fetch limit reads
-    /// (§32.7 step 4), so a test can step past the minute without sleeping.
+    /// TEST SEAM — the monotonic clock the once-a-minute JWKS fetch limit and
+    /// the ten-minute key-cache lifetime read (§32.7 step 4, §34.2 P6), so a
+    /// test can step past either without sleeping.
     /// NEVER called in production; nothing in src/ writes it.
     void _set_clock_for_testing(std::function<std::chrono::steady_clock::time_point()> now);
 

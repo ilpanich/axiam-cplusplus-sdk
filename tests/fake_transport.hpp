@@ -20,6 +20,7 @@ struct RecordedReq {
     axiam::HeaderMap headers;
     bool no_stored_cookies = false;
     bool sessionless = false;
+    bool replayable = false;
 };
 
 struct FakeState {
@@ -51,7 +52,8 @@ inline axiam::Transport make_fake(std::shared_ptr<FakeState> st) {
         {
             std::lock_guard<std::mutex> lock(st->mtx);
             st->requests.push_back(
-                {req.method, req.url, req.body, req.headers, req.no_stored_cookies, req.sessionless});
+                {req.method, req.url, req.body, req.headers, req.no_stored_cookies, req.sessionless,
+                 req.replayable});
         }
         return st->router(req, *st);
     };

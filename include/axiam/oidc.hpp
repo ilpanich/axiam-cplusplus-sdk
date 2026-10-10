@@ -250,6 +250,19 @@ struct OidcConfiguration {
     /// INFORMATIONAL ONLY — §12.1 rule 3 keeps this SDK on
     /// `client_secret_post`, which signs nothing. Empty means absent, as above.
     std::vector<std::string> token_endpoint_auth_signing_alg_values_supported;
+    /// §21.5 (contract 1.60) / RFC 8414 §2: how the revocation and the
+    /// introspection endpoints authenticate a client, and the JWS algorithms
+    /// each accepts on a `private_key_jwt` assertion. INFORMATIONAL ONLY: they
+    /// describe the deployment and never change the method this SDK
+    /// authenticates with (§12.1 rules 3 and 4). Each is optional and **empty
+    /// means absent** — a server before 1.0.0 sends none of the four.
+    std::vector<std::string> revocation_endpoint_auth_methods_supported;
+    /// See revocation_endpoint_auth_methods_supported. Empty means absent.
+    std::vector<std::string> revocation_endpoint_auth_signing_alg_values_supported;
+    /// See revocation_endpoint_auth_methods_supported. Empty means absent.
+    std::vector<std::string> introspection_endpoint_auth_methods_supported;
+    /// See revocation_endpoint_auth_methods_supported. Empty means absent.
+    std::vector<std::string> introspection_endpoint_auth_signing_alg_values_supported;
     /// §21.3 rule 2 / RFC 8705 §5: the endpoint aliases for a deployment that
     /// terminates mutual TLS on a host other than the issuer's own
     /// (contract 1.40).
@@ -602,6 +615,19 @@ struct TokenExchangeParams {
     /// substitutes the client's own session. Leaving this empty asks for
     /// impersonation, and the server refuses unless this client holds that
     /// grant.
+    ///
+    /// **It must have been issued to the exchanging client** (§15.2 rule 9,
+    /// contract 1.60): the client authenticating the exchange is the one the actor
+    /// token names (its `client_id` claim, or for a client-credentials token its
+    /// `sub`). Any other token -- another client's, a console sign-in, a service
+    /// account's -- is answered `400 invalid_request` ("actor_token was not issued
+    /// to the exchanging client"), which is surfaced unchanged as an
+    /// OAuthProtocolError: not retried, not rewritten into an impersonation, not
+    /// repaired by substituting a token of the SDK's own. The usual actor is this
+    /// same client's `client_credentials` token --
+    /// `client.login_client_credentials().access_token` -- whose `sub`, and so the
+    /// issued token's `act.sub`, is its `client_id`. You obtain and pass it; the
+    /// SDK supplies no default.
     std::optional<Sensitive<std::string>> actor_token;
     /// Omit to inherit the subject's, bounded by this client's registration —
     /// and read the RESULT's `scope` for what was actually granted.
