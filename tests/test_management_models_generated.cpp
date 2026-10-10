@@ -2352,7 +2352,7 @@ AXIAM_TEST("management enum ActorType maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(ActorType::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ActorType::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ActorType::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2381,7 +2381,7 @@ AXIAM_TEST("management enum AttestationMode maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(AttestationMode::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(AttestationMode::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(AttestationMode::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2422,7 +2422,7 @@ AXIAM_TEST("management enum AttributeSource maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(AttributeSource::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(AttributeSource::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(AttributeSource::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2451,7 +2451,7 @@ AXIAM_TEST("management enum AuditOutcome maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(AuditOutcome::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(AuditOutcome::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(AuditOutcome::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2477,7 +2477,7 @@ AXIAM_TEST("management enum AuthnRequestParamsMode maps every value both ways") 
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(AuthnRequestParamsMode::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(AuthnRequestParamsMode::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(AuthnRequestParamsMode::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2506,7 +2506,7 @@ AXIAM_TEST("management enum CertificateStatus maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(CertificateStatus::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(CertificateStatus::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(CertificateStatus::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2538,7 +2538,7 @@ AXIAM_TEST("management enum CertificateType maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(CertificateType::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(CertificateType::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(CertificateType::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2576,7 +2576,7 @@ AXIAM_TEST("management enum CertificationLevel maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(CertificationLevel::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(CertificationLevel::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(CertificationLevel::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2602,7 +2602,7 @@ AXIAM_TEST("management enum CibaDeliveryMode maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(CibaDeliveryMode::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(CibaDeliveryMode::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(CibaDeliveryMode::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2631,7 +2631,7 @@ AXIAM_TEST("management enum CibaRequestSigningAlg maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(CibaRequestSigningAlg::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(CibaRequestSigningAlg::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(CibaRequestSigningAlg::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2669,7 +2669,7 @@ AXIAM_TEST("management enum ClientAuthMethod maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(ClientAuthMethod::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ClientAuthMethod::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ClientAuthMethod::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2695,7 +2695,7 @@ AXIAM_TEST("management enum ClientProfile maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(ClientProfile::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ClientProfile::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ClientProfile::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2721,7 +2721,7 @@ AXIAM_TEST("management enum DeprovisionPolicy maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(DeprovisionPolicy::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(DeprovisionPolicy::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(DeprovisionPolicy::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2747,7 +2747,7 @@ AXIAM_TEST("management enum DirectoryKind maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(DirectoryKind::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(DirectoryKind::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(DirectoryKind::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2773,7 +2773,7 @@ AXIAM_TEST("management enum FailurePolicy maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(FailurePolicy::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(FailurePolicy::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(FailurePolicy::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2799,7 +2799,7 @@ AXIAM_TEST("management enum KeyAlgorithm maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(KeyAlgorithm::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(KeyAlgorithm::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(KeyAlgorithm::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2828,7 +2828,7 @@ AXIAM_TEST("management enum ManagedBy maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(ManagedBy::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ManagedBy::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ManagedBy::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2857,7 +2857,7 @@ AXIAM_TEST("management enum MfaMethodType maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(MfaMethodType::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(MfaMethodType::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(MfaMethodType::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2883,7 +2883,7 @@ AXIAM_TEST("management enum NameIdFormat maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(NameIdFormat::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(NameIdFormat::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(NameIdFormat::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2957,7 +2957,7 @@ AXIAM_TEST("management enum NotificationEventType maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(NotificationEventType::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(NotificationEventType::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(NotificationEventType::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -2983,7 +2983,7 @@ AXIAM_TEST("management enum PermissionEffect maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(PermissionEffect::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(PermissionEffect::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(PermissionEffect::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3009,7 +3009,7 @@ AXIAM_TEST("management enum PgpKeyAlgorithm maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(PgpKeyAlgorithm::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(PgpKeyAlgorithm::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(PgpKeyAlgorithm::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3035,7 +3035,7 @@ AXIAM_TEST("management enum PgpKeyPurpose maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(PgpKeyPurpose::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(PgpKeyPurpose::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(PgpKeyPurpose::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3061,7 +3061,7 @@ AXIAM_TEST("management enum PgpKeyStatus maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(PgpKeyStatus::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(PgpKeyStatus::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(PgpKeyStatus::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3087,7 +3087,7 @@ AXIAM_TEST("management enum ReactorMode maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(ReactorMode::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ReactorMode::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ReactorMode::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3113,7 +3113,7 @@ AXIAM_TEST("management enum SamlBinding maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(SamlBinding::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SamlBinding::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SamlBinding::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3142,7 +3142,7 @@ AXIAM_TEST("management enum SamlIdpCredentialStatus maps every value both ways")
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(SamlIdpCredentialStatus::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SamlIdpCredentialStatus::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SamlIdpCredentialStatus::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3168,7 +3168,7 @@ AXIAM_TEST("management enum SamlIdpSlot maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(SamlIdpSlot::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SamlIdpSlot::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SamlIdpSlot::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3197,7 +3197,7 @@ AXIAM_TEST("management enum ScimTokenStatus maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(ScimTokenStatus::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ScimTokenStatus::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(ScimTokenStatus::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3223,7 +3223,7 @@ AXIAM_TEST("management enum SettingsScope maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(SettingsScope::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SettingsScope::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SettingsScope::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3249,7 +3249,7 @@ AXIAM_TEST("management enum SsfDeliveryMethod maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(SsfDeliveryMethod::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SsfDeliveryMethod::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SsfDeliveryMethod::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3272,7 +3272,7 @@ AXIAM_TEST("management string enum SsfEventType names every value, and knows onl
     AXIAM_CHECK(std::string(ssf_event_type::kAccountPurged) == "https://schemas.openid.net/secevent/risc/event-type/account-purged");
     AXIAM_CHECK(is_known_ssf_event_type(ssf_event_type::kAccountPurged));
     // A value the spec copy does not list, and the empty string, are not known: they decode as
-    // themselves and are never sent (§34.2 P12.2).
+    // themselves and are sent back unchanged (contract 1.60 §34.2 P12.2 (b)).
     AXIAM_CHECK(!is_known_ssf_event_type("__not_a_ssf_event_type__"));
     AXIAM_CHECK(!is_known_ssf_event_type(""));
 }
@@ -3294,7 +3294,7 @@ AXIAM_TEST("management enum SsfStatusActor maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(SsfStatusActor::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SsfStatusActor::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SsfStatusActor::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3323,7 +3323,7 @@ AXIAM_TEST("management enum SsfStreamStatus maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(SsfStreamStatus::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SsfStreamStatus::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SsfStreamStatus::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3349,7 +3349,7 @@ AXIAM_TEST("management enum SsfSubjectFormat maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(SsfSubjectFormat::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SsfSubjectFormat::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(SsfSubjectFormat::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3375,7 +3375,7 @@ AXIAM_TEST("management enum TenantKind maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(TenantKind::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(TenantKind::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(TenantKind::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3401,7 +3401,7 @@ AXIAM_TEST("management enum TenantStatus maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(TenantStatus::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(TenantStatus::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(TenantStatus::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3427,7 +3427,7 @@ AXIAM_TEST("management enum UnknownAaguidAction maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(UnknownAaguidAction::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(UnknownAaguidAction::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(UnknownAaguidAction::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3453,7 +3453,7 @@ AXIAM_TEST("management enum UserNameSource maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(UserNameSource::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(UserNameSource::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(UserNameSource::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.
@@ -3491,7 +3491,7 @@ AXIAM_TEST("management enum UserStatus maps every value both ways") {
     // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
     // body goes through throws.
     AXIAM_CHECK(to_wire(UserStatus::Unknown).empty());
-    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(UserStatus::Unknown), axiam::NetworkError);
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(UserStatus::Unknown), std::invalid_argument);
 
     // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
     // differently from the enum itself.

@@ -133,10 +133,10 @@ AXIAM_TEST("§31.8 (3): update without a credential sends none; with one sends i
     // trait test below); built with a default-constructed (tag-less) union, it is
     // refused locally rather than sent.
     AXIAM_REQUIRE_THROWS_AS(json(ScimTargetInput("n", "https://h", ScimTargetAuth{}, ScimTargetScope{})),
-                            NetworkError);
+                            std::invalid_argument);
 }
 
-AXIAM_TEST("§31.2: an unknown auth or scope type decodes but is never sent") {
+AXIAM_TEST("§31.2 / P12.2 (B5): an unknown auth or scope type decodes but is never sent (std::invalid_argument)") {
     auto fixture = axtest::mgmt::signed_in(
         200, target_body({{"auth", {{"type", "mutual_tls"}, {"cert_ref", "x"}}},
                           {"scope", {{"type", "department"}}}})
@@ -145,12 +145,35 @@ AXIAM_TEST("§31.2: an unknown auth or scope type decodes but is never sent") {
     AXIAM_CHECK(target.auth.type == "mutual_tls" && target.scope.type == "department");
     const auto before = fixture.state->count();
     auto body = target.to_input();
-    AXIAM_CHECK(what_of<NetworkError>([&] { fixture.client.scim_targets().update("t-1", body); })
+    AXIAM_CHECK(what_of<std::invalid_argument>([&] { fixture.client.scim_targets().update("t-1", body); })
                     .rfind("caught:", 0) == 0);
     body.auth = ScimTargetAuth::bearer();
-    AXIAM_CHECK(what_of<NetworkError>([&] { fixture.client.scim_targets().update("t-1", body); })
+    AXIAM_CHECK(what_of<std::invalid_argument>([&] { fixture.client.scim_targets().update("t-1", body); })
                     .rfind("caught:", 0) == 0);
     AXIAM_CHECK(fixture.state->count() == before);  // refused before any request
+}
+
+AXIAM_TEST("§31.2 / P12.2 (R-22, B5): a read-modify-write carrying an unknown deprovision or user_name_from is refused locally, never sent as \"\"") {
+    auto fixture = axtest::mgmt::signed_in_two(
+        200, target_body({{"deprovision", "archive"}, {"user_name_from", "upn"}}).dump(),
+        200, target_body().dump());
+    const auto target = fixture.client.scim_targets().get("t-1");
+    AXIAM_CHECK(target.deprovision == DeprovisionPolicy::Unknown);
+    AXIAM_CHECK(target.user_name_from == UserNameSource::Unknown);
+    const auto before = fixture.state->count();
+    auto body = target.to_input();
+    AXIAM_CHECK(what_of<std::invalid_argument>([&] { fixture.client.scim_targets().update("t-1", body); })
+                    .rfind("caught:", 0) == 0);
+    AXIAM_CHECK(fixture.state->count() == before);  // refused before any request
+    // Replacing ONE of the two is not enough: the other is still unknown.
+    body.deprovision = DeprovisionPolicy::Deactivate;
+    AXIAM_CHECK(what_of<std::invalid_argument>([&] { fixture.client.scim_targets().update("t-1", body); })
+                    .rfind("caught:", 0) == 0);
+    AXIAM_CHECK(fixture.state->count() == before);
+    body.user_name_from = UserNameSource::Email;
+    fixture.client.scim_targets().update("t-1", body);
+    const auto sent = json::parse(fixture.state->last().body);
+    AXIAM_CHECK(sent.at("deprovision") == "deactivate" && sent.at("user_name_from") == "email");
 }
 
 // ── 4. Open decoding and pagination ────────────────────────────────────────

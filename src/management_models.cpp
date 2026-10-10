@@ -41,7 +41,7 @@ ActorType actor_type_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(ActorType value) {
     if (value == ActorType::Unknown) {
-        throw NetworkError("ActorType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("ActorType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -81,7 +81,7 @@ AttestationMode attestation_mode_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(AttestationMode value) {
     if (value == AttestationMode::Unknown) {
-        throw NetworkError("AttestationMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("AttestationMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -129,7 +129,7 @@ AttributeSource attribute_source_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(AttributeSource value) {
     if (value == AttributeSource::Unknown) {
-        throw NetworkError("AttributeSource: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("AttributeSource: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -169,7 +169,7 @@ AuditOutcome audit_outcome_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(AuditOutcome value) {
     if (value == AuditOutcome::Unknown) {
-        throw NetworkError("AuditOutcome: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("AuditOutcome: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -207,7 +207,7 @@ AuthnRequestParamsMode authn_request_params_mode_from_wire(const std::string& va
 // request-path serialization of this enum goes through here.
 static std::string send_wire(AuthnRequestParamsMode value) {
     if (value == AuthnRequestParamsMode::Unknown) {
-        throw NetworkError("AuthnRequestParamsMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("AuthnRequestParamsMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -247,7 +247,7 @@ CertificateStatus certificate_status_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(CertificateStatus value) {
     if (value == CertificateStatus::Unknown) {
-        throw NetworkError("CertificateStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("CertificateStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -289,7 +289,7 @@ CertificateType certificate_type_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(CertificateType value) {
     if (value == CertificateType::Unknown) {
-        throw NetworkError("CertificateType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("CertificateType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -335,7 +335,7 @@ CertificationLevel certification_level_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(CertificationLevel value) {
     if (value == CertificationLevel::Unknown) {
-        throw NetworkError("CertificationLevel: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("CertificationLevel: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -373,7 +373,7 @@ CibaDeliveryMode ciba_delivery_mode_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(CibaDeliveryMode value) {
     if (value == CibaDeliveryMode::Unknown) {
-        throw NetworkError("CibaDeliveryMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("CibaDeliveryMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -413,7 +413,7 @@ CibaRequestSigningAlg ciba_request_signing_alg_from_wire(const std::string& valu
 // request-path serialization of this enum goes through here.
 static std::string send_wire(CibaRequestSigningAlg value) {
     if (value == CibaRequestSigningAlg::Unknown) {
-        throw NetworkError("CibaRequestSigningAlg: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("CibaRequestSigningAlg: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -459,7 +459,7 @@ ClientAuthMethod client_auth_method_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(ClientAuthMethod value) {
     if (value == ClientAuthMethod::Unknown) {
-        throw NetworkError("ClientAuthMethod: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("ClientAuthMethod: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -497,7 +497,7 @@ ClientProfile client_profile_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(ClientProfile value) {
     if (value == ClientProfile::Unknown) {
-        throw NetworkError("ClientProfile: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("ClientProfile: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -535,7 +535,7 @@ DeprovisionPolicy deprovision_policy_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(DeprovisionPolicy value) {
     if (value == DeprovisionPolicy::Unknown) {
-        throw NetworkError("DeprovisionPolicy: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("DeprovisionPolicy: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -573,7 +573,7 @@ DirectoryKind directory_kind_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(DirectoryKind value) {
     if (value == DirectoryKind::Unknown) {
-        throw NetworkError("DirectoryKind: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("DirectoryKind: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -611,7 +611,7 @@ FailurePolicy failure_policy_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(FailurePolicy value) {
     if (value == FailurePolicy::Unknown) {
-        throw NetworkError("FailurePolicy: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("FailurePolicy: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -649,7 +649,7 @@ KeyAlgorithm key_algorithm_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(KeyAlgorithm value) {
     if (value == KeyAlgorithm::Unknown) {
-        throw NetworkError("KeyAlgorithm: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("KeyAlgorithm: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -689,7 +689,7 @@ ManagedBy managed_by_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(ManagedBy value) {
     if (value == ManagedBy::Unknown) {
-        throw NetworkError("ManagedBy: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("ManagedBy: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -729,7 +729,7 @@ MfaMethodType mfa_method_type_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(MfaMethodType value) {
     if (value == MfaMethodType::Unknown) {
-        throw NetworkError("MfaMethodType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("MfaMethodType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -767,7 +767,7 @@ NameIdFormat name_id_format_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(NameIdFormat value) {
     if (value == NameIdFormat::Unknown) {
-        throw NetworkError("NameIdFormat: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("NameIdFormat: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -837,7 +837,7 @@ NotificationEventType notification_event_type_from_wire(const std::string& value
 // request-path serialization of this enum goes through here.
 static std::string send_wire(NotificationEventType value) {
     if (value == NotificationEventType::Unknown) {
-        throw NetworkError("NotificationEventType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("NotificationEventType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -875,7 +875,7 @@ PermissionEffect permission_effect_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(PermissionEffect value) {
     if (value == PermissionEffect::Unknown) {
-        throw NetworkError("PermissionEffect: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("PermissionEffect: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -913,7 +913,7 @@ PgpKeyAlgorithm pgp_key_algorithm_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(PgpKeyAlgorithm value) {
     if (value == PgpKeyAlgorithm::Unknown) {
-        throw NetworkError("PgpKeyAlgorithm: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("PgpKeyAlgorithm: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -951,7 +951,7 @@ PgpKeyPurpose pgp_key_purpose_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(PgpKeyPurpose value) {
     if (value == PgpKeyPurpose::Unknown) {
-        throw NetworkError("PgpKeyPurpose: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("PgpKeyPurpose: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -989,7 +989,7 @@ PgpKeyStatus pgp_key_status_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(PgpKeyStatus value) {
     if (value == PgpKeyStatus::Unknown) {
-        throw NetworkError("PgpKeyStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("PgpKeyStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1027,7 +1027,7 @@ ReactorMode reactor_mode_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(ReactorMode value) {
     if (value == ReactorMode::Unknown) {
-        throw NetworkError("ReactorMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("ReactorMode: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1065,7 +1065,7 @@ SamlBinding saml_binding_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(SamlBinding value) {
     if (value == SamlBinding::Unknown) {
-        throw NetworkError("SamlBinding: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("SamlBinding: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1105,7 +1105,7 @@ SamlIdpCredentialStatus saml_idp_credential_status_from_wire(const std::string& 
 // request-path serialization of this enum goes through here.
 static std::string send_wire(SamlIdpCredentialStatus value) {
     if (value == SamlIdpCredentialStatus::Unknown) {
-        throw NetworkError("SamlIdpCredentialStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("SamlIdpCredentialStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1143,7 +1143,7 @@ SamlIdpSlot saml_idp_slot_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(SamlIdpSlot value) {
     if (value == SamlIdpSlot::Unknown) {
-        throw NetworkError("SamlIdpSlot: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("SamlIdpSlot: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1183,7 +1183,7 @@ ScimTokenStatus scim_token_status_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(ScimTokenStatus value) {
     if (value == ScimTokenStatus::Unknown) {
-        throw NetworkError("ScimTokenStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("ScimTokenStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1221,7 +1221,7 @@ SettingsScope settings_scope_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(SettingsScope value) {
     if (value == SettingsScope::Unknown) {
-        throw NetworkError("SettingsScope: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("SettingsScope: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1259,7 +1259,7 @@ SsfDeliveryMethod ssf_delivery_method_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(SsfDeliveryMethod value) {
     if (value == SsfDeliveryMethod::Unknown) {
-        throw NetworkError("SsfDeliveryMethod: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("SsfDeliveryMethod: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1277,19 +1277,6 @@ bool is_known_ssf_event_type(const std::string& value) {
     if (value == ssf_event_type::kAccountEnabled) return true;
     if (value == ssf_event_type::kAccountPurged) return true;
     return false;
-}
-
-// CONTRACT.md §32.2 / contract 1.59 §34.2 P12.2: decoded as itself, but a value this SDK does
-// not know is refused LOCALLY, before any request.
-static const std::string& send_ssf_event_type(const std::string& value) {
-    if (!is_known_ssf_event_type(value)) {
-        throw NetworkError("SsfEventType: a value this SDK does not know is never sent (CONTRACT.md §32.2, §34.2 P12.2)", "sdk_programming_error");
-    }
-    return value;
-}
-static const std::vector<std::string>& send_ssf_event_type(const std::vector<std::string>& values) {
-    for (const auto& value : values) send_ssf_event_type(value);
-    return values;
 }
 
 std::string to_wire(SsfStatusActor value) {
@@ -1320,7 +1307,7 @@ SsfStatusActor ssf_status_actor_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(SsfStatusActor value) {
     if (value == SsfStatusActor::Unknown) {
-        throw NetworkError("SsfStatusActor: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("SsfStatusActor: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1360,7 +1347,7 @@ SsfStreamStatus ssf_stream_status_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(SsfStreamStatus value) {
     if (value == SsfStreamStatus::Unknown) {
-        throw NetworkError("SsfStreamStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("SsfStreamStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1398,7 +1385,7 @@ SsfSubjectFormat ssf_subject_format_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(SsfSubjectFormat value) {
     if (value == SsfSubjectFormat::Unknown) {
-        throw NetworkError("SsfSubjectFormat: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("SsfSubjectFormat: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1436,7 +1423,7 @@ TenantKind tenant_kind_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(TenantKind value) {
     if (value == TenantKind::Unknown) {
-        throw NetworkError("TenantKind: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("TenantKind: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1474,7 +1461,7 @@ TenantStatus tenant_status_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(TenantStatus value) {
     if (value == TenantStatus::Unknown) {
-        throw NetworkError("TenantStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("TenantStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1512,7 +1499,7 @@ UnknownAaguidAction unknown_aaguid_action_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(UnknownAaguidAction value) {
     if (value == UnknownAaguidAction::Unknown) {
-        throw NetworkError("UnknownAaguidAction: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("UnknownAaguidAction: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1550,7 +1537,7 @@ UserNameSource user_name_source_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(UserNameSource value) {
     if (value == UserNameSource::Unknown) {
-        throw NetworkError("UserNameSource: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("UserNameSource: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -1596,7 +1583,7 @@ UserStatus user_status_from_wire(const std::string& value) {
 // request-path serialization of this enum goes through here.
 static std::string send_wire(UserStatus value) {
     if (value == UserStatus::Unknown) {
-        throw NetworkError("UserStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)", "sdk_programming_error");
+        throw std::invalid_argument("UserStatus: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
     }
     return to_wire(value);
 }
@@ -2071,7 +2058,7 @@ void from_json(const nlohmann::json& j, CreateCaCertificateRequest& value) {
 
 void to_json(nlohmann::json& j, const SubjectAltName& value) {
     if (((value.dns ? 1 : 0) + (value.ip ? 1 : 0)) != 1) {
-        throw NetworkError("SubjectAltName must set exactly one of `dns`, `ip`, never neither and never both (CONTRACT.md §27.13 / CONTRACT 1.52 N3 (C-12))", "sdk_programming_error");
+        throw std::invalid_argument("SubjectAltName must set exactly one of `dns`, `ip`, never neither and never both (CONTRACT.md §27.13 / CONTRACT 1.52 N3 (C-12))");
     }
     j = nlohmann::json::object();
     if (value.dns) {
@@ -4646,7 +4633,7 @@ void to_json(nlohmann::json& j, const ScimTargetAuth& value) {
     // CONTRACT.md §31.2: an unknown `type` decodes but MUST NOT be sent. Refused here, before
     // any request, with no part of the value in the message.
     if (value.type != "bearer" && value.type != "oauth2_client_credentials") {
-        throw NetworkError("ScimTargetAuth: `type` must be one of `bearer`, `oauth2_client_credentials`; a variant this SDK does not know is never sent (CONTRACT.md §31.2)", "sdk_programming_error");
+        throw std::invalid_argument("ScimTargetAuth: `type` must be one of `bearer`, `oauth2_client_credentials`; a variant this SDK does not know is never sent (CONTRACT.md §31.2)");
     }
     // A union is forwarded EXACTLY as received. Re-encoding from the two members this SDK
     // models would drop every field belonging to the variant it does not model -- and the
@@ -4704,7 +4691,7 @@ void to_json(nlohmann::json& j, const ScimTargetScope& value) {
     // CONTRACT.md §31.2: an unknown `type` decodes but MUST NOT be sent. Refused here, before
     // any request, with no part of the value in the message.
     if (value.type != "all_users" && value.type != "groups") {
-        throw NetworkError("ScimTargetScope: `type` must be one of `all_users`, `groups`; a variant this SDK does not know is never sent (CONTRACT.md §31.2)", "sdk_programming_error");
+        throw std::invalid_argument("ScimTargetScope: `type` must be one of `all_users`, `groups`; a variant this SDK does not know is never sent (CONTRACT.md §31.2)");
     }
     // A union is forwarded EXACTLY as received. Re-encoding from the two members this SDK
     // models would drop every field belonging to the variant it does not model -- and the
@@ -5346,9 +5333,9 @@ void to_json(nlohmann::json& j, const SsfStream& value) {
     if (value.endpoint_url) {
         j["endpoint_url"] = *value.endpoint_url;
     }
-    j["events_allowed"] = send_ssf_event_type(value.events_allowed);
-    j["events_delivered"] = send_ssf_event_type(value.events_delivered);
-    j["events_requested"] = send_ssf_event_type(value.events_requested);
+    j["events_allowed"] = value.events_allowed;
+    j["events_delivered"] = value.events_delivered;
+    j["events_requested"] = value.events_requested;
     j["id"] = value.id;
     if (value.last_verification_at) {
         j["last_verification_at"] = *value.last_verification_at;
@@ -5417,9 +5404,9 @@ void to_json(nlohmann::json& j, const SsfStreamInput& value) {
     if (value.endpoint_url) {
         j["endpoint_url"] = *value.endpoint_url;
     }
-    j["events_allowed"] = send_ssf_event_type(value.events_allowed);
+    j["events_allowed"] = value.events_allowed;
     if (value.events_requested) {
-        j["events_requested"] = send_ssf_event_type(*value.events_requested);
+        j["events_requested"] = *value.events_requested;
     }
     j["receiver_client_id"] = value.receiver_client_id;
     if (value.status) {

@@ -199,33 +199,73 @@ AXIAM_TEST("§32.8 management (6): 400 with the message, 409, 404 and 401 map pe
     AXIAM_CHECK(what_of<AuthError>([&] { s.list_streams(); }).rfind("caught:", 0) == 0);
 }
 
-// Contract 1.59 §34.2 P12.2 (R-22): "MUST NOT send a value it does not know"
-// binds the request path. A value decoded as unknown — an open enum's Unknown, an
-// event-type URI this SDK's spec copy does not list — is refused LOCALLY, before
-// any request, never sent as "" for the server to refuse.
-AXIAM_TEST("§32.2 / P12.2 (R-22): a read-modify-write carrying a value this SDK does not know is refused locally") {
+// Contract 1.59 §34.2 P12.2 (R-22), 1.60 (a): "MUST NOT send a value it does not know"
+// binds the request path. A value decoded as unknown -- an open enum's Unknown -- is refused
+// LOCALLY, before any request, never sent as "" for the server to refuse, and the refusal is
+// the SDK's validation error: std::invalid_argument in C++, not a bare NetworkError (B5).
+AXIAM_TEST("§32.2 / P12.2 (R-22, B5): a read-modify-write carrying a value this SDK does not know is refused locally with std::invalid_argument") {
     auto fixture = axtest::mgmt::signed_in(200, stream_body().dump());
     const auto before = fixture.state->count();
     auto s = fixture.client.ssf();
 
-    const auto new_event =
-        stream_body({{"events_allowed", {kRevoked, "https://example.com/event/new"}}})
-            .get<SsfStream>()
-            .to_input();
-    AXIAM_CHECK(what_of<NetworkError>([&] { s.update_stream("s-1", new_event); })
-                    .rfind("caught:", 0) == 0);
-    AXIAM_CHECK(fixture.state->count() == before);  // no request reached the wire
     const auto new_method =
         stream_body({{"delivery_method", "websocket"}}).get<SsfStream>().to_input();
-    AXIAM_CHECK(what_of<NetworkError>([&] { s.update_stream("s-1", new_method); })
+    AXIAM_CHECK(what_of<std::invalid_argument>([&] { s.update_stream("s-1", new_method); })
+                    .rfind("caught:", 0) == 0);
+    AXIAM_CHECK(fixture.state->count() == before);  // no request reached the wire
+    const auto new_status = stream_body({{"status", "suspended"}}).get<SsfStream>().to_input();
+    AXIAM_CHECK(what_of<std::invalid_argument>([&] { s.create_stream(new_status); })
                     .rfind("caught:", 0) == 0);
     AXIAM_CHECK(fixture.state->count() == before);
-    const auto new_status = stream_body({{"status", "suspended"}}).get<SsfStream>().to_input();
-    AXIAM_CHECK(what_of<NetworkError>([&] { s.create_stream(new_status); }).rfind("caught:", 0) == 0);
-    AXIAM_CHECK(fixture.state->count() == before);
+
+    // Never a bare NetworkError (B5): a caller catching the §2 transport type does not see a
+    // local refusal, and a caller catching the validation type does.
+    bool network_error = false;
+    try {
+        s.update_stream("s-1", new_method);
+    } catch (const NetworkError&) {
+        network_error = true;
+    } catch (const std::invalid_argument&) {
+    }
+    AXIAM_CHECK(!network_error);
 
     // Rendering an unknown value for a log line never fails.
     AXIAM_REQUIRE_NOTHROW(to_wire(SsfDeliveryMethod::Unknown));
+    AXIAM_CHECK(to_wire(SsfDeliveryMethod::Unknown).empty());
+}
+
+// Contract 1.60 B4 / §34.2 P12.2 (b): event types are sent as the strings the caller holds.
+// An event-type URI this SDK has never seen, READ from the server, decodes with its value and
+// is sent back unchanged on update_stream -- the server judging it. This SDK keeps no
+// client-side list that refuses a URI the caller typed (such a list goes stale), so there is
+// no refusal to document.
+AXIAM_TEST("§32.2 / P12.2 (b) (B4): an unseen event-type URI read from the server is sent back unchanged on update_stream") {
+    const std::string unseen = "https://example.com/event/new";
+    auto fixture = axtest::mgmt::signed_in_many(
+        {{200, stream_body({{"events_allowed", {kRevoked, unseen}},
+                            {"events_requested", {unseen}},
+                            {"events_delivered", {unseen}}})
+                   .dump()},
+         {200, stream_body().dump()},
+         {200, stream_body().dump()}});
+    auto s = fixture.client.ssf();
+    const auto read = s.get_stream("s-1");
+    AXIAM_REQUIRE(read.events_allowed.size() == 2);
+    AXIAM_CHECK(read.events_allowed[1] == unseen);  // decoded with its value, not as Unknown
+
+    s.update_stream("s-1", read.to_input());
+    const auto last = fixture.state->last();
+    AXIAM_CHECK(last.method == "PUT");
+    const auto sent = json::parse(last.body);
+    AXIAM_CHECK(sent.at("events_allowed") == json::array({kRevoked, unseen}));  // unchanged
+    AXIAM_CHECK(sent.at("events_requested") == json::array({unseen}));
+
+    // A URI the caller types is sent as typed as well; the server judges it.
+    auto typed = read.to_input();
+    typed.events_allowed = {"urn:example:typed-by-the-caller"};
+    s.update_stream("s-1", typed);
+    AXIAM_CHECK(json::parse(fixture.state->last().body).at("events_allowed") ==
+                json::array({"urn:example:typed-by-the-caller"}));
 }
 
 AXIAM_TEST("§32.2: SsfStream::to_input() keeps every member but the header") {

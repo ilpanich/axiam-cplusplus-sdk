@@ -10,6 +10,7 @@
 // way. This file pins both fixes, plus the pre-existing §27.11 rule 1 open-enum discipline
 // applied to the new `CertificateType::Server` value's own open-enum successor.
 
+#include <stdexcept>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -297,7 +298,7 @@ AXIAM_TEST("§27.13 / C-12 N3: SubjectAltName with NEITHER dns nor ip is refused
     try {
         const nlohmann::json j = neither;
         (void)j;
-    } catch (const NetworkError&) {
+    } catch (const std::invalid_argument&) {
         threw = true;
     }
     AXIAM_CHECK(threw);
@@ -312,7 +313,7 @@ AXIAM_TEST("§27.13 / C-12 N3: SubjectAltName with BOTH dns and ip is refused "
     try {
         const nlohmann::json j = both;
         (void)j;
-    } catch (const NetworkError&) {
+    } catch (const std::invalid_argument&) {
         threw = true;
     }
     AXIAM_CHECK(threw);
@@ -352,7 +353,7 @@ AXIAM_TEST("§27.13 / C-12 N3: a malformed SubjectAltName inside "
     bool threw = false;
     try {
         fixture.client.management().certificates().generate(body);
-    } catch (const NetworkError&) {
+    } catch (const std::invalid_argument&) {
         threw = true;
     }
     AXIAM_CHECK(threw);
