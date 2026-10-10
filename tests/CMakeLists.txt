@@ -125,6 +125,9 @@ add_executable(axiam_cpp_tests
   test_integration_curl.cpp
   test_transport_concurrency.cpp
   test_transport_reuse.cpp
+  # CONTRACT.md §34.2 P11 / §34.4 A6 (contract 1.60): a never-retried write goes on a fresh
+  # connection and arrives exactly once at a server that reads it and drops it.
+  test_transport_fresh_write.cpp
 )
 
 # test_version_policy.cpp reads CMakeLists.txt and the CI workflow, so it needs the

@@ -58,6 +58,16 @@ struct HttpRequest {
     /// into the shared jar. Redirects are never followed by any request this SDK
     /// makes (CurlTransport sets `CURLOPT_FOLLOWLOCATION` to 0 for every handle).
     bool sessionless = false;
+
+    /// CONTRACT.md §34.2 P11 (contract 1.60, A6): true when the SDK itself may send this
+    /// request again after a transport failure -- a `GET`, an authorization check, a
+    /// retried token-endpoint request (§16). Every other request is a write that is never
+    /// sent twice, and a transport MUST NOT send it twice behind the SDK's back either: the
+    /// bundled CurlTransport puts such a request on a fresh connection
+    /// (`CURLOPT_FRESH_CONNECT`) that is not reused afterwards (`CURLOPT_FORBID_REUSE`), so
+    /// libcurl has no dead pooled connection to re-send it over. The default, `false`, is
+    /// the safe one. A transport with no connection pool MAY ignore this field.
+    bool replayable = false;
 };
 
 /// An HTTP response, or a transport failure. When `transport_error` is non-empty

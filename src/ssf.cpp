@@ -365,6 +365,7 @@ SsfPollResult SsfReceiver::poll(const std::string& stream_id, const SsfPollOptio
     req.sessionless = true;
 
     const int budget = impl.retry_enabled ? detail::kRetryMaxAttempts : 1;
+    req.replayable = budget > 1;  // §34.2 P11: only a request the SDK itself repeats keeps the pool
     HttpResponse resp;
     for (int attempt = 1;; ++attempt) {
         resp = impl.transport(req);

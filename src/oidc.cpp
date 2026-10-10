@@ -860,6 +860,7 @@ std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
     req.body = form.str();
 
     const int budget = (retryable && impl.retry_enabled) ? detail::kRetryMaxAttempts : 1;
+    req.replayable = budget > 1;  // §34.2 P11: a request this SDK sends twice may keep the pool
     HttpResponse resp;
     for (int attempt = 1; attempt <= budget; ++attempt) {
         resp = impl.send_raw(req);
@@ -1115,6 +1116,7 @@ std::string token_admin_call(Client::Impl& impl, const OidcConfiguration& config
     req.body = form.str();
 
     const int budget = (retryable && impl.retry_enabled) ? detail::kRetryMaxAttempts : 1;
+    req.replayable = budget > 1;  // §34.2 P11: a request this SDK sends twice may keep the pool
     HttpResponse resp;
     for (int attempt = 1; attempt <= budget; ++attempt) {
         resp = impl.send_raw(req);
@@ -2024,6 +2026,7 @@ HttpResponse registration_request(Client::Impl& impl, const char* method,
     // Rule 5: only the read may be repeated, and only per §16 — never on a 4xx
     // other than 408/429, which retry_should_retry() already excludes.
     const int budget = (retryable && impl.retry_enabled) ? detail::kRetryMaxAttempts : 1;
+    req.replayable = budget > 1;  // §34.2 P11: a request this SDK sends twice may keep the pool
     for (int attempt = 1;; ++attempt) {
         HttpResponse resp = impl.transport(req);
         const std::optional<long> status =
@@ -2312,6 +2315,7 @@ CibaPollOutcome ciba_poll_once(Client::Impl& impl, const OidcConfiguration& conf
 
     CibaPollOutcome out;
     const int budget = impl.retry_enabled ? detail::kRetryMaxAttempts : 1;
+    req.replayable = budget > 1;  // §34.2 P11
     for (int attempt = 1;; ++attempt) {
         HttpResponse resp = impl.transport(req);
         const std::optional<long> status =

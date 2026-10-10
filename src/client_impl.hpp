@@ -417,7 +417,12 @@ struct Client::Impl {
             std::optional<HttpResponse> resp;
             std::exception_ptr thrown;
             try {
-                resp = send_raw(build_request("POST", path, body));
+                HttpRequest attempt_req = build_request("POST", path, body);
+                // An authorization check changes no server state and this loop is its §16
+                // retry (§34.2 P11): it may keep the connection pool, where every other
+                // POST/PUT/PATCH/DELETE goes on a fresh connection nothing reuses.
+                attempt_req.replayable = true;
+                resp = send_raw(attempt_req);
                 status = resp->status;
             } catch (const NetworkError&) {
                 // No HTTP response arrived at all, so the request may never have
