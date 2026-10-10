@@ -245,6 +245,38 @@ AXIAM_TEST("contract 1.42 an absent code_challenge_methods_supported parses, and
     AXIAM_REQUIRE(cfg.token_endpoint == "https://iam.example.com/oauth2/token");
 }
 
+AXIAM_TEST("§21.5 (contract 1.60) the four revocation and introspection members decode, and are optional") {
+    Fixture f;
+    f.replies->discovery = R"({
+      "issuer":"https://issuer.test",
+      "authorization_endpoint":"https://iam.example.com/oauth2/authorize",
+      "token_endpoint":"https://iam.example.com/oauth2/token",
+      "jwks_uri":"https://iam.example.com/oauth2/jwks",
+      "revocation_endpoint_auth_methods_supported":["client_secret_post","private_key_jwt","none"],
+      "revocation_endpoint_auth_signing_alg_values_supported":["PS256","ES256","EdDSA"],
+      "introspection_endpoint_auth_methods_supported":["client_secret_post","private_key_jwt"],
+      "introspection_endpoint_auth_signing_alg_values_supported":["PS256","ES256","EdDSA"]
+    })";
+    auto client = make_client(f);
+    const auto cfg = client.oidc_discover();
+    AXIAM_REQUIRE(cfg.revocation_endpoint_auth_methods_supported.size() == 3);
+    AXIAM_REQUIRE(cfg.revocation_endpoint_auth_methods_supported[2] == "none");
+    AXIAM_REQUIRE(cfg.revocation_endpoint_auth_signing_alg_values_supported.size() == 3);
+    AXIAM_REQUIRE(cfg.introspection_endpoint_auth_methods_supported.size() == 2);
+    AXIAM_REQUIRE(cfg.introspection_endpoint_auth_signing_alg_values_supported[2] == "EdDSA");
+
+    // A server before 1.0.0 sends none of the four: the document still decodes,
+    // and each list is empty (absent), never a default.
+    Fixture older;
+    auto older_client = make_client(older);
+    const auto plain = older_client.oidc_discover();
+    AXIAM_REQUIRE(plain.revocation_endpoint_auth_methods_supported.empty());
+    AXIAM_REQUIRE(plain.revocation_endpoint_auth_signing_alg_values_supported.empty());
+    AXIAM_REQUIRE(plain.introspection_endpoint_auth_methods_supported.empty());
+    AXIAM_REQUIRE(plain.introspection_endpoint_auth_signing_alg_values_supported.empty());
+    AXIAM_REQUIRE(plain.issuer == kIssuer);
+}
+
 AXIAM_TEST("contract 1.42 a tenant_id already on the advertised endpoint is replaced, not doubled") {
     // Upstream `tenant_scoped()` (crates/axiam-oauth2/src/oidc.rs) began
     // publishing `?tenant_id=<uuid>` INSIDE the advertised token / revocation /

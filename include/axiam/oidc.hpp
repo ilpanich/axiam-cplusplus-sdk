@@ -250,6 +250,19 @@ struct OidcConfiguration {
     /// INFORMATIONAL ONLY — §12.1 rule 3 keeps this SDK on
     /// `client_secret_post`, which signs nothing. Empty means absent, as above.
     std::vector<std::string> token_endpoint_auth_signing_alg_values_supported;
+    /// §21.5 (contract 1.60) / RFC 8414 §2: how the revocation and the
+    /// introspection endpoints authenticate a client, and the JWS algorithms
+    /// each accepts on a `private_key_jwt` assertion. INFORMATIONAL ONLY: they
+    /// describe the deployment and never change the method this SDK
+    /// authenticates with (§12.1 rules 3 and 4). Each is optional and **empty
+    /// means absent** — a server before 1.0.0 sends none of the four.
+    std::vector<std::string> revocation_endpoint_auth_methods_supported;
+    /// See revocation_endpoint_auth_methods_supported. Empty means absent.
+    std::vector<std::string> revocation_endpoint_auth_signing_alg_values_supported;
+    /// See revocation_endpoint_auth_methods_supported. Empty means absent.
+    std::vector<std::string> introspection_endpoint_auth_methods_supported;
+    /// See revocation_endpoint_auth_methods_supported. Empty means absent.
+    std::vector<std::string> introspection_endpoint_auth_signing_alg_values_supported;
     /// §21.3 rule 2 / RFC 8705 §5: the endpoint aliases for a deployment that
     /// terminates mutual TLS on a host other than the issuer's own
     /// (contract 1.40).

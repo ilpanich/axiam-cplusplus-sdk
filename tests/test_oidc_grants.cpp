@@ -719,6 +719,29 @@ AXIAM_TEST("§9 rule 2 concurrent refreshes of one token make exactly one wire c
     AXIAM_REQUIRE(ok.load() == 8);
 }
 
+AXIAM_TEST("§12.1 (contract 1.60) a refresh's scope is the response's, never the original grant's") {
+    // The server intersects the grant with the client's registration at every
+    // refresh, so a narrowed registration answers a narrower `scope` (and, once
+    // `openid` is gone, no ID token). The token set carries what the response
+    // said -- not what the caller asked for, nor what the grant once held.
+    Fixture f;
+    f.replies->token_script = {
+        {200, R"({"access_token":"narrowed","token_type":"Bearer","expires_in":900,)"
+              R"("scope":"profile","refresh_token":"rotated"})"},
+        {200, R"({"access_token":"unscoped","token_type":"Bearer","expires_in":900})"}};
+    auto client = make_client(f);
+
+    const auto narrowed = client.oidc_refresh(axiam::Sensitive<std::string>("grant-token"),
+                                              std::string("openid profile email"));
+    AXIAM_REQUIRE(narrowed.scope == std::optional<std::string>("profile"));
+    AXIAM_REQUIRE(!narrowed.id_token.has_value());
+
+    // A response that states no scope is not filled in from the request.
+    const auto unstated = client.oidc_refresh(axiam::Sensitive<std::string>("rotated"),
+                                              std::string("openid profile"));
+    AXIAM_REQUIRE(!unstated.scope.has_value());
+}
+
 AXIAM_TEST("§9 rule 2 distinct refresh tokens do not contend, and a burst is not a cache") {
     // The guard is keyed on the TOKEN, not on the client: coalescing unrelated
     // tokens would be worse than not coalescing at all, because one caller would

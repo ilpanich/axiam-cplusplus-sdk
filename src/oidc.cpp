@@ -647,6 +647,17 @@ OidcConfiguration Client::oidc_discover() {
     cfg.code_challenge_methods_supported = string_array(j, "code_challenge_methods_supported");
     cfg.token_endpoint_auth_signing_alg_values_supported =
         string_array(j, "token_endpoint_auth_signing_alg_values_supported");
+    // §21.5 (contract 1.60): `openapi.json` marks these four required because
+    // this server always sends them; a server before 1.0.0 sends none, so each
+    // is read as optional. Informational: authentication is unchanged.
+    cfg.revocation_endpoint_auth_methods_supported =
+        string_array(j, "revocation_endpoint_auth_methods_supported");
+    cfg.revocation_endpoint_auth_signing_alg_values_supported =
+        string_array(j, "revocation_endpoint_auth_signing_alg_values_supported");
+    cfg.introspection_endpoint_auth_methods_supported =
+        string_array(j, "introspection_endpoint_auth_methods_supported");
+    cfg.introspection_endpoint_auth_signing_alg_values_supported =
+        string_array(j, "introspection_endpoint_auth_signing_alg_values_supported");
 
     p_->oidc_config = cfg;
     p_->oidc_config_expires_at = std::chrono::steady_clock::now() + p_->oidc_discovery_ttl;
