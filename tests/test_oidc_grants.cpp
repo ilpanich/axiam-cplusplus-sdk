@@ -583,6 +583,32 @@ AXIAM_TEST("§15.7 an actor token with an external subject token is refused with
                   std::string::npos);
 }
 
+AXIAM_TEST("§15.6 (contract 1.60) / §15.2 rule 9: an actor_token not issued to the exchanging client surfaces unchanged, one request, no rewriting") {
+    Fixture f;
+    f.replies->token_script = {
+        {400,
+         R"({"error":"invalid_request","error_description":"actor_token was not issued to the exchanging client"})"}};
+    auto client = make_client(f);
+    try {
+        client.token_exchange(exchange("another-clients-actor-token", {"invoices:read"}));
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OAuthProtocolError& e) {
+        // Surfaced as every OAuth2 invalid_request is (§15.3): the code and the
+        // server's description, unchanged.
+        AXIAM_REQUIRE(e.error_code() == "invalid_request");
+        AXIAM_REQUIRE(e.error_description() == "actor_token was not issued to the exchanging client");
+    }
+
+    // Exactly one request. Not retried, not re-sent without the actor token (which would
+    // turn the delegation the caller asked for into an impersonation they did not), and
+    // not repaired by substituting a token of the SDK's own (rule 9, rule 1).
+    AXIAM_REQUIRE(f.replies->token_calls == 1);
+    const auto req = last_request(*f.st, "/oauth2/token");
+    AXIAM_REQUIRE(req.body.find("actor_token=another-clients-actor-token") != std::string::npos);
+    AXIAM_REQUIRE(req.body.find("scope=invoices%3Aread") != std::string::npos);
+    AXIAM_REQUIRE(!req.replayable);  // §34.2 P11: a never-retried write, on a fresh connection
+}
+
 AXIAM_TEST("§15.7 a refused subject_token_type is never retried as another") {
     // A refresh token is a re-authentication credential and an ID token is an
     // assertion to a client about a login; neither is a bearer credential for an

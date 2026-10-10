@@ -6,6 +6,51 @@ semantic versioning (pre-release track `1.0.0-alpha*`).
 
 ## [Unreleased]
 
+### Contract 1.60 (phase 1: `CONTRACT.md` re-vendored byte-for-byte; `openapi.json`, `management-registry.json` and `proto/` follow in phase 2)
+
+#### Changed (source-incompatible)
+
+- **A local refusal is `std::invalid_argument`, not `NetworkError` (contract 1.60 B5, §34.2
+  P12.2 (a)).** A request carrying an open enum's `Unknown`, an unknown `ScimTargetAuth` /
+  `ScimTargetScope` variant, or a `SubjectAltName` that sets neither or both of `dns` and `ip`
+  is refused before any request with `std::invalid_argument` -- C++'s validation error (§28.7)
+  -- no longer with a bare `NetworkError` (`cause() == "sdk_programming_error"`). Code that
+  catches `NetworkError` around a read-modify-write must also catch `std::invalid_argument`.
+  The generator emits the new type; the generated tests assert it.
+- **An event-type URI is sent as the string the caller holds (B4, §34.2 P12.2 (b)).** The SDK
+  no longer refuses a `SsfEventType` that `is_known_ssf_event_type()` rejects: an unseen URI
+  read from the server decodes with its value and is sent back unchanged by `update_stream`
+  (a read-modify-write keeps it), and the server judges it. Previously that read-modify-write
+  was refused locally. There is no client-side list to document, because a list of URIs goes
+  stale; `is_known_ssf_event_type()` remains as an informational check.
+
+#### Fixed
+
+- **A never-retried write arrives exactly once (A6, §34.2 P11, R-17).** `CurlTransport` sets
+  `CURLOPT_FRESH_CONNECT` and `CURLOPT_FORBID_REUSE` on every request that is not a `GET` and
+  that the SDK does not itself repeat, so libcurl has no dead pooled connection to re-send a
+  dropped write over. New `HttpRequest::replayable` (default `false`) is set by the §16
+  authorization-check loop, by retried token-endpoint requests, and by `ssf.poll` when its
+  retry budget allows a second attempt; the options are set both ways on every request, so a
+  `GET` after a write still reuses the pool. Test: a loopback server that reads a write and
+  closes unanswered receives it once (twice without the options), and two `GET`s share one
+  connection.
+- **A replay store that cannot answer is raised as the §2 `NetworkError` (B1, §34.2 P3/P4).**
+  The `ReplayStore` interface was already fallible (it throws), so this is the *verify* row;
+  `verify_set` now wraps whatever the store threw (a `std::exception` or anything else) into a
+  `NetworkError` with `cause() == "replay_store_unavailable"` and no reason code, so it can
+  never be read as `replayed`, and `poll` still lists the SET in `unjudged`, unrecorded and
+  unacknowledged. Tests: §32.8 helper test 6's store-failure case (`verify_set` and `poll`,
+  including the SET being judged once the store recovers).
+
+#### Documentation
+
+- `TokenExchangeParams::actor_token`, the README's §15 section and
+  `examples/token_exchange.cpp`: the actor token is the exchanging client's own
+  `client_credentials` token (§15.2 rule 9); a token issued to another client is answered
+  `400 invalid_request` and surfaces unchanged. New §15.6 test: one request, no rewriting.
+- README: the P11 connection rule (retry section), the B1 store wording, the B4/B5 wording.
+
 Contract 1.59 (re-vendored `CONTRACT.md` from axiam `fe369eb`; `openapi.json`,
 `management-registry.json` unchanged). The README states conformance to §1–§7, §9–§13,
 §14, §15, §17, §19, §20 – §28, §28.12, §29, §30, §31, §32 and §33 at contract 1.59, with

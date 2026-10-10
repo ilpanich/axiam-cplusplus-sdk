@@ -388,6 +388,16 @@ operation this policy exists for. `login`, `verify_mfa`, `logout`, `refresh` and
 `authenticate_device` are never retried automatically, both because they change
 state and because their credentials are single-use.
 
+**A write that is never retried arrives once** (contract 1.60, §34.2 P11). "Never retried"
+includes libcurl's own transparent re-send of a request over a pooled connection that
+turned out dead — which could deliver a write the server already applied. So every request
+that is not a `GET` and that the SDK does not itself repeat (`HttpRequest::replayable`
+false: every `login`, `logout`, `refresh`, management write, OAuth2 grant that §16.2 names
+ineligible, …) goes on a fresh connection (`CURLOPT_FRESH_CONNECT`) that is not reused
+afterwards (`CURLOPT_FORBID_REUSE`); a server that reads it and drops the connection
+unanswered receives it exactly once. `GET`s and the requests §16 does retry keep the
+keep-alive pool.
+
 The policy is 3 attempts, 200 ms base, 5 s cap, **full jitter** over
 `[0, backoff]`, and `Retry-After` honored as a **floor** — it can lengthen a wait,
 never shorten one, so a `Retry-After: 0` cannot defeat the backoff. Only the
@@ -1172,6 +1182,21 @@ const auto exchanged = client.token_exchange(params);
   named. There is no default: an empty value throws `AuthError` client-side
   with no wire call, because a default would be the SDK choosing for you. Pass
   `kAccessTokenType` for the same-domain exchange.
+- **The actor token is this client's own** (§15.2 rule 9, contract 1.60). Delegation
+  (`params.actor_token` set) names the client authenticating the exchange as the
+  actor, so the token must have been issued to *that* client — normally its own
+  `client_credentials` token. This SDK supplies none; you fetch and pass it:
+
+  ```cpp
+  params.actor_token = client.login_client_credentials().access_token;  // same client_id
+  const auto delegated = client.token_exchange(params);
+  ```
+
+  A token issued to another client, a console sign-in or a service account's token
+  is answered `400 invalid_request` ("actor_token was not issued to the exchanging
+  client"); it surfaces unchanged as an `OAuthProtocolError`, with exactly one
+  request — never retried, never re-sent without the actor token (that would turn a
+  delegation into an impersonation).
 - **No actor token.** Delegation across a trust boundary is unsupported in v1;
   sending one is `invalid_request`, which the SDK will not work around by
   dropping it and re-sending.
@@ -1770,8 +1795,9 @@ It is never mapped to one of the **known** enumerators: reading a new value as
 whichever enumerator happens to be first turns a new server state into a wrong
 one, and on this surface these values gate access. `to_wire(Unknown)` is the
 empty string, for display only: **`Unknown` is never sent** — a request carrying it
-is refused locally with `NetworkError`, before any request, rather than written as
-`""` for the server to refuse (contract 1.59, §34.2 P12.2). **A `switch` over one of
+is refused locally with `std::invalid_argument` (the SDK's validation error, never a
+bare `NetworkError`), before any request, rather than written as `""` for the server
+to refuse (contract 1.59 and 1.60, §34.2 P12.2). **A `switch` over one of
 these enums needs an `Unknown` arm:**
 
 ```cpp
@@ -2312,13 +2338,16 @@ client.ssf().update_stream(stream_id, stream);
 ```
 
 `ScimTargetAuth` / `ScimTargetScope` are open unions: an unknown `type` decodes, and
-sending one is refused locally (`NetworkError`, before any request). Open enums decode
-an unknown value as `Unknown`, and a request carrying `Unknown` is refused the same way
-(§34.2 P12.2) — replace it before writing a read back. SSF event types are **strings**
-(`SsfEventType` is `std::string`, the six URIs named in
+sending one is refused locally (`std::invalid_argument`, before any request). Open enums
+decode an unknown value as `Unknown`, and a request carrying `Unknown` is refused the same
+way (§34.2 P12.2, B5) — replace it before writing a read back. SSF event types are
+**strings** (`SsfEventType` is `std::string`, the six URIs named in
 `axiam::management::ssf_event_type::k…`, §32.2): an event type this SDK does not list
-decodes as itself, and `is_known_ssf_event_type()` tells you whether a value may be sent
-— one that may not is refused locally too.
+decodes as itself and is **sent back unchanged** — a read-modify-write of a stream
+carrying a URI this SDK has never seen keeps it, and the server judges it (contract 1.60
+B4). This SDK keeps no client-side list that refuses a URI you type, because such a list
+goes stale; `is_known_ssf_event_type()` only tells you whether a value is one of the six
+constants.
 
 ## SSF receiver (§32.7)
 
@@ -2379,8 +2408,11 @@ never carries the client's session. **`poll` never keeps a `jti` it does not ret
 listed in `unjudged`, in neither `events` nor `refused`, and its `jti` is not recorded,
 so the transmitter offers it again; the rest of the batch is still returned. The replay
 store is pluggable (`ReplayStore::check_and_record`, atomic) for a receiver running
-several instances; a store that cannot answer throws, which `verify_set` raises (fail
-closed) and `poll` reports as unjudged. The default `MemoryReplayStore` is bounded in
+several instances. A store has three answers — seen, not seen, **cannot answer** — and this
+interface gives the third by throwing: `verify_set` raises it as a `NetworkError` with no
+reason code (it is never read as `replayed`, which `poll` would hand back as a refusal and
+you would acknowledge), and `poll` lists the SET as unjudged, unrecorded and unacknowledged
+(§34.2 P4, §32.8 helper test 6). The default `MemoryReplayStore` is bounded in
 time by the replay window and **unbounded in count** (§34.2 P4).
 
 ## CIBA (§33)
