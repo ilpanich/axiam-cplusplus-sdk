@@ -1703,7 +1703,10 @@ struct Certificate {
     std::string issuer_ca_id;
     /// The server's `key_algorithm` field.
     KeyAlgorithm key_algorithm;
-    /// Arbitrary key-value metadata (e.g., device serial, user ID binding).
+    /// Arbitrary key-value metadata (e.g., a device serial). Free-form and never authoritative:
+    /// the account a `User` certificate was issued for is `user_id`. A `metadata.user_id` is
+    /// still read, by the revocation of a user's certificates, for a row issued before the
+    /// binding existed (schema v98, #533).
     std::string metadata;
     /// Validity end.
     std::string not_after;
@@ -1719,6 +1722,15 @@ struct Certificate {
     std::string subject;
     /// The tenant this certificate belongs to.
     std::string tenant_id;
+    /// The user account a `User` certificate was issued for, in this tenant (#533); `null` for
+    /// every other type, for a `User` certificate issued without one, and for every certificate
+    /// issued before schema v98. What revoking a user's certificates matches on — directory
+    /// linking, administrator deletion and Art. 17 erasure. A row with `None` is matched by the
+    /// older convention instead (`metadata.user_id`, or a subject common name equal to the
+    /// account's username or email); a row naming another account never is. It does not make
+    /// the certificate authenticate as the user: a certificate authenticates only as the
+    /// service account it is bound to. Optional.
+    std::optional<std::string> user_id = std::nullopt;
     /// Resolved by the list projection only. The server resolves this for a whole page in one
     /// query, so it is populated by `list` and is empty on `get` (CONTRACT.md §27.11 rule 4).
     /// Empty there means "this read does not carry it", not "there is nothing bound" -- this
@@ -1917,6 +1929,12 @@ struct CreateCertificateRequest {
     /// `server_cert_allowed_names`, which is empty — refusing every `Server` request — until an
     /// organization administrator lists names. Optional.
     std::optional<std::vector<SubjectAltName>> subject_alt_names = std::nullopt;
+    /// The user account a `User` certificate is issued for (#533), returned as the
+    /// certificate's `user_id`. Optional; accepted only for `cert_type: User`, and it must name
+    /// a user of this tenant that has not been deleted or erased. A `metadata.user_id` in the
+    /// same request must agree with it. Revoking the account's certificates — directory
+    /// linking, deletion, erasure — matches on it. Optional.
+    std::optional<std::string> user_id = std::nullopt;
     /// Validity duration in days.
     std::int64_t validity_days;
 };
@@ -2089,7 +2107,11 @@ struct CreateOAuth2ClientRequest {
     /// credentials, no fragment, no private, loopback or internal host). Optional.
     std::optional<std::string> backchannel_client_notification_endpoint = std::nullopt;
     /// B5 — where OIDC back-channel logout tokens are delivered. Omit for a client that does
-    /// not participate. Optional.
+    /// not participate. Must be an absolute `https` URL with no credentials and no fragment,
+    /// naming a public host: an IP literal that is loopback, private, link-local or the cloud
+    /// metadata address, and the names `localhost`, `*.localhost`, `*.local` and `*.internal`,
+    /// are refused with `400`. Delivery is one request that does not follow redirects, and a
+    /// name that resolves to a non-public address is refused when it is sent. Optional.
     std::optional<std::string> backchannel_logout_uri = std::nullopt;
     /// G-7 — CIBA Core §4 `backchannel_token_delivery_mode`: `poll` or `ping`. Required when
     /// `grant_types` holds `urn:openid:params:grant-type:ciba`, refused otherwise; `push` is
@@ -2794,7 +2816,10 @@ struct GeneratedCertificate {
     std::string issuer_ca_id;
     /// The server's `key_algorithm` field.
     KeyAlgorithm key_algorithm;
-    /// Arbitrary key-value metadata (e.g., device serial, user ID binding).
+    /// Arbitrary key-value metadata (e.g., a device serial). Free-form and never authoritative:
+    /// the account a `User` certificate was issued for is `user_id`. A `metadata.user_id` is
+    /// still read, by the revocation of a user's certificates, for a row issued before the
+    /// binding existed (schema v98, #533).
     std::string metadata;
     /// Validity end.
     std::string not_after;
@@ -2810,6 +2835,15 @@ struct GeneratedCertificate {
     std::string subject;
     /// The tenant this certificate belongs to.
     std::string tenant_id;
+    /// The user account a `User` certificate was issued for, in this tenant (#533); `null` for
+    /// every other type, for a `User` certificate issued without one, and for every certificate
+    /// issued before schema v98. What revoking a user's certificates matches on — directory
+    /// linking, administrator deletion and Art. 17 erasure. A row with `None` is matched by the
+    /// older convention instead (`metadata.user_id`, or a subject common name equal to the
+    /// account's username or email); a row naming another account never is. It does not make
+    /// the certificate authenticate as the user: a certificate authenticates only as the
+    /// service account it is bound to. Optional.
+    std::optional<std::string> user_id = std::nullopt;
     /// The issuing chain, concatenated PEM, nearest issuer first. Present only when the signer
     /// returned one — which is the `vault_pki` case, where the root's certificate exists
     /// nowhere a client could fetch it from. For a CA AXIAM signed with itself the chain is the
@@ -4436,6 +4470,8 @@ struct SignCertificateCsrRequest {
     /// by `vault_pki` a `Server` request on this path is refused; use `POST
     /// /api/v1/certificates`. Optional.
     std::optional<std::vector<SubjectAltName>> subject_alt_names = std::nullopt;
+    /// See [`CreateCertificateRequest::user_id`]. Optional.
+    std::optional<std::string> user_id = std::nullopt;
     /// Validity duration in days.
     std::int64_t validity_days;
 };
@@ -4534,7 +4570,11 @@ struct SsfStream {
 
     /// The replacement body for `ssf.update_stream` holding every member of this read.
     /// `authorization_header` is absent: no read carries it, and absent keeps the stored one --
-    /// unless the update moves the endpoint (§32.3 rule 5).
+    /// unless the update moves the endpoint (§32.3 rule 5). `expected_updated_at` is this
+    /// read's `updated_at`, verbatim, so an update overtaken by a later write is a `409`, and
+    /// `events_requested` is the one this read carried (an empty list stays empty, never
+    /// omitted: omitting it would widen the stream to every allowed event, §32.2). If you lower
+    /// `events_allowed`, cut `events_requested` to the new ceiling yourself.
     SsfStreamInput to_input() const;
 };
 
@@ -4559,8 +4599,18 @@ struct SsfStreamInput {
     /// 1–6 event types.
     std::vector<SsfEventType> events_allowed{};
     /// A subset of `events_allowed`; absent means all of them. The receiver may narrow it
-    /// later, never widen it. Optional.
+    /// later, never widen it. On update, absent therefore *resets* a narrowing the receiver
+    /// made to every allowed event, and `[]` keeps a receiver's "none": a client that edits a
+    /// stream sends the value it read (cut to the new `events_allowed`), never an absent field.
+    /// Optional.
     std::optional<std::vector<SsfEventType>> events_requested = std::nullopt;
+    /// The `updated_at` of the stream as the client read it (R1W2-03, T-406). **Update only;
+    /// create ignores it.** When present, the replacement lands only if the stream still has
+    /// that version, else `409` (reload and retry): a pause or a narrowing the receiver made
+    /// after the form was read is not silently reverted. When absent the replacement is
+    /// conditional on the version the server reads during the request — an old client keeps
+    /// that behaviour, and the console always sends it. Optional.
+    std::optional<std::string> expected_updated_at = std::nullopt;
     /// An OAuth2 client of the tenant with the `client_credentials` grant and the `ssf.manage`
     /// scope.
     std::string receiver_client_id{};
@@ -4872,7 +4922,8 @@ struct UpdateOAuth2ClientRequest {
     /// G-7 — see the create DTO. `""` clears. Optional.
     std::optional<std::string> backchannel_client_notification_endpoint = std::nullopt;
     /// Pass an empty string to clear a previously registered URI — the one edit an operator
-    /// makes when an RP is decommissioned. Optional.
+    /// makes when an RP is decommissioned. Any other value is held to the same rule as on
+    /// create. Optional.
     std::optional<std::string> backchannel_logout_uri = std::nullopt;
     /// G-7 — see the create DTO. `""` clears. Optional.
     std::optional<std::string> backchannel_token_delivery_mode = std::nullopt;

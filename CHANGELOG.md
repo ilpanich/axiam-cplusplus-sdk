@@ -6,6 +6,43 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-13
+
+Contract 1.61 (§34.5, the 1.0.1 fields): additive, with no new operation, no changed
+status code and no breaking change for a caller that ignores the new members.
+`CONTRACT.md`, `openapi.json` and `management-registry.json` are re-vendored from
+ilpanich/axiam `058d8e0` (branch `claude/release-1.0.1`; this SDK vendors no `proto/`) and
+the §27 surface regenerated with `scripts/gen_management.py`. The README states
+conformance at contract 1.61.
+
+### Added
+
+- `user_id` (`std::optional<std::string>`) on `Certificate` and `GeneratedCertificate`:
+  a UUID, `null` and an absent member (a server before 1.0.1) decode, the last two as
+  `std::nullopt`, "no account named" — never coalesced or synthesised. Contract 1.61,
+  §27.11 rule 5.
+- `user_id` on `CreateCertificateRequest` and `SignCertificateCsrRequest`, sent exactly as
+  set and omitted (never `null`) when unset. Contract 1.61, §27.11 rule 5.
+- `expected_updated_at` on `SsfStreamInput` (update only; sent as the string given,
+  omitted when unset). Contract 1.61, §32.2.
+
+### Changed
+
+- `SsfStream::to_input()` also sets `expected_updated_at` to the read's `updated_at`,
+  verbatim, and keeps the `events_requested` it read (`{}` as `[]`, never omitted), so an
+  edit built from a read can neither silently overwrite a write that landed since (a
+  `409`, not retried) nor widen what the receiver narrowed. Contract 1.61, §32.2, §32.3
+  rule 4, §32.8 test 1.
+- `CibaPendingList.total_pending` and `truncated` (§33.3 rule 16) are not modelled: this
+  SDK generates the models a registry operation reaches, and none returns the console's
+  pending-request list.
+
+### Tests
+
+- `test_contract_161.cpp` (§27.11 rule 5's required test) and three cases in
+  `test_ssf_management.cpp` (§32.8 test 1's contract 1.61 assertions, the `409` that is not
+  retried, and `to_input()`).
+
 ## [1.0.0] - 2026-10-10
 
 The AXIAM C++ SDK at 1.0.0 is a C++17 client (tested through C++23, with g++ and clang++)

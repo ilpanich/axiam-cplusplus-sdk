@@ -189,7 +189,7 @@ AXIAM_TEST("management model CaCertificate round-trips without losing a field") 
 
 AXIAM_TEST("management model Certificate round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"})json");
+        R"json({"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "user_id": "11111111-1111-4111-8111-111111111111"})json");
 
     const auto value = wire.get<Certificate>();
     const nlohmann::json encoded = value;
@@ -294,7 +294,7 @@ AXIAM_TEST("management model SubjectAltName round-trips without losing a field")
 
 AXIAM_TEST("management model CreateCertificateRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"cert_type": "User", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "subject": "example", "subject_alt_names": [{"dns": "example"}], "validity_days": 1})json");
+        R"json({"cert_type": "User", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "subject": "example", "subject_alt_names": [{"dns": "example"}], "user_id": "11111111-1111-4111-8111-111111111111", "validity_days": 1})json");
 
     const auto value = wire.get<CreateCertificateRequest>();
     const nlohmann::json encoded = value;
@@ -894,7 +894,7 @@ AXIAM_TEST("management model GeneratedCaCertificate round-trips without losing a
 
 AXIAM_TEST("management model GeneratedCertificate round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"cert_type": "User", "chain_pem": "example", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "private_key_pem": "example", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"})json");
+        R"json({"cert_type": "User", "chain_pem": "example", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "private_key_pem": "example", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "user_id": "11111111-1111-4111-8111-111111111111"})json");
 
     const auto value = wire.get<GeneratedCertificate>();
     const nlohmann::json encoded = value;
@@ -1959,7 +1959,7 @@ AXIAM_TEST("management model SignAuditBatchRequest round-trips without losing a 
 
 AXIAM_TEST("management model SignCertificateCsrRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"cert_type": "User", "csr_pem": "example", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "subject_alt_names": [{"dns": "example"}], "validity_days": 1})json");
+        R"json({"cert_type": "User", "csr_pem": "example", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "metadata": {}, "subject_alt_names": [{"dns": "example"}], "user_id": "11111111-1111-4111-8111-111111111111", "validity_days": 1})json");
 
     const auto value = wire.get<SignCertificateCsrRequest>();
     const nlohmann::json encoded = value;
@@ -2034,7 +2034,7 @@ AXIAM_TEST("management model SsfStream round-trips without losing a field") {
 
 AXIAM_TEST("management model SsfStreamInput round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"audience": "example", "authorization_header": "example", "clear_authorization_header": true, "delivery_method": "push", "description": "example", "endpoint_url": "example", "events_allowed": ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"], "events_requested": ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"], "receiver_client_id": "example", "status": "enabled", "status_reason": "example", "subject_format": "iss_sub"})json");
+        R"json({"audience": "example", "authorization_header": "example", "clear_authorization_header": true, "delivery_method": "push", "description": "example", "endpoint_url": "example", "events_allowed": ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"], "events_requested": ["https://schemas.openid.net/secevent/caep/event-type/session-revoked"], "expected_updated_at": "2026-08-26T00:00:00Z", "receiver_client_id": "example", "status": "enabled", "status_reason": "example", "subject_format": "iss_sub"})json");
 
     const auto value = wire.get<SsfStreamInput>();
     const nlohmann::json encoded = value;
@@ -3680,8 +3680,8 @@ AXIAM_TEST("management service_accounts: re-scoping returns a new handle (§27.4
 }
 
 AXIAM_TEST("management certificates: re-scoping returns a new handle (§27.4 rule 3)") {
-    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json",
-                                              200, R"json({"items": [{"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json");
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "user_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "user_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json");
     auto mgmt = fixture.client.management();
     auto handle = mgmt.certificates();
 
@@ -4206,8 +4206,8 @@ AXIAM_TEST("management service_accounts: client.service_accounts() and managemen
 }
 
 AXIAM_TEST("management certificates: client.certificates() and management().certificates() are equivalent (§27.2 rule 4)") {
-    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json",
-                                              200, R"json({"items": [{"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json");
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "user_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"cert_type": "User", "created_at": "2026-08-26T00:00:00Z", "fingerprint": "example", "id": "11111111-1111-4111-8111-111111111111", "issuer_ca_id": "11111111-1111-4111-8111-111111111111", "key_algorithm": "Rsa4096", "metadata": {}, "not_after": "2026-08-26T00:00:00Z", "not_before": "2026-08-26T00:00:00Z", "public_cert_pem": "example", "status": "Active", "subject": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "user_id": "11111111-1111-4111-8111-111111111111"}], "total": 1, "offset": 0, "limit": 50})json");
 
     // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
     // Equivalent means the same request, not merely the same type -- so this compares the

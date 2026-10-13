@@ -2078,8 +2078,11 @@ public:
     /// which absent keeps the stored one** -- unless the update moves `endpoint_url` to another
     /// scheme, host or port while a header is stored: then it must carry `authorization_header`
     /// again or `clear_authorization_header: true`, else `400` (§32.3 rule 5). Start from
-    /// `SsfStream::to_input()`. An update overtaken by the receiver's own write is `409`: read
-    /// the stream again.
+    /// `SsfStream::to_input()`, which sends back the `events_requested` and the
+    /// `expected_updated_at` it read (contract 1.61, §32.2): an omitted `events_requested`
+    /// *resets* the stream to every allowed event, `{}` keeps the receiver's "none". An update
+    /// overtaken by a write since the read -- the receiver's included -- is `409`, never
+    /// retried: read the stream again.
     ///
     /// @param stream_id The `{stream_id}` path parameter.
     /// @param body The request body.

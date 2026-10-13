@@ -198,8 +198,11 @@ CALL_SITE_NOTES: dict[str, str] = {
         "moves `endpoint_url` to another scheme, host or port while a header is stored: "
         "then it must carry `authorization_header` again or "
         "`clear_authorization_header: true`, else `400` (§32.3 rule 5). Start from "
-        "`SsfStream::to_input()`. An update overtaken by the receiver's own write is "
-        "`409`: read the stream again."
+        "`SsfStream::to_input()`, which sends back the `events_requested` and the "
+        "`expected_updated_at` it read (contract 1.61, §32.2): an omitted "
+        "`events_requested` *resets* the stream to every allowed event, `{}` keeps the "
+        "receiver's \"none\". An update overtaken by a write since the read -- the "
+        "receiver's included -- is `409`, never retried: read the stream again."
     ),
     "scim_targets.create": (
         "`credential` is required here (§31.3 rule 2). It is write-only: no response "
@@ -309,7 +312,12 @@ MODEL_MEMBERS: dict[str, list[tuple[str, str]]] = {
     "SsfStream": [(
         "The replacement body for `ssf.update_stream` holding every member of this "
         "read. `authorization_header` is absent: no read carries it, and absent keeps "
-        "the stored one -- unless the update moves the endpoint (§32.3 rule 5).",
+        "the stored one -- unless the update moves the endpoint (§32.3 rule 5). "
+        "`expected_updated_at` is this read's `updated_at`, verbatim, so an update "
+        "overtaken by a later write is a `409`, and `events_requested` is the one this "
+        "read carried (an empty list stays empty, never omitted: omitting it would widen "
+        "the stream to every allowed event, §32.2). If you lower `events_allowed`, cut "
+        "`events_requested` to the new ceiling yourself.",
         "SsfStreamInput to_input() const;",
     )],
     "ScimTargetResponse": [(
