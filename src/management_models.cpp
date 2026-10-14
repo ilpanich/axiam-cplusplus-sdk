@@ -1875,6 +1875,9 @@ void to_json(nlohmann::json& j, const Certificate& value) {
     j["status"] = send_wire(value.status);
     j["subject"] = value.subject;
     j["tenant_id"] = value.tenant_id;
+    if (value.user_id) {
+        j["user_id"] = *value.user_id;
+    }
     if (value.bound_service_account_id) {
         j["bound_service_account_id"] = *value.bound_service_account_id;
     }
@@ -1894,6 +1897,9 @@ void from_json(const nlohmann::json& j, Certificate& value) {
     value.status = certificate_status_from_wire(j.at("status").get<std::string>());
     value.subject = j.at("subject").get<std::string>();
     value.tenant_id = j.at("tenant_id").get<std::string>();
+    if (auto it = j.find("user_id"); it != j.end() && !it->is_null()) {
+        value.user_id = it->get<std::string>();
+    }
     if (auto it = j.find("bound_service_account_id"); it != j.end() && !it->is_null()) {
         value.bound_service_account_id = it->get<std::string>();
     }
@@ -2091,6 +2097,9 @@ void to_json(nlohmann::json& j, const CreateCertificateRequest& value) {
     if (value.subject_alt_names && !value.subject_alt_names->empty()) {
         j["subject_alt_names"] = *value.subject_alt_names;
     }
+    if (value.user_id) {
+        j["user_id"] = *value.user_id;
+    }
     j["validity_days"] = value.validity_days;
 }
 
@@ -2104,6 +2113,9 @@ void from_json(const nlohmann::json& j, CreateCertificateRequest& value) {
     value.subject = j.at("subject").get<std::string>();
     if (auto it = j.find("subject_alt_names"); it != j.end() && !it->is_null()) {
         value.subject_alt_names = it->get<std::vector<SubjectAltName>>();
+    }
+    if (auto it = j.find("user_id"); it != j.end() && !it->is_null()) {
+        value.user_id = it->get<std::string>();
     }
     value.validity_days = j.at("validity_days").get<std::int64_t>();
 }
@@ -3301,6 +3313,9 @@ void to_json(nlohmann::json& j, const GeneratedCertificate& value) {
     j["status"] = send_wire(value.status);
     j["subject"] = value.subject;
     j["tenant_id"] = value.tenant_id;
+    if (value.user_id) {
+        j["user_id"] = *value.user_id;
+    }
     if (value.chain_pem) {
         j["chain_pem"] = *value.chain_pem;
     }
@@ -3321,6 +3336,9 @@ void from_json(const nlohmann::json& j, GeneratedCertificate& value) {
     value.status = certificate_status_from_wire(j.at("status").get<std::string>());
     value.subject = j.at("subject").get<std::string>();
     value.tenant_id = j.at("tenant_id").get<std::string>();
+    if (auto it = j.find("user_id"); it != j.end() && !it->is_null()) {
+        value.user_id = it->get<std::string>();
+    }
     if (auto it = j.find("chain_pem"); it != j.end() && !it->is_null()) {
         value.chain_pem = it->get<std::string>();
     }
@@ -5295,6 +5313,9 @@ void to_json(nlohmann::json& j, const SignCertificateCsrRequest& value) {
     if (value.subject_alt_names && !value.subject_alt_names->empty()) {
         j["subject_alt_names"] = *value.subject_alt_names;
     }
+    if (value.user_id) {
+        j["user_id"] = *value.user_id;
+    }
     j["validity_days"] = value.validity_days;
 }
 
@@ -5307,6 +5328,9 @@ void from_json(const nlohmann::json& j, SignCertificateCsrRequest& value) {
     }
     if (auto it = j.find("subject_alt_names"); it != j.end() && !it->is_null()) {
         value.subject_alt_names = it->get<std::vector<SubjectAltName>>();
+    }
+    if (auto it = j.find("user_id"); it != j.end() && !it->is_null()) {
+        value.user_id = it->get<std::string>();
     }
     value.validity_days = j.at("validity_days").get<std::int64_t>();
 }
@@ -5445,6 +5469,9 @@ void to_json(nlohmann::json& j, const SsfStreamInput& value) {
     if (value.events_requested) {
         j["events_requested"] = *value.events_requested;
     }
+    if (value.expected_updated_at) {
+        j["expected_updated_at"] = *value.expected_updated_at;
+    }
     j["receiver_client_id"] = value.receiver_client_id;
     if (value.status) {
         j["status"] = send_wire(*value.status);
@@ -5475,6 +5502,9 @@ void from_json(const nlohmann::json& j, SsfStreamInput& value) {
     value.events_allowed = j.at("events_allowed").get<std::vector<SsfEventType>>();
     if (auto it = j.find("events_requested"); it != j.end() && !it->is_null()) {
         value.events_requested = it->get<std::vector<SsfEventType>>();
+    }
+    if (auto it = j.find("expected_updated_at"); it != j.end() && !it->is_null()) {
+        value.expected_updated_at = it->get<std::string>();
     }
     value.receiver_client_id = j.at("receiver_client_id").get<std::string>();
     if (auto it = j.find("status"); it != j.end() && !it->is_null()) {

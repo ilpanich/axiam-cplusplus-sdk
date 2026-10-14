@@ -77,6 +77,11 @@ SsfStreamInput SsfStream::to_input() const {
     out.status = status;
     out.status_reason = status_reason;
     out.subject_format = subject_format;
+    // §32.2 (contract 1.61): an edit sends the `events_requested` it read -- an empty
+    // list stays an empty list, copied above and never omitted, because an absent member
+    // resets the stream to every allowed event -- and the version it read, so a write
+    // that landed since (the receiver's included) is a 409 instead of being reverted.
+    out.expected_updated_at = updated_at;
     return out;
 }
 

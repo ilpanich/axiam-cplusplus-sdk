@@ -279,6 +279,71 @@ AXIAM_TEST("§32.2: SsfStream::to_input() keeps every member but the header") {
     AXIAM_CHECK(in.subject_format == std::optional<SsfSubjectFormat>(SsfSubjectFormat::IssSub));
 }
 
+// ── Contract 1.61 (§32.2, §32.3 rule 4, §32.8 test 1) ────────────────────────
+
+AXIAM_TEST("§32.8 management (1) (contract 1.61): expected_updated_at is sent exactly as given and absent when unset; events_requested {} is sent as [] and unset is absent") {
+    auto fixture = axtest::mgmt::signed_in_many({{200, stream_body().dump()},
+                                                 {200, stream_body().dump()},
+                                                 {200, stream_body().dump()}});
+    auto s = fixture.client.ssf();
+
+    // Fewer or more fractional digits than the server stored, and an offset: the string is
+    // passed through, never re-formatted.
+    auto guarded = input();
+    guarded.expected_updated_at = "2026-10-05T02:00:00.123456789+02:00";
+    s.update_stream("s-1", guarded);
+    auto sent = json::parse(fixture.state->last().body);
+    AXIAM_CHECK(sent.at("expected_updated_at") == "2026-10-05T02:00:00.123456789+02:00");
+    AXIAM_CHECK(!sent.contains("events_requested"));  // unset: absent, not [] and not null
+
+    s.update_stream("s-1", input());
+    AXIAM_CHECK(!json::parse(fixture.state->last().body).contains("expected_updated_at"));
+
+    auto none = input();
+    none.events_requested = std::vector<SsfEventType>{};
+    s.update_stream("s-1", none);
+    sent = json::parse(fixture.state->last().body);
+    AXIAM_CHECK(sent.at("events_requested") == json::array());  // {} is sent as []
+}
+
+AXIAM_TEST("§32.3 rule 4 (contract 1.61): a 409 on update_stream is a ConflictError, once, never retried") {
+    auto fixture = axtest::mgmt::signed_in_many(
+        {{409, R"({"error":"conflict","message":"the stream changed since it was read"})"},
+         {200, stream_body().dump()}});
+    auto guarded = input();
+    guarded.expected_updated_at = "2026-10-05T00:00:00Z";
+    const auto before = fixture.state->count();
+    AXIAM_CHECK(what_of<ConflictError>([&] { fixture.client.ssf().update_stream("s-1", guarded); })
+                    .rfind("caught:", 0) == 0);
+    AXIAM_CHECK(fixture.state->count() - before == 1);
+}
+
+AXIAM_TEST("§32.2 (contract 1.61): SsfStream::to_input() sends back the updated_at and the events_requested it read, {} as []") {
+    auto fixture = axtest::mgmt::signed_in_many({{200, stream_body().dump()},
+                                                 {200, stream_body().dump()},
+                                                 {200, stream_body().dump()}});
+    auto s = fixture.client.ssf();
+
+    // The version it read, verbatim.
+    const auto read = stream_body({{"updated_at", "2026-10-05T02:00:00.5+02:00"}}).get<SsfStream>();
+    auto in = read.to_input();
+    AXIAM_CHECK(in.expected_updated_at == std::optional<std::string>("2026-10-05T02:00:00.5+02:00"));
+    s.update_stream("s-1", in);
+    auto sent = json::parse(fixture.state->last().body);
+    AXIAM_CHECK(sent.at("expected_updated_at") == "2026-10-05T02:00:00.5+02:00");
+    AXIAM_CHECK(sent.at("events_requested") == json::array({kRevoked}));
+
+    // A receiver's "none" is sent back as [], never omitted (omitting it would widen the
+    // stream to every allowed event).
+    const auto none = stream_body({{"events_requested", json::array()}}).get<SsfStream>().to_input();
+    AXIAM_CHECK(none.events_requested.has_value() && none.events_requested->empty());
+    s.update_stream("s-1", none);
+    sent = json::parse(fixture.state->last().body);
+    AXIAM_CHECK(sent.contains("events_requested"));
+    AXIAM_CHECK(sent.at("events_requested") == json::array());
+    AXIAM_CHECK(sent.contains("expected_updated_at"));
+}
+
 // Contract 1.59 R-27: "the input cannot be built without" its required members is
 // a compile-time property in C++ -- a constructor taking every required member, in
 // the contract's order, and no public default constructor. Checked as traits so a

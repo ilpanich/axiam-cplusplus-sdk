@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33 and §34 at contract 1.60, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33 and §34 at contract 1.61, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
 Contract 1.53–1.58 ships here **without a carve-out**: [§28.12](#2812-rfc-7592-client-configuration)'s RFC 7592 client configuration; the four management namespaces [`saml` (§29), `directory` (§30), `scim_targets` (§31) and `ssf` (§32)](#directory-saml-ssf-and-scim-targets-29--32); the [SSF receiver helper (§32.7)](#ssf-receiver-327) and [CIBA (§33)](#ciba-33) — both MAY for C++ — including the signed request form under all three algorithms (PS256, ES256, EdDSA) over the OpenSSL this SDK already links; and §21.3.1's seventh `mtls_endpoint_aliases` member. The management surface is **190 operations across 28 namespaces**.
 
@@ -25,6 +25,16 @@ strings (P12.2), the RFC 7592 update sends only what the read carried (P12.4), t
 replacement inputs cannot be built without their required members, `Sensitive<T>::expose()`
 is the public accessor (§7 rule 3), and management reads follow §16 (`408`, `429`,
 `Retry-After`).
+
+Contract 1.61 (§34.5, the 1.0.1 fields) is additive and changes no section list. In this
+SDK: `user_id` on `Certificate` and `GeneratedCertificate` (`std::optional<std::string>`;
+a UUID, `null` and an absent member from a server before 1.0.1 decode, the last two as
+`std::nullopt`, "no account named") and on `CreateCertificateRequest` and
+`SignCertificateCsrRequest` (sent as set, the key omitted when unset, never `null`;
+§27.11 rule 5); `expected_updated_at` on `SsfStreamInput`, which `SsfStream::to_input()`
+fills together with the `events_requested` it read, `{}` as `[]` (§32.2). `CibaPendingList`
+(§33.3 rule 16) belongs to the console and no operation of this SDK returns it, so it is
+not modelled.
 
 Contract 1.60 (§34.4, the answers to the ports' questions, and §27.15) changes no wire
 shape either. This SDK sends every never-retried write on a fresh connection that is not
@@ -2362,6 +2372,15 @@ auto stream = client.ssf().get_stream(stream_id).to_input();     // header absen
 stream.status = SsfStreamStatus::Paused;
 client.ssf().update_stream(stream_id, stream);
 ```
+
+`SsfStream::to_input()` (contract 1.61, §32.2) sends back what the read carried: its
+`updated_at` as `expected_updated_at`, so a write that landed since — the receiver's pause
+or narrowing included — makes the update a `409` (`ConflictError`, never retried) instead
+of being reverted; and its `events_requested`, where `{}` stays `[]` (the receiver's
+"none") rather than being omitted. An `events_requested` you leave unset on an input you
+build yourself is *absent*, and absent resets the stream to every event of
+`events_allowed`; if you lower `events_allowed`, cut `events_requested` to the new ceiling
+before sending.
 
 `ScimTargetAuth` / `ScimTargetScope` are open unions: an unknown `type` decodes, and
 sending one is refused locally (`std::invalid_argument`, before any request). Open enums

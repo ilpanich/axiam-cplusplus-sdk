@@ -41,6 +41,9 @@ add_executable(axiam_cpp_tests
   # allow_sha1_signatures read as false when absent, idp_metadata_signing_cert_pem,
   # and note 8's tri-state nullable members on federation.update_config.
   test_contract_160_models.cpp
+  # CONTRACT.md §27.11 rule 5 (contract 1.61): Certificate.user_id on both requests and
+  # every read -- sent as given, key omitted when unset, null and absent both decode.
+  test_contract_161.cpp
   # CONTRACT.md §5.2 rule 1 (contract 1.51): the acting-tenant helper -- sent when
   # set, absent when not, gated on a held login result, and part of the §17 memo key.
   test_acting_tenant.cpp
