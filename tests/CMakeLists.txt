@@ -48,6 +48,8 @@ add_executable(axiam_cpp_tests
   # (the surface, versions, closed bodies, open decoding and pagination, errors) and the one
   # route that is NOT here, the RADIUS decision (§36.11).
   test_network.cpp
+  # CONTRACT.md §27.6.2 / §27.9 (contract 1.62): the `network` namespace in a manifest.
+  test_manifest_network.cpp
   # CONTRACT.md §34.6 (contract 1.62) items (e)-(i): the change-taking SSF form (§32.8 test 7),
   # the update_stream call-site text, an assigned null being "none", the server's own
   # expected_updated_at string, and the untyped request user_id.
