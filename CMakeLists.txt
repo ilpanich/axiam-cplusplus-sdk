@@ -106,9 +106,16 @@ if(AXIAM_ENABLE_COVERAGE)
   endif()
 endif()
 
+# The ABI version of the shared library, kept apart from the package's SemVer: bump it whenever
+# a public type the caller allocates or the library fills changes size or layout (1.1.0 grew
+# ApplyReport, PlannedChange, ManifestEntity, ConflictError and the models, so it is 2 while the
+# package is still 1.x). The file is libaxiam_cpp.so.${PROJECT_VERSION} with SONAME
+# libaxiam_cpp.so.${AXIAM_SOVERSION}; tests/CMakeLists.txt (abi_soname) pins it.
+set(AXIAM_SOVERSION 2)
+
 set_target_properties(axiam_cpp PROPERTIES
   VERSION ${PROJECT_VERSION}
-  SOVERSION ${PROJECT_VERSION_MAJOR}
+  SOVERSION ${AXIAM_SOVERSION}
   EXPORT_NAME axiam_cpp
 )
 

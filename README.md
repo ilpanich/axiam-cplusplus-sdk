@@ -14,6 +14,9 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34 and §36 at contract 1.62, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
+Manifest pruning: not offered in any namespace (§27.10) — a manifest's `apply` never deletes, so a
+resource omitted from it is left alone, `network` included.
+
 Contract 1.53–1.58 ships here **without a carve-out**: [§28.12](#2812-rfc-7592-client-configuration)'s RFC 7592 client configuration; the four management namespaces [`saml` (§29), `directory` (§30), `scim_targets` (§31) and `ssf` (§32)](#directory-saml-ssf-and-scim-targets-29--32); the [SSF receiver helper (§32.7)](#ssf-receiver-327) and [CIBA (§33)](#ciba-33) — both MAY for C++ — including the signed request form under all three algorithms (PS256, ES256, EdDSA) over the OpenSSL this SDK already links; and §21.3.1's seventh `mtls_endpoint_aliases` member. The management surface is **202 operations across 29 namespaces**.
 
 Contract 1.59 (§34, the cross-SDK review of those ports) changes no wire shape; this SDK
@@ -74,6 +77,11 @@ From 1.0.0 the SDK is stable and follows [Semantic Versioning](https://semver.or
 breaking change to the public API waits for the next major version. A contract record may add a
 member or widen a type with a minor bump (1.1.0 is one: contract 1.61 and 1.62); a removal waits
 for 2.0.0.
+
+The shared library's `SOVERSION` is its ABI version and moves independently of that SemVer: a
+public type that grows (as `ApplyReport`, `PlannedChange`, `ManifestEntity` and `ConflictError`
+did in 1.1.0) bumps it, so 1.1.0 installs `libaxiam_cpp.so.2` and a binary built against 1.0.x
+must be rebuilt rather than loaded against it.
 
 Sections are named individually rather than folded into ranges: widening a
 range silently turns a statement that was true when written into a different

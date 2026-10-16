@@ -14,7 +14,7 @@ never tagged, so its entries are part of this one section, and **this is the rel
 a member or widen a type with a minor bump, and a removal waits for 2.0.0. On the wire it is
 additive for a caller that ignores the new members; one request now differs from 1.0.0's (the
 device grant's client authentication, below). `CONTRACT.md`, `openapi.json` and
-`management-registry.json` are re-vendored from ilpanich/axiam `d76c5a80b` (branch
+`management-registry.json` are re-vendored from ilpanich/axiam `d25413506` (branch
 `claude/release-1.1.0`; this SDK vendors no `proto/`) and the §27 surface regenerated with
 `scripts/gen_management.py`: **202 operations across 29 namespaces** (was 190 across 28). The
 README states conformance at contract 1.62.
@@ -32,6 +32,20 @@ Neither is a change on the wire; each is a compile-time or build-warning differe
   untyped string in every SDK; here it already was (`std::optional<std::string>` on
   `CreateCertificateRequest` and `SignCertificateCsrRequest`, sent as given and never checked
   as a UUID), so nothing changes. Likewise (f) and (g) already held (below).
+
+### Binary compatibility
+
+- **The shared library's ABI version is now 2 (`libaxiam_cpp.so.2`).** Value types the library
+  returns or fills grew in this release: `ApplyReport`, `PlannedChange` and `ManifestEntity`
+  gained members (and `ManifestKind` three enumerators), `ConflictError` gained `reason_code_`,
+  and the 1.61 and 1.62 members were added to the generated models (for example
+  `SsfStream`, `SsfStreamInput`, `ScimTargetInput` and the `network` types). A binary built
+  against 1.0.x keeps resolving `libaxiam_cpp.so.1` and must be **rebuilt** to use 1.1.0; the
+  loader refuses the mismatch instead of running it. `SOVERSION` (the ABI version, bumped
+  whenever a public type's size or layout changes) is now set apart from the package version,
+  which stays `1.1.0`: the file is `libaxiam_cpp.so.1.1.0` with SONAME `libaxiam_cpp.so.2`.
+  Static builds are unaffected. `tests/CMakeLists.txt` gains `abi_soname`, which reads the
+  built library's SONAME with `readelf` and fails unless it is `libaxiam_cpp.so.2`.
 
 ### Added
 
@@ -124,8 +138,16 @@ Neither is a change on the wire; each is a compile-time or build-warning differe
   `std::string`, and both `to_input()` forms send it byte for byte.
 - **(i) The request `user_id` is an untyped string**, as above.
 
+### Contract 1.62 corrections (fix pass)
+
+- Re-vendored `CONTRACT.md`, `openapi.json` (version 1.1.0, digest
+  `sha256:cf0fc71c2061576b077afd48d9903f9f4ef26d66e9edbebe5e3020be89fc59a7`) and
+  `management-registry.json` byte for byte from ilpanich/axiam `d25413506`; the generator's
+  `--check` stays clean. Ships the shared library's ABI version 2 (C162-02, above).
+
 ### Tests
 
+- `abi_soname` (CMake test, a shared build on Linux): the library's SONAME is `libaxiam_cpp.so.2`.
 - `test_network.cpp` (§36.8's five tests, and the decision route's absence),
   `test_manifest_network.cpp` (§27.9 "Manifest, `network`", and the §27.6.2 refusals),
   `test_contract_162.cpp` (§32.8 test 7, the call-site text, and items (f), (g), (i)), the

@@ -192,3 +192,20 @@ target_compile_definitions(axiam_cpp_tests PRIVATE
 
 add_test(NAME axiam_cpp_tests COMMAND axiam_cpp_tests)
 set_tests_properties(axiam_cpp_tests PROPERTIES TIMEOUT 120)
+
+# C162-02: the ABI version. A public type the caller holds grew in 1.1.0, so the shared library
+# is libaxiam_cpp.so.2 while the package stays 1.x (CMakeLists.txt, AXIAM_SOVERSION). Only a
+# shared ELF build has a SONAME to read.
+if(BUILD_SHARED_LIBS AND UNIX AND NOT APPLE)
+  find_program(AXIAM_READELF readelf)
+  if(AXIAM_READELF)
+    add_test(NAME abi_soname
+      COMMAND ${CMAKE_COMMAND}
+        -DREADELF=${AXIAM_READELF}
+        -DLIB=$<TARGET_FILE:axiam_cpp>
+        -DEXPECTED=libaxiam_cpp.so.${AXIAM_SOVERSION}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/check_soname.cmake)
+  else()
+    message(WARNING "readelf not found: the abi_soname test is not registered")
+  endif()
+endif()
