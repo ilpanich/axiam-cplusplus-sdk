@@ -3,7 +3,10 @@
 // operations call. Kept out of the generated sources so the generator never has
 // to know what they do — only that they exist.
 
+#include <algorithm>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -82,6 +85,51 @@ SsfStreamInput SsfStream::to_input() const {
     // resets the stream to every allowed event -- and the version it read, so a write
     // that landed since (the receiver's included) is a 409 instead of being reverted.
     out.expected_updated_at = updated_at;
+    return out;
+}
+
+SsfStreamInput SsfStream::to_input(const SsfStreamChanges& changes) const {
+    // The change-taking form (CONTRACT.md §32.2, contract 1.62): the plain converter's body --
+    // `events_requested` and `expected_updated_at` as read -- with the caller's changes laid
+    // over it, and the cut the plain converter leaves to its caller made here.
+    SsfStreamInput out = to_input();
+
+    if (changes.receiver_client_id) out.receiver_client_id = *changes.receiver_client_id;
+    if (changes.audience) out.audience = *changes.audience;
+    if (changes.delivery_method) out.delivery_method = *changes.delivery_method;
+    if (changes.description) out.description = *changes.description;
+    if (changes.endpoint_url) out.endpoint_url = *changes.endpoint_url;
+    if (changes.status) out.status = *changes.status;
+    if (changes.status_reason) out.status_reason = *changes.status_reason;
+    if (changes.subject_format) out.subject_format = *changes.subject_format;
+    if (changes.authorization_header) out.authorization_header = changes.authorization_header;
+    if (changes.clear_authorization_header) {
+        out.clear_authorization_header = changes.clear_authorization_header;
+    }
+
+    if (changes.events_allowed) {
+        out.events_allowed = *changes.events_allowed;
+        if (!changes.events_requested) {
+            // Lowering the ceiling: the entries of the list that was read that are still
+            // inside it, in their order -- a requested event outside `events_allowed` is a
+            // 400, and leaving the member out would reset the stream to every allowed event
+            // (the receiver's narrowing widened, §32.2). `{}` stays `{}`.
+            std::vector<SsfEventType> cut;
+            for (const auto& event : events_requested) {
+                const auto& ceiling = *changes.events_allowed;
+                if (std::find(ceiling.begin(), ceiling.end(), event) != ceiling.end()) {
+                    cut.push_back(event);
+                }
+            }
+            out.events_requested = std::move(cut);
+        }
+    }
+    // Named by the caller: sent as given, `{}` included -- the server judges it.
+    if (changes.events_requested) out.events_requested = *changes.events_requested;
+
+    // §27.11 rule 5 / §32.2: an assigned null is "none". The member is optional on the input,
+    // so a disengaged inner value is already "the key is omitted"; `null` has no spelling.
+    if (changes.expected_updated_at) out.expected_updated_at = *changes.expected_updated_at;
     return out;
 }
 

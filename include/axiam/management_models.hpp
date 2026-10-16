@@ -653,6 +653,34 @@ std::string to_wire(NameIdFormat value);
 /// `switch` over this enum needs an `Unknown` arm.
 NameIdFormat name_id_format_from_wire(const std::string& value);
 
+/// What a segment is for.
+enum class NetworkSegmentKind {
+    Access,  ///< Wire value `access`.
+    Quarantine,  ///< Wire value `quarantine`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a NetworkSegmentKind, for display and logs; never fails.
+///
+/// `NetworkSegmentKind::Unknown` spells as the empty string, which no server value is -- and it
+/// is never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
+std::string to_wire(NetworkSegmentKind value);
+
+/// Parse a wire value into a NetworkSegmentKind.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `NetworkSegmentKind::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+NetworkSegmentKind network_segment_kind_from_wire(const std::string& value);
+
 /// Events that can trigger an admin notification.
 enum class NotificationEventType {
     LoginFailure,  ///< Wire value `login_failure`.
@@ -823,6 +851,62 @@ std::string to_wire(PgpKeyStatus value);
 /// turns a new server state into a wrong one, and on this surface these values gate access. A
 /// `switch` over this enum needs an `Unknown` arm.
 PgpKeyStatus pgp_key_status_from_wire(const std::string& value);
+
+/// `Service-Type` (RFC 2865 §5.6). Option B accepts only `framed_user`; the administrative
+/// values are refused with a 400.
+enum class RadiusServiceType {
+    FramedUser,  ///< Wire value `framed_user`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a RadiusServiceType, for display and logs; never fails.
+///
+/// `RadiusServiceType::Unknown` spells as the empty string, which no server value is -- and it
+/// is never SENT: a request carrying it is refused locally with std::invalid_argument (contract
+/// 1.60 B5) before any request, never written as `""` for the server to refuse (CONTRACT.md
+/// §34.2 P12.2, contract 1.59).
+std::string to_wire(RadiusServiceType value);
+
+/// Parse a wire value into a RadiusServiceType.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `RadiusServiceType::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+RadiusServiceType radius_service_type_from_wire(const std::string& value);
+
+/// `Termination-Action` (RFC 2865 §5.29).
+enum class RadiusTerminationAction {
+    Default_,  ///< Wire value `default`.
+    RadiusRequest,  ///< Wire value `radius_request`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a RadiusTerminationAction, for display and logs; never fails.
+///
+/// `RadiusTerminationAction::Unknown` spells as the empty string, which no server value is --
+/// and it is never SENT: a request carrying it is refused locally with std::invalid_argument
+/// (contract 1.60 B5) before any request, never written as `""` for the server to refuse
+/// (CONTRACT.md §34.2 P12.2, contract 1.59).
+std::string to_wire(RadiusTerminationAction value);
+
+/// Parse a wire value into a RadiusTerminationAction.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `RadiusTerminationAction::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1).
+/// Throwing fails the WHOLE response, so one field of one record would take down the page it
+/// arrived on -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+RadiusTerminationAction radius_termination_action_from_wire(const std::string& value);
 
 /// How a reactor participates in an event.
 enum class ReactorMode {
@@ -1317,6 +1401,8 @@ struct CreateCertificateRequest;
 struct CreateFederationConfigRequest;
 struct CreateGroupRequest;
 struct CreateIntermediateCaRequest;
+struct CreateNetworkReplyProfileRequest;
+struct CreateNetworkSegmentRequest;
 struct CreateNotificationRuleRequest;
 struct CreateOAuth2ClientRequest;
 struct CreatePermissionRequest;
@@ -1363,6 +1449,10 @@ struct MfaMethodResponse;
 struct MfaPolicy;
 struct MigrateCustodyResponse;
 struct MtlsTrustAnchorResponse;
+struct NetworkPolicyResponse;
+struct NetworkReplyProfile;
+struct NetworkReplyProfileInput;
+struct NetworkSegmentResponse;
 struct NotificationPolicy;
 struct NotificationRuleResponse;
 struct OAuth2ClientCreatedResponse;
@@ -1386,6 +1476,9 @@ struct ReactorEventDescriptor;
 struct ReactorResponse;
 struct ReadyResponse;
 struct RegistrationTokenResponse;
+struct ReplaceNetworkPolicyRequest;
+struct ReplaceNetworkReplyProfileRequest;
+struct ReplaceNetworkSegmentRequest;
 struct ResolvedPermissionGrant;
 struct Resource;
 struct RetryPolicy;
@@ -1450,6 +1543,7 @@ struct UserResponse;
 struct WebauthnAttestationPolicy;
 struct WebauthnPolicy;
 struct WebhookResponse;
+struct SsfStreamChanges;
 
 /// One `AssertionConsumerService` endpoint of a service provider. The list of these is an
 /// **allow-list**, checked the way OAuth2 redirect URIs are: an `AuthnRequest` naming an ACS
@@ -1890,7 +1984,9 @@ struct CreateCaCertificateRequest {
     KeyAlgorithm key_algorithm;
     /// The CA's common name, e.g. `ACME Corp Root CA`. A **common name**, not a distinguished
     /// name. A single `CN=` prefix is accepted and stripped; anything else containing `=` —
-    /// `O=Acme, CN=ACME Corp Root CA` — is refused with `400`.
+    /// `O=Acme, CN=ACME Corp Root CA` — is refused with `400`, as is a name of more than 64
+    /// characters (RFC 5280 `ub-common-name`) or one holding a control character, a tab or line
+    /// break, an invisible or bidirectional formatting character, or two spaces in a row.
     std::string subject;
     /// Validity duration in days.
     std::int64_t validity_days;
@@ -1921,7 +2017,11 @@ struct CreateCertificateRequest {
     KeyAlgorithm key_algorithm;
     /// The server's `metadata` field. Optional.
     std::optional<std::string> metadata = std::nullopt;
-    /// The server's `subject` field.
+    /// The certificate's common name, e.g. `device-001`: a bare name or one `CN=` component, at
+    /// most 64 characters (RFC 5280 `ub-common-name`), printable — a control character, tab or
+    /// line break, an invisible or bidirectional formatting character, or two spaces in a row
+    /// is refused with `400`. A name that is to be written into another system's configuration
+    /// (a FreeRADIUS table, an ACL) should match `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`.
     std::string subject;
     /// The names a `Server` certificate is issued for, as `[{"dns": "api.lakeside.internal"},
     /// {"ip": "10.0.0.5"}]`. Required for `cert_type: Server` and refused for every other type.
@@ -2059,6 +2159,58 @@ struct CreateIntermediateCaRequest {
     std::string subject;
     /// Validity duration in days, capped to the parent's own expiry.
     std::int64_t validity_days;
+};
+
+/// What a writer supplies for a profile. Closed: an unknown key is a refusal naming it, never
+/// ignored (design note §3.4).
+struct NetworkReplyProfileInput {
+    /// The dictionary version the profile is written against; defaults to
+    /// [`REPLY_DICTIONARY_V1`]. An unknown version is refused. Optional.
+    std::optional<std::string> dictionary = std::nullopt;
+    /// `Filter-Id`: one of the owning segment's declared `filter_ids`. Optional.
+    std::optional<std::string> filter_id = std::nullopt;
+    /// `Idle-Timeout`, seconds: [`IDLE_TIMEOUT_FLOOR_SECS`] up to `session_timeout_secs`.
+    /// Optional.
+    std::optional<std::int64_t> idle_timeout_secs = std::nullopt;
+    /// The server's `service_type` field. Optional.
+    std::optional<RadiusServiceType> service_type = std::nullopt;
+    /// `Session-Timeout`, seconds: [`SESSION_TIMEOUT_FLOOR_SECS`] up to the tenant cap. Never
+    /// zero.
+    std::int64_t session_timeout_secs;
+    /// `Termination-Action`; defaults to `RADIUS-Request`. Optional.
+    std::optional<RadiusTerminationAction> termination_action = std::nullopt;
+};
+
+/// The body of `POST /api/v1/network/profiles`.
+struct CreateNetworkReplyProfileRequest {
+    /// The profile: a typed record of the `axiam-radius-reply/1` dictionary. The VLAN is never
+    /// a field; it is the segment's.
+    NetworkReplyProfileInput profile;
+    /// The segment the profile belongs to (at most one profile per segment).
+    std::string segment_id;
+    /// The segment's `version` as the caller read it: the envelope the profile was written
+    /// against. A segment written since is `409`.
+    std::int64_t segment_version;
+};
+
+/// The body of `POST /api/v1/network/segments`.
+struct CreateNetworkSegmentRequest {
+    /// Whether the segment starts as a placement candidate. Defaults to `true`. Optional.
+    std::optional<bool> enabled = std::nullopt;
+    /// The `Filter-Id` names the segment's profile may choose from: its envelope. At most 32,
+    /// each matching the pattern above. Optional.
+    std::optional<std::vector<std::string>> filter_ids = std::nullopt;
+    /// `access` or `quarantine`. Decides the branch the segment lives under.
+    NetworkSegmentKind kind;
+    /// The segment's name, same pattern, unique within the site.
+    std::string name;
+    /// The placement rank (unique within the site): required for `access`, absent for
+    /// `quarantine`. Optional.
+    std::optional<std::int64_t> rank = std::nullopt;
+    /// The site key (`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`). A single-site tenant uses `default`.
+    std::string site_key;
+    /// The VLAN (1 to 4094), unique within the site.
+    std::int64_t vlan_id;
 };
 
 /// The `CreateNotificationRuleRequest` schema from the server's OpenAPI document.
@@ -2794,10 +2946,12 @@ struct GeneratedCaCertificate {
     /// replaced without touching the anchor the rest of the estate trusts. Optional.
     std::optional<std::string> tenant_id = std::nullopt;
     /// PEM-encoded private key — returned only on generation, and only when there is one to
-    /// return. Absent under `vault_pki` custody, where the key was generated inside Vault and
-    /// no API exports it. The field is omitted rather than sent as `null` so a client that has
-    /// always read it keeps working unchanged for every custodian that does produce a key.
-    /// Optional.
+    /// return. An unencrypted PKCS#8 `PRIVATE KEY` block. An Ed25519 key is RFC 8410 version 1
+    /// (`version` INTEGER 0, the 32-byte seed and no embedded public key), which OpenSSL 3.0
+    /// reads; an RSA-4096 key is the usual PKCS#8 `RSAPrivateKey`. Absent under `vault_pki`
+    /// custody, where the key was generated inside Vault and no API exports it. The field is
+    /// omitted rather than sent as `null` so a client that has always read it keeps working
+    /// unchanged for every custodian that does produce a key. Optional.
     std::optional<Sensitive<std::string>> private_key_pem = std::nullopt;
 };
 
@@ -2850,7 +3004,10 @@ struct GeneratedCertificate {
     /// CA certificate, which `GET .../ca-certificates/{id}` already serves, so the field is
     /// omitted rather than restating it. Optional.
     std::optional<std::string> chain_pem = std::nullopt;
-    /// PEM-encoded private key — returned only on generation.
+    /// PEM-encoded private key — returned only on generation. An unencrypted PKCS#8 `PRIVATE
+    /// KEY` block. An Ed25519 key AXIAM generated is RFC 8410 version 1 (`version` INTEGER 0,
+    /// the 32-byte seed and no embedded public key), which OpenSSL 3.0 reads; the longer RFC
+    /// 5958 v2 form it does not. An RSA-4096 key is the usual PKCS#8 `RSAPrivateKey`.
     Sensitive<std::string> private_key_pem;
 };
 
@@ -3064,6 +3221,94 @@ struct MtlsTrustAnchorResponse {
     /// How many CAs the listener now trusts for client authentication, when it was reloaded.
     /// `None` when nothing was reloaded. Optional.
     std::optional<std::int64_t> trusted_anchors = std::nullopt;
+};
+
+/// The tenant's network policy, as the management API returns it.
+struct NetworkPolicyResponse {
+    /// `network.session_timeout_max_secs`: the most a reply profile's `Session-Timeout` may be,
+    /// in seconds (300 to 86 400; 3600 until the tenant writes one). A stored profile above it
+    /// is clamped at read.
+    std::int64_t session_timeout_max_secs;
+    /// The owning tenant.
+    std::string tenant_id;
+    /// Last write time; absent while it is the default. Optional.
+    std::optional<std::string> updated_at = std::nullopt;
+    /// The administrator who last wrote it; absent while it is the default. Optional.
+    std::optional<std::string> updated_by = std::nullopt;
+    /// The version the next `PUT` must name; `0` until the tenant first writes.
+    std::int64_t version;
+};
+
+/// A segment's reply profile as read: **the effective one**, with the `Session-Timeout` already
+/// clamped to the tenant's current cap (design note §3.4) and `Idle-Timeout` kept within it.
+struct NetworkReplyProfile {
+    /// Creation time.
+    std::string created_at;
+    /// The administrator who created it.
+    std::string created_by;
+    /// The dictionary version the profile was validated against.
+    std::string dictionary;
+    /// `Filter-Id`, one of the segment's declared names. Optional.
+    std::optional<std::string> filter_id = std::nullopt;
+    /// `Idle-Timeout`, seconds, never above the effective `Session-Timeout`. Optional.
+    std::optional<std::int64_t> idle_timeout_secs = std::nullopt;
+    /// The owning segment, which is also this profile's id: one profile per segment, at most.
+    std::string segment_id;
+    /// The server's `service_type` field. Optional.
+    std::optional<RadiusServiceType> service_type = std::nullopt;
+    /// Whether the stored value was above the cap and has been lowered.
+    bool session_timeout_clamped;
+    /// `Session-Timeout`, seconds: the stored value lowered to the tenant's current cap. This
+    /// is the value a reply carries.
+    std::int64_t session_timeout_secs;
+    /// The owning tenant.
+    std::string tenant_id;
+    /// `Termination-Action`.
+    RadiusTerminationAction termination_action;
+    /// Last write time.
+    std::string updated_at;
+    /// The administrator who last wrote it.
+    std::string updated_by;
+    /// The version the next replace or delete must name. Starts at 1.
+    std::int64_t version;
+};
+
+/// A network segment, as the management API returns it.
+struct NetworkSegmentResponse {
+    /// Creation time.
+    std::string created_at;
+    /// The administrator who created it.
+    std::string created_by;
+    /// Whether the segment is a placement candidate.
+    bool enabled;
+    /// The `Filter-Id` names the segment's profile may choose from.
+    std::vector<std::string> filter_ids;
+    /// The segment id; also the id of its resource node, which `check_access` is asked about,
+    /// and of its reply profile.
+    std::string id;
+    /// `access` (under `/network/zones`) or `quarantine` (under `/network/quarantine`); fixed
+    /// for the segment's life.
+    NetworkSegmentKind kind;
+    /// The segment's name, unique within its site.
+    std::string name;
+    /// The segment's place in the reserved subtree,
+    /// `/network/{zones|quarantine}/<site_key>/<name>`.
+    std::string path;
+    /// The placement rank among a site's `access` segments (lowest wins); absent for a
+    /// quarantine segment. Optional.
+    std::optional<std::int64_t> rank = std::nullopt;
+    /// The site key.
+    std::string site_key;
+    /// The owning tenant.
+    std::string tenant_id;
+    /// Last write time.
+    std::string updated_at;
+    /// The administrator who last wrote it.
+    std::string updated_by;
+    /// The version the next replace or delete must name.
+    std::int64_t version;
+    /// The VLAN the tunnel attributes carry (1 to 4094), unique per site.
+    std::int64_t vlan_id;
 };
 
 /// Admin notification preferences.
@@ -3596,6 +3841,76 @@ struct ReadyResponse {
     std::string database;
     /// The server's `status` field.
     std::string status;
+};
+
+/// The body of `PUT /api/v1/network/policy`: a **replacement** of the policy.
+struct ReplaceNetworkPolicyRequest {
+    /// The new cap on a reply profile's `Session-Timeout`, in seconds: 300 to 86 400. Lowering
+    /// it below an existing profile's value is fine (reads clamp); raising it is allowed and
+    /// audited as a raise.
+    std::int64_t session_timeout_max_secs{};
+    /// The policy's `version` as the caller read it (`0` for a tenant that has never written
+    /// one). A stale one is `409`.
+    std::int64_t version{};
+
+    /// Every required member -- `session_timeout_max_secs`, `version` -- in the contract's
+    /// order. This type **cannot be built without them** (CONTRACT.md §36.8 test 3, contract
+    /// 1.62): there is no public default constructor. Set the optional members afterwards.
+    ReplaceNetworkPolicyRequest(std::int64_t session_timeout_max_secs, std::int64_t version);
+
+private:
+    // Default construction is for a model that embeds this one by value and is filled by its
+    // decoder; nothing else can reach it.
+    ReplaceNetworkPolicyRequest() = default;
+};
+
+/// The body of `PUT /api/v1/network/profiles/{segment_id}`.
+struct ReplaceNetworkReplyProfileRequest {
+    /// The profile.
+    NetworkReplyProfileInput profile{};
+    /// The segment's `version` as the caller read it, as for
+    /// [`CreateReplyProfileRequest::segment_version`].
+    std::int64_t segment_version{};
+    /// The profile's `version` as the caller read it. A stale one is `409`.
+    std::int64_t version{};
+
+    /// Every required member -- `version`, `segment_version`, `profile` -- in the contract's
+    /// order. This type **cannot be built without them** (CONTRACT.md §36.8 test 3, contract
+    /// 1.62): there is no public default constructor. Set the optional members afterwards.
+    ReplaceNetworkReplyProfileRequest(std::int64_t version, std::int64_t segment_version, NetworkReplyProfileInput profile);
+
+private:
+    // Default construction is for a model that embeds this one by value and is filled by its
+    // decoder; nothing else can reach it.
+    ReplaceNetworkReplyProfileRequest() = default;
+};
+
+/// The body of `PUT /api/v1/network/segments/{id}`: a **replacement** of the envelope. The kind
+/// and the place in the tree do not change.
+struct ReplaceNetworkSegmentRequest {
+    /// Whether the segment is a placement candidate.
+    bool enabled{};
+    /// The `Filter-Id` names the segment's profile may choose from. Removing the one the
+    /// profile uses is `409`, naming the profile.
+    std::vector<std::string> filter_ids{};
+    /// The placement rank: required for an `access` segment, absent for a `quarantine` one.
+    /// Optional.
+    std::optional<std::int64_t> rank = std::nullopt;
+    /// The segment's `version` as the caller read it. A stale one is `409`.
+    std::int64_t version{};
+    /// The VLAN (1 to 4094).
+    std::int64_t vlan_id{};
+
+    /// Every required member -- `version`, `vlan_id`, `filter_ids`, `enabled` -- in the
+    /// contract's order. This type **cannot be built without them** (CONTRACT.md §36.8 test 3,
+    /// contract 1.62): there is no public default constructor. Set the optional members
+    /// afterwards.
+    ReplaceNetworkSegmentRequest(std::int64_t version, std::int64_t vlan_id, std::vector<std::string> filter_ids, bool enabled);
+
+private:
+    // Default construction is for a model that embeds this one by value and is filled by its
+    // decoder; nothing else can reach it.
+    ReplaceNetworkSegmentRequest() = default;
 };
 
 /// A permission grant with its scopes resolved. A superset of [`PermissionGrant`]: `scope_ids`
@@ -4454,7 +4769,10 @@ struct SignAuditBatchRequest {
 /// Body of `POST /api/v1/certificates/sign-csr`. No `subject` and no `key_algorithm`: both are
 /// read out of the CSR, which is the only place they can be stated without the row and the
 /// certificate being able to disagree. No key is returned, so there is no key field anywhere on
-/// this exchange.
+/// this exchange. The CSR's common name meets the rules of `subject` on `POST
+/// /api/v1/certificates` (printable, at most 64 characters) and is refused, not rewritten, when
+/// it does not. So does the value of every other attribute of the CSR's subject, and a subject
+/// with more than one common name is refused.
 struct SignCertificateCsrRequest {
     /// The server's `cert_type` field.
     CertificateType cert_type;
@@ -4568,14 +4886,33 @@ struct SsfStream {
     /// When it was last written.
     std::string updated_at;
 
-    /// The replacement body for `ssf.update_stream` holding every member of this read.
-    /// `authorization_header` is absent: no read carries it, and absent keeps the stored one --
-    /// unless the update moves the endpoint (§32.3 rule 5). `expected_updated_at` is this
-    /// read's `updated_at`, verbatim, so an update overtaken by a later write is a `409`, and
-    /// `events_requested` is the one this read carried (an empty list stays empty, never
-    /// omitted: omitting it would widen the stream to every allowed event, §32.2). If you lower
-    /// `events_allowed`, cut `events_requested` to the new ceiling yourself.
+    /// The PLAIN converter: the replacement body for `ssf.update_stream` holding every member
+    /// of this read. `authorization_header` is absent: no read carries it, and absent keeps the
+    /// stored one -- unless the update moves the endpoint (§32.3 rule 5). `expected_updated_at`
+    /// is this read's `updated_at`, verbatim (the server's own string, §32.2), so an update
+    /// overtaken by a later write is a `409`, and `events_requested` is the one this read
+    /// carried (an empty list stays empty, never omitted: omitting it would widen the stream to
+    /// every allowed event).
+    ///
+    /// **The caller's duty (§32.2, contract 1.62).** This converter cannot know that you are
+    /// about to lower `events_allowed`, so **cutting `events_requested` to the new
+    /// `events_allowed` is yours** wherever you edit the result: a requested list left outside
+    /// the new ceiling is `400`, and one reset to `std::nullopt` *resets* the stream to every
+    /// allowed event (the three meanings of `events_requested` are on
+    /// `SsfStreamApi::update_stream`), and an update built from a stale read is `409`. Use the
+    /// change-taking overload below and the cut is made for you.
     SsfStreamInput to_input() const;
+
+    /// **The change-taking form** (§32.2, contract 1.62): this read with `changes` applied, as
+    /// the replacement body for `ssf.update_stream`. It sends the `events_requested` and the
+    /// `expected_updated_at` **as read** (the server's own string; an empty list stays an empty
+    /// list) and, when `changes` lowers `events_allowed` without naming `events_requested`,
+    /// **cuts `events_requested` to the new `events_allowed`** (the entries of the read list
+    /// that are in the new ceiling, in their order). An `events_requested` named in `changes`
+    /// is sent as given: the server judges it. An `expected_updated_at` assigned `std::nullopt`
+    /// in `changes` is "none": the key is omitted and `null` is never sent.
+    /// `authorization_header` stays absent unless `changes` sets it.
+    SsfStreamInput to_input(const SsfStreamChanges& changes) const;
 };
 
 /// `create_stream` and `update_stream` (a **replacement**) body.
@@ -4952,7 +5289,9 @@ struct UpdateOAuth2ClientRequest {
     std::optional<std::vector<std::string>> redirect_uris = std::nullopt;
     /// The server's `require_par` field. Optional.
     std::optional<bool> require_par = std::nullopt;
-    /// The server's `scopes` field. Optional.
+    /// Replace the client's scopes. On a `managed_by: dcr | cimd` client a scope the request
+    /// adds that is outside the tenant's effective `dcr_allowed_scopes` is refused with `422`
+    /// (#636); an administrator-managed client is not bounded. Optional.
     std::optional<std::vector<std::string>> scopes = std::nullopt;
     /// The server's `self_signed_tls_client_auth_thumbprints` field. Optional.
     std::optional<std::vector<std::string>> self_signed_tls_client_auth_thumbprints = std::nullopt;
@@ -5169,6 +5508,49 @@ struct WebhookResponse {
     std::string updated_at;
     /// The server's `url` field.
     std::string url;
+};
+
+/// The changes the change-taking form `SsfStream::to_input(const SsfStreamChanges&)` applies over
+/// a read (CONTRACT.md §32.2, contract 1.62). Every member is optional: a disengaged member
+/// leaves what was read as it is.
+///
+/// A member that can be "none" is a doubly optional value: disengaged is "no change", and
+/// engaged-with-`std::nullopt` is an assigned null, which sets it to none -- the key is omitted
+/// from the body and `null` is never sent (§27.11 rule 5; on an update an omitted member takes its
+/// default, which for these is null).
+struct SsfStreamChanges {
+    /// A new `receiver_client_id`.
+    std::optional<std::string> receiver_client_id = std::nullopt;
+    /// A new `audience`.
+    std::optional<std::string> audience = std::nullopt;
+    /// A new `delivery_method`.
+    std::optional<SsfDeliveryMethod> delivery_method = std::nullopt;
+    /// A new `events_allowed`. **Lowering the ceiling cuts `events_requested`** to it unless
+    /// `events_requested` is named below: the entries of the read list that are in the new
+    /// ceiling, in their order.
+    std::optional<std::vector<SsfEventType>> events_allowed = std::nullopt;
+    /// A new `events_requested`, sent as given (`{}` is sent as `[]`, the receiver's "none"):
+    /// the server judges it, and refuses `400` one outside `events_allowed`.
+    std::optional<std::vector<SsfEventType>> events_requested = std::nullopt;
+    /// A new `description`; engaged with `std::nullopt` clears it.
+    std::optional<std::optional<std::string>> description = std::nullopt;
+    /// A new `endpoint_url`; engaged with `std::nullopt` clears it.
+    std::optional<std::optional<std::string>> endpoint_url = std::nullopt;
+    /// A new `status`.
+    std::optional<SsfStreamStatus> status = std::nullopt;
+    /// A new `status_reason`; engaged with `std::nullopt` clears it.
+    std::optional<std::optional<std::string>> status_reason = std::nullopt;
+    /// A new `subject_format`.
+    std::optional<SsfSubjectFormat> subject_format = std::nullopt;
+    /// The `authorization_header` to send (write-only; no read carries one, so absent keeps the
+    /// stored one).
+    std::optional<Sensitive<std::string>> authorization_header = std::nullopt;
+    /// Remove the stored header. Refused by the server together with `authorization_header`.
+    std::optional<bool> clear_authorization_header = std::nullopt;
+    /// The `expected_updated_at` to send instead of the read's `updated_at`; engaged with
+    /// `std::nullopt` is "none" (an unconditional replacement): the key is omitted and `null`
+    /// is never sent.
+    std::optional<std::optional<std::string>> expected_updated_at = std::nullopt;
 };
 
 }  // namespace axiam::management

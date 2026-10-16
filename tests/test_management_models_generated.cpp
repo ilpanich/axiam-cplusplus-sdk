@@ -367,6 +367,51 @@ AXIAM_TEST("management model CreateIntermediateCaRequest round-trips without los
     AXIAM_CHECK(again == encoded);
 }
 
+AXIAM_TEST("management model NetworkReplyProfileInput round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"dictionary": "example", "filter_id": "example", "idle_timeout_secs": 1, "service_type": "framed_user", "session_timeout_secs": 1, "termination_action": "default"})json");
+
+    const auto value = wire.get<NetworkReplyProfileInput>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<NetworkReplyProfileInput>();
+    AXIAM_CHECK(again == encoded);
+}
+
+AXIAM_TEST("management model CreateNetworkReplyProfileRequest round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"profile": {"dictionary": "example", "filter_id": "example", "idle_timeout_secs": 1, "service_type": "framed_user", "session_timeout_secs": 1, "termination_action": "default"}, "segment_id": "11111111-1111-4111-8111-111111111111", "segment_version": 1})json");
+
+    const auto value = wire.get<CreateNetworkReplyProfileRequest>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<CreateNetworkReplyProfileRequest>();
+    AXIAM_CHECK(again == encoded);
+}
+
+AXIAM_TEST("management model CreateNetworkSegmentRequest round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"enabled": true, "filter_ids": ["example"], "kind": "access", "name": "example", "rank": 1, "site_key": "example", "vlan_id": 1})json");
+
+    const auto value = wire.get<CreateNetworkSegmentRequest>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<CreateNetworkSegmentRequest>();
+    AXIAM_CHECK(again == encoded);
+}
+
 AXIAM_TEST("management model CreateNotificationRuleRequest round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
         R"json({"description": "example", "events": ["login_failure"], "name": "example", "recipient_emails": ["example"], "window_minutes": 1})json");
@@ -1147,6 +1192,51 @@ AXIAM_TEST("management model MtlsTrustAnchorResponse round-trips without losing 
     AXIAM_CHECK(again == encoded);
 }
 
+AXIAM_TEST("management model NetworkPolicyResponse round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"session_timeout_max_secs": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1})json");
+
+    const auto value = wire.get<NetworkPolicyResponse>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<NetworkPolicyResponse>();
+    AXIAM_CHECK(again == encoded);
+}
+
+AXIAM_TEST("management model NetworkReplyProfile round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "dictionary": "example", "filter_id": "example", "idle_timeout_secs": 1, "segment_id": "11111111-1111-4111-8111-111111111111", "service_type": "framed_user", "session_timeout_clamped": true, "session_timeout_secs": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "termination_action": "default", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1})json");
+
+    const auto value = wire.get<NetworkReplyProfile>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<NetworkReplyProfile>();
+    AXIAM_CHECK(again == encoded);
+}
+
+AXIAM_TEST("management model NetworkSegmentResponse round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "enabled": true, "filter_ids": ["example"], "id": "11111111-1111-4111-8111-111111111111", "kind": "access", "name": "example", "path": "example", "rank": 1, "site_key": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1, "vlan_id": 1})json");
+
+    const auto value = wire.get<NetworkSegmentResponse>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<NetworkSegmentResponse>();
+    AXIAM_CHECK(again == encoded);
+}
+
 AXIAM_TEST("management model NotificationPolicy round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
         R"json({"admin_notifications_enabled": true})json");
@@ -1444,6 +1534,51 @@ AXIAM_TEST("management model ReadyResponse round-trips without losing a field") 
 
     // And encoding is a fixed point -- a second pass changes nothing.
     const nlohmann::json again = encoded.get<ReadyResponse>();
+    AXIAM_CHECK(again == encoded);
+}
+
+AXIAM_TEST("management model ReplaceNetworkPolicyRequest round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"session_timeout_max_secs": 1, "version": 1})json");
+
+    const auto value = wire.get<ReplaceNetworkPolicyRequest>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<ReplaceNetworkPolicyRequest>();
+    AXIAM_CHECK(again == encoded);
+}
+
+AXIAM_TEST("management model ReplaceNetworkReplyProfileRequest round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"profile": {"dictionary": "example", "filter_id": "example", "idle_timeout_secs": 1, "service_type": "framed_user", "session_timeout_secs": 1, "termination_action": "default"}, "segment_version": 1, "version": 1})json");
+
+    const auto value = wire.get<ReplaceNetworkReplyProfileRequest>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<ReplaceNetworkReplyProfileRequest>();
+    AXIAM_CHECK(again == encoded);
+}
+
+AXIAM_TEST("management model ReplaceNetworkSegmentRequest round-trips without losing a field") {
+    const auto wire = nlohmann::json::parse(
+        R"json({"enabled": true, "filter_ids": ["example"], "rank": 1, "version": 1, "vlan_id": 1})json");
+
+    const auto value = wire.get<ReplaceNetworkSegmentRequest>();
+    const nlohmann::json encoded = value;
+    // Exact equality, not "the fields I remembered to check". The wire object above carries
+    // every property the spec declares, so a dropped field and an invented one both fail here.
+    AXIAM_CHECK(encoded == wire);
+
+    // And encoding is a fixed point -- a second pass changes nothing.
+    const nlohmann::json again = encoded.get<ReplaceNetworkSegmentRequest>();
     AXIAM_CHECK(again == encoded);
 }
 
@@ -2892,6 +3027,32 @@ AXIAM_TEST("management enum NameIdFormat maps every value both ways") {
     AXIAM_CHECK(j.get<NameIdFormat>() == NameIdFormat::Persistent);
 }
 
+AXIAM_TEST("management enum NetworkSegmentKind maps every value both ways") {
+    AXIAM_CHECK(to_wire(NetworkSegmentKind::Access) == "access");
+    AXIAM_CHECK(network_segment_kind_from_wire("access") == NetworkSegmentKind::Access);
+    AXIAM_CHECK(to_wire(NetworkSegmentKind::Quarantine) == "quarantine");
+    AXIAM_CHECK(network_segment_kind_from_wire("quarantine") == NetworkSegmentKind::Quarantine);
+
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(network_segment_kind_from_wire("__not_a_network_segment_kind__") == NetworkSegmentKind::Unknown);
+    AXIAM_CHECK(NetworkSegmentKind::Unknown != NetworkSegmentKind::Access);
+    AXIAM_CHECK(NetworkSegmentKind::Unknown != NetworkSegmentKind::Quarantine);
+    // The empty string, which no server value is -- for display only. Sending it is refused
+    // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
+    // body goes through throws.
+    AXIAM_CHECK(to_wire(NetworkSegmentKind::Unknown).empty());
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(NetworkSegmentKind::Unknown), std::invalid_argument);
+
+    // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
+    // differently from the enum itself.
+    const nlohmann::json j = NetworkSegmentKind::Access;
+    AXIAM_CHECK(j.get<std::string>() == "access");
+    AXIAM_CHECK(j.get<NetworkSegmentKind>() == NetworkSegmentKind::Access);
+}
+
 AXIAM_TEST("management enum NotificationEventType maps every value both ways") {
     AXIAM_CHECK(to_wire(NotificationEventType::LoginFailure) == "login_failure");
     AXIAM_CHECK(notification_event_type_from_wire("login_failure") == NotificationEventType::LoginFailure);
@@ -3068,6 +3229,55 @@ AXIAM_TEST("management enum PgpKeyStatus maps every value both ways") {
     const nlohmann::json j = PgpKeyStatus::Active;
     AXIAM_CHECK(j.get<std::string>() == "Active");
     AXIAM_CHECK(j.get<PgpKeyStatus>() == PgpKeyStatus::Active);
+}
+
+AXIAM_TEST("management enum RadiusServiceType maps every value both ways") {
+    AXIAM_CHECK(to_wire(RadiusServiceType::FramedUser) == "framed_user");
+    AXIAM_CHECK(radius_service_type_from_wire("framed_user") == RadiusServiceType::FramedUser);
+
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(radius_service_type_from_wire("__not_a_radius_service_type__") == RadiusServiceType::Unknown);
+    AXIAM_CHECK(RadiusServiceType::Unknown != RadiusServiceType::FramedUser);
+    // The empty string, which no server value is -- for display only. Sending it is refused
+    // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
+    // body goes through throws.
+    AXIAM_CHECK(to_wire(RadiusServiceType::Unknown).empty());
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(RadiusServiceType::Unknown), std::invalid_argument);
+
+    // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
+    // differently from the enum itself.
+    const nlohmann::json j = RadiusServiceType::FramedUser;
+    AXIAM_CHECK(j.get<std::string>() == "framed_user");
+    AXIAM_CHECK(j.get<RadiusServiceType>() == RadiusServiceType::FramedUser);
+}
+
+AXIAM_TEST("management enum RadiusTerminationAction maps every value both ways") {
+    AXIAM_CHECK(to_wire(RadiusTerminationAction::Default_) == "default");
+    AXIAM_CHECK(radius_termination_action_from_wire("default") == RadiusTerminationAction::Default_);
+    AXIAM_CHECK(to_wire(RadiusTerminationAction::RadiusRequest) == "radius_request");
+    AXIAM_CHECK(radius_termination_action_from_wire("radius_request") == RadiusTerminationAction::RadiusRequest);
+
+    // An unrecognised value DECODES, to an enumerator of its own -- it is not reported, and it
+    // is not mapped to whichever known enumerator happens to be first (§27.11 rule 1). Throwing
+    // here would fail the whole response the value arrived in, so one field of one record would
+    // take down the page it was on, including the records the caller did ask for.
+    AXIAM_CHECK(radius_termination_action_from_wire("__not_a_radius_termination_action__") == RadiusTerminationAction::Unknown);
+    AXIAM_CHECK(RadiusTerminationAction::Unknown != RadiusTerminationAction::Default_);
+    AXIAM_CHECK(RadiusTerminationAction::Unknown != RadiusTerminationAction::RadiusRequest);
+    // The empty string, which no server value is -- for display only. Sending it is refused
+    // locally, with no request (§32.2, contract 1.59 §34.2 P12.2): the JSON hook every request
+    // body goes through throws.
+    AXIAM_CHECK(to_wire(RadiusTerminationAction::Unknown).empty());
+    AXIAM_REQUIRE_THROWS_AS((void)nlohmann::json(RadiusTerminationAction::Unknown), std::invalid_argument);
+
+    // The JSON hooks must agree with the wire functions, or a model carrying this enum encodes
+    // differently from the enum itself.
+    const nlohmann::json j = RadiusTerminationAction::Default_;
+    AXIAM_CHECK(j.get<std::string>() == "default");
+    AXIAM_CHECK(j.get<RadiusTerminationAction>() == RadiusTerminationAction::Default_);
 }
 
 AXIAM_TEST("management enum ReactorMode maps every value both ways") {
@@ -3914,6 +4124,26 @@ AXIAM_TEST("management scim_targets: re-scoping returns a new handle (§27.4 rul
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/scim-targets");
 }
 
+AXIAM_TEST("management network: re-scoping returns a new handle (§27.4 rule 3)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "enabled": true, "filter_ids": ["example"], "id": "11111111-1111-4111-8111-111111111111", "kind": "access", "name": "example", "path": "example", "rank": 1, "site_key": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1, "vlan_id": 1}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "enabled": true, "filter_ids": ["example"], "id": "11111111-1111-4111-8111-111111111111", "kind": "access", "name": "example", "path": "example", "rank": 1, "site_key": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1, "vlan_id": 1}], "total": 1, "offset": 0, "limit": 50})json");
+    auto mgmt = fixture.client.management();
+    auto handle = mgmt.network();
+
+    // The re-scoped handle is a DIFFERENT object. On a management surface a handle that mutated
+    // in place would not merely read the wrong tenant -- an unrelated code path re-scoping a
+    // shared handle would WRITE to it.
+    auto elsewhere = handle.in_org("22222222-2222-4222-8222-222222222222").for_tenant("33333333-3333-4333-8333-333333333333");
+    (void) elsewhere.list_segments();
+    // This route substitutes NEITHER identifier, so the override is inert and the path is
+    // unchanged -- which is the assertion.
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/segments");
+
+    // The original still points where it did.
+    (void) handle.list_segments();
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/segments");
+}
+
 AXIAM_TEST("management settings: re-scoping returns a new handle (§27.4 rule 3)") {
     auto fixture = axtest::mgmt::signed_in_two(200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1, "server_cert_allowed_names": ["example"]}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"cimd": {"allow_http": true, "confidential_only": true, "enabled": true, "max_cache_secs": 1, "max_metadata_bytes": 1, "min_cache_secs": 1, "restrict_same_domain": true, "trusted_client_id_domains": ["example"], "trusted_redirect_domains": ["example"]}, "dcr_allowed_redirect_hosts": ["example"], "dcr_allowed_scopes": ["example"], "dcr_max_clients": 1, "dcr_unused_client_ttl_days": 1, "default_locale": "example", "dynamic_registration": "example", "external_client_allowed_resources": ["example"], "saml_idp_enabled": true, "sensitive_scopes_enabled": true, "ssf_enabled": true, "ssf_inactive_reason": "example"}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json",
                                               200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1, "server_cert_allowed_names": ["example"]}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"cimd": {"allow_http": true, "confidential_only": true, "enabled": true, "max_cache_secs": 1, "max_metadata_bytes": 1, "min_cache_secs": 1, "restrict_same_domain": true, "trusted_client_id_domains": ["example"], "trusted_redirect_domains": ["example"]}, "dcr_allowed_redirect_hosts": ["example"], "dcr_allowed_scopes": ["example"], "dcr_max_clients": 1, "dcr_unused_client_ttl_days": 1, "default_locale": "example", "dynamic_registration": "example", "external_client_allowed_resources": ["example"], "saml_idp_enabled": true, "sensitive_scopes_enabled": true, "ssf_enabled": true, "ssf_inactive_reason": "example"}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
@@ -4409,6 +4639,23 @@ AXIAM_TEST("management scim_targets: client.scim_targets() and management().scim
     AXIAM_CHECK(direct_path == "/api/v1/scim-targets");
 }
 
+AXIAM_TEST("management network: client.network() and management().network() are equivalent (§27.2 rule 4)") {
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "enabled": true, "filter_ids": ["example"], "id": "11111111-1111-4111-8111-111111111111", "kind": "access", "name": "example", "path": "example", "rank": 1, "site_key": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1, "vlan_id": 1}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "enabled": true, "filter_ids": ["example"], "id": "11111111-1111-4111-8111-111111111111", "kind": "access", "name": "example", "path": "example", "rank": 1, "site_key": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1, "vlan_id": 1}], "total": 1, "offset": 0, "limit": 50})json");
+
+    // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
+    // Equivalent means the same request, not merely the same type -- so this compares the
+    // method and path each actually put on the wire.
+    (void) fixture.client.network().list_segments();
+    const auto direct_method = fixture.state->last().method;
+    const auto direct_path = axtest::mgmt::path_of(fixture.state->last().url);
+
+    (void) fixture.client.management().network().list_segments();
+    AXIAM_CHECK(fixture.state->last().method == direct_method);
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == direct_path);
+    AXIAM_CHECK(direct_path == "/api/v1/network/segments");
+}
+
 AXIAM_TEST("management settings: client.settings() and management().settings() are equivalent (§27.2 rule 4)") {
     auto fixture = axtest::mgmt::signed_in_two(200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1, "server_cert_allowed_names": ["example"]}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"cimd": {"allow_http": true, "confidential_only": true, "enabled": true, "max_cache_secs": 1, "max_metadata_bytes": 1, "min_cache_secs": 1, "restrict_same_domain": true, "trusted_client_id_domains": ["example"], "trusted_redirect_domains": ["example"]}, "dcr_allowed_redirect_hosts": ["example"], "dcr_allowed_scopes": ["example"], "dcr_max_clients": 1, "dcr_unused_client_ttl_days": 1, "default_locale": "example", "dynamic_registration": "example", "external_client_allowed_resources": ["example"], "saml_idp_enabled": true, "sensitive_scopes_enabled": true, "ssf_enabled": true, "ssf_inactive_reason": "example"}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json",
                                               200, R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1, "server_cert_allowed_names": ["example"]}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"cimd": {"allow_http": true, "confidential_only": true, "enabled": true, "max_cache_secs": 1, "max_metadata_bytes": 1, "min_cache_secs": 1, "restrict_same_domain": true, "trusted_client_id_domains": ["example"], "trusted_redirect_domains": ["example"]}, "dcr_allowed_redirect_hosts": ["example"], "dcr_allowed_scopes": ["example"], "dcr_max_clients": 1, "dcr_unused_client_ttl_days": 1, "default_locale": "example", "dynamic_registration": "example", "external_client_allowed_resources": ["example"], "saml_idp_enabled": true, "sensitive_scopes_enabled": true, "ssf_enabled": true, "ssf_inactive_reason": "example"}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
@@ -4528,7 +4775,7 @@ AXIAM_TEST("management platform: client.platform() and management().platform() a
     AXIAM_CHECK(direct_path == "/health");
 }
 
-// §27.9: 154 models, 39 enums and 28 namespaces are covered above. Counted from the test
+// §27.9: 163 models, 42 enums and 29 namespaces are covered above. Counted from the test
 // registry rather than restated as a literal on both sides -- a case dropped by a bad
 // regeneration would still satisfy a tautology, and fails this instead.
 AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
@@ -4547,10 +4794,10 @@ AXIAM_TEST("the generated model suite covers every model, enum and namespace") {
             ++equivalents;
         }
     }
-    AXIAM_CHECK(round_trips == 154);
-    AXIAM_CHECK(enum_maps == 39);
-    AXIAM_CHECK(rescopes == 28);
-    AXIAM_CHECK(equivalents == 28);
+    AXIAM_CHECK(round_trips == 163);
+    AXIAM_CHECK(enum_maps == 42);
+    AXIAM_CHECK(rescopes == 29);
+    AXIAM_CHECK(equivalents == 29);
 }
 
 }  // namespace

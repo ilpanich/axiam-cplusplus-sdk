@@ -227,7 +227,24 @@ void Transport::raise_management_status(const std::string& operation, const Http
     const std::string where = operation + ": ";
     switch (resp.status) {
         case 404: throw NotFoundError(where + "not found (HTTP 404)");
-        case 409: throw ConflictError(where + "conflict (HTTP 409)");
+        case 409: {
+            // §36.4 (contract 1.62): a `409` body may name WHICH conflict in `reason_code`,
+            // beside `error` and a `message` for a human. Surfaced verbatim and never
+            // parsed out of the message; absent (a server before 1.1.0, or an operation
+            // that names none) stays absent. The message is carried only to be read.
+            std::string text = where + "conflict (HTTP 409)";
+            std::optional<std::string> reason_code;
+            const auto j = nlohmann::json::parse(resp.body, nullptr, false);
+            if (j.is_object()) {
+                if (j.contains("message") && j["message"].is_string()) {
+                    text += ": " + j["message"].get<std::string>();
+                }
+                if (j.contains("reason_code") && j["reason_code"].is_string()) {
+                    reason_code = j["reason_code"].get<std::string>();
+                }
+            }
+            throw ConflictError(text, std::move(reason_code));
+        }
         case 400:
         case 422: {
             // The server's `message` names the field and the rule (§29.4, §30.4,
