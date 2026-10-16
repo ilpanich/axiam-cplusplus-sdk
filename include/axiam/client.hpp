@@ -815,15 +815,36 @@ public:
 
     /// `POST /oauth2/device_authorization` (§14.1) — start the RFC 8628 grant.
     ///
-    /// **Unauthenticated.** A device that cannot show a browser also cannot hold
-    /// a client secret, so §14.1 forbids sending one here AND forbids refusing
-    /// to call this from a client constructed without one. Only `client_id`
-    /// goes out.
+    /// **Client authentication (contract 1.62, §14.1 rule 2).** The endpoint
+    /// authenticates the client by the method it is registered for, as
+    /// `/oauth2/token` does. A client built with `oidc_client_secret()` sends it
+    /// here as `client_secret` in the form body, and at every poll
+    /// (device_poll()) -- never as `Authorization: Basic`, whichever of
+    /// `client_secret_post` and `client_secret_basic` it is registered for
+    /// (§12.1 rule 3 stands). A **public** client, the usual device, sends
+    /// `client_id` and no credential at either endpoint, is not refused here for
+    /// having none, and is refused by the server if it does send one. A
+    /// credential goes out only when you configured one. This SDK implements no
+    /// `private_key_jwt` assertion and no DPoP proof; an mTLS client certificate
+    /// (Builder::with_client_cert) is presented on the connection.
+    ///
+    /// A failed client authentication is `401 invalid_client`, raised as
+    /// OAuthProtocolError with that `error`: terminal, sent once, never retried.
+    /// A client that does not hold the grant is `400 unauthorized_client`.
     DeviceAuthorization device_authorize(std::optional<std::string> scope = std::nullopt,
                                          std::optional<std::string> tenant_id = std::nullopt);
 
     /// One `POST /oauth2/token` with the device-code grant (§14.1) — a SINGLE
     /// poll.
+    ///
+    /// It sends `client_id` on every poll (§14.1 rule 3) and the same credential
+    /// as device_authorize() -- the client secret in the form body when one is
+    /// configured, nothing for a public client (contract 1.62). A `401
+    /// invalid_client` -- an unknown client, a failed or missing credential, a
+    /// credential sent by a public client, or a bound client's missing proof --
+    /// is an OAuthProtocolError with `error() == "invalid_client"` (§14.2 rule
+    /// 5): terminal, never retried. `token_type` is read as the response says
+    /// (`DPoP` for a bound client), never assumed `Bearer`.
     ///
     /// The five RFC 8628 §3.5 answers all arrive as `400`, which §2 would map to
     /// a generic error; §14.2 rule 5 overrides that and requires dispatching on

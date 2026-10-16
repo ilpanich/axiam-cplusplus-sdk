@@ -11,9 +11,12 @@
 //     application knows how this device can display anything — a screen, a QR
 //     code, an e-ink panel, a line of serial output. The callback below is where
 //     that decision lives, and polling does not start until it returns.
-//   * It does not send a client_secret on device_authorize() (§14.1). A device
-//     that cannot show a browser also cannot hold a secret, and the SDK equally
-//     will not refuse to run from a client that has none.
+//   * It sends a credential only if you configured one (§14.1 rule 2, contract
+//     1.62). A confidential client built with oidc_client_secret() sends it as
+//     `client_secret` in the form body at device_authorize() AND at every poll
+//     -- never as `Authorization: Basic`. A public client, the usual device,
+//     sends none at either endpoint, and the SDK does not refuse to run from a
+//     client that has none.
 //   * It does not adopt the resulting token as this client's credential
 //     (§14.3 rule 4). The tokens are returned; installing them is the
 //     application's call.
@@ -40,8 +43,8 @@ std::string env_or(const char* key, const std::string& fallback) {
 
 int main() {
     try {
-        // A public client: no secret configured, and §14.1 requires the grant to
-        // work exactly like this.
+        // A public client: no secret configured, so no credential goes out at either
+        // device endpoint, and §14.1 requires the grant to work exactly like this.
         auto client =
             axiam::Client::builder()
                 .base_url(env_or("AXIAM_BASE_URL", "https://localhost:8443"))
