@@ -12,9 +12,9 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33 and §34 at contract 1.61, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34 and §36 at contract 1.62, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
-Contract 1.53–1.58 ships here **without a carve-out**: [§28.12](#2812-rfc-7592-client-configuration)'s RFC 7592 client configuration; the four management namespaces [`saml` (§29), `directory` (§30), `scim_targets` (§31) and `ssf` (§32)](#directory-saml-ssf-and-scim-targets-29--32); the [SSF receiver helper (§32.7)](#ssf-receiver-327) and [CIBA (§33)](#ciba-33) — both MAY for C++ — including the signed request form under all three algorithms (PS256, ES256, EdDSA) over the OpenSSL this SDK already links; and §21.3.1's seventh `mtls_endpoint_aliases` member. The management surface is **190 operations across 28 namespaces**.
+Contract 1.53–1.58 ships here **without a carve-out**: [§28.12](#2812-rfc-7592-client-configuration)'s RFC 7592 client configuration; the four management namespaces [`saml` (§29), `directory` (§30), `scim_targets` (§31) and `ssf` (§32)](#directory-saml-ssf-and-scim-targets-29--32); the [SSF receiver helper (§32.7)](#ssf-receiver-327) and [CIBA (§33)](#ciba-33) — both MAY for C++ — including the signed request form under all three algorithms (PS256, ES256, EdDSA) over the OpenSSL this SDK already links; and §21.3.1's seventh `mtls_endpoint_aliases` member. The management surface is **202 operations across 29 namespaces**.
 
 Contract 1.59 (§34, the cross-SDK review of those ports) changes no wire shape; this SDK
 implements its clarifications and follow-up F-59-11: `ssf.poll` never keeps a `jti` it does
@@ -25,6 +25,22 @@ strings (P12.2), the RFC 7592 update sends only what the read carried (P12.4), t
 replacement inputs cannot be built without their required members, `Sensitive<T>::expose()`
 is the public accessor (§7 rule 3), and management reads follow §16 (`408`, `429`,
 `Retry-After`).
+
+Contract 1.62 (§34.6) is the **1.1.0** release; release 1.0.1 was never tagged, so the 1.61 fields below ship in it too.
+In this SDK: the **`network` namespace** (§36) — `client.network()`, twelve operations over segments,
+reply profiles and the tenant's `Session-Timeout` cap, every write conditional on the `version` you
+read and never retried, a `409`'s `reason_code` on `ConflictError::reason_code()`, and the three `Replace*`
+bodies unbuildable without their required members; the decision route FreeRADIUS calls is not SDK
+work and has no method. `network` is also a [manifest namespace](#network-segments-and-reply-profiles-36)
+(§27.6.2): natural keys, `filter_ids` as a set, a clamped profile judged on the read. The §14 **device
+grant authenticates its client**: a client built with `oidc_client_secret()` sends `client_secret` in the
+form body at `device_authorize()` and every poll (never `Authorization: Basic`), a public client sends
+none, and a `401 invalid_client` is an `OAuthProtocolError`. [`SsfStream::to_input(changes)`](#directory-saml-ssf-and-scim-targets-29--32)
+is the change-taking read-modify-write form, and `update_stream` states the three meanings of
+`events_requested` at the call. Items (f), (g) and (i) — an assigned `null` is "none", `expected_updated_at`
+is the server's own string, the request `user_id` is an untyped string — already held and are pinned by
+tests. See the [CHANGELOG](CHANGELOG.md) for the one source-breaking note (`ManifestKind` has three more
+enumerators).
 
 Contract 1.61 (§34.5, the 1.0.1 fields) is additive and changes no section list. In this
 SDK: `user_id` on `Certificate` and `GeneratedCertificate` (`std::optional<std::string>`;
@@ -55,7 +71,9 @@ token exchange is this client's own `client_credentials` token (§15.2 rule 9). 
 (certificate revocation lists) is informative and needs nothing from an SDK.
 
 From 1.0.0 the SDK is stable and follows [Semantic Versioning](https://semver.org/): a
-breaking change to the public API waits for the next major version.
+breaking change to the public API waits for the next major version. A contract record may add a
+member or widen a type with a minor bump (1.1.0 is one: contract 1.61 and 1.62); a removal waits
+for 2.0.0.
 
 Sections are named individually rather than folded into ranges: widening a
 range silently turns a statement that was true when written into a different
@@ -77,7 +95,7 @@ This one is.
 - Public headers under `include/axiam/`; umbrella header `#include <axiam/axiam.hpp>`.
 - Dependencies: **libcurl** (HTTP + strict TLS + mTLS), **OpenSSL** (Ed25519 JWKS
   verification), vendored single-header **nlohmann/json** (`third_party/nlohmann/json.hpp`).
-- Version: `1.0.0`.
+- Version: `1.1.0`.
 
 ---
 
@@ -131,7 +149,7 @@ build when `CMakeLists.txt`, the header constants and the CI matrix stop agreein
 include(FetchContent)
 FetchContent_Declare(axiam_cpp_sdk
   GIT_REPOSITORY https://github.com/ilpanich/axiam-cplusplus-sdk.git
-  GIT_TAG        v1.0.0)
+  GIT_TAG        v1.1.0)
 FetchContent_MakeAvailable(axiam_cpp_sdk)
 
 target_link_libraries(my_app PRIVATE axiam::axiam_cpp)
@@ -156,7 +174,7 @@ vcpkg install axiam-cpp-sdk --overlay-ports=./ports
 ### Conan
 
 ```bash
-conan create . --version=1.0.0
+conan create . --version=1.1.0
 ```
 
 The [`conanfile.py`](conanfile.py) requires `libcurl`, `openssl`, and `nlohmann_json`.
@@ -1100,6 +1118,22 @@ Note that `DeviceAuth` / `authenticate_device()` remains **§6.1 mTLS device
 authentication** — a different mechanism from the §14 device *authorization
 grant*, sharing a word.
 
+**The device grant authenticates its client (contract 1.62, §14.1 rule 2).** Both endpoints
+authenticate the client by the method it is registered for, as `/oauth2/token` does. A client built
+with `oidc_client_secret()` sends it as `client_secret` in the **form body** at `device_authorize()`
+**and** at every `device_poll()` — never as `Authorization: Basic`, whichever of `client_secret_post`
+and `client_secret_basic` it is registered for (§12.1 rule 3 stands). A **public** client, the usual
+device, sends `client_id` and no credential at either endpoint, and the SDK does not refuse to call
+either from a client that has none. `device_poll()` sends `client_id` on every poll. A credential goes
+out only when you configured one; a `401` with `{"error":"invalid_client"}` from either call is an
+`OAuthProtocolError` with that `error`, sent once and never retried. An mTLS client
+(`with_client_cert`) presents its certificate at both endpoints, on the alias host when the discovery
+document names one. This SDK implements no `private_key_jwt` client assertion and generates no DPoP
+proofs (§21.7.3), so a client registered for DPoP cannot be driven by it — the server refuses its
+poll `401 invalid_client` — and `token_type` is read as the response says, never assumed `Bearer`.
+A confidential client that sent no credential at `device_authorize()` before 1.1.0 must now configure
+its secret.
+
 Worked examples: [`examples/oidc_login.cpp`](examples/oidc_login.cpp),
 [`examples/device_login.cpp`](examples/device_login.cpp),
 [`examples/token_exchange.cpp`](examples/token_exchange.cpp).
@@ -1732,7 +1766,7 @@ sign path, in both directions. Worked example, including a transport skeleton:
 
 ## §27 Management API
 
-190 operations across 28 namespaces, reached through namespace handles that sit
+202 operations across 29 namespaces, reached through namespace handles that sit
 directly on the client — the form §27.3's C++ row specifies:
 
 ```cpp
@@ -1747,7 +1781,7 @@ req.description = "Read and write documents";
 req.is_global = false;
 const auto role = client.roles().create(req);
 
-// Or reach the same 24 handles behind one accessor (§27.2 rule 4), which reads
+// Or reach the same 29 handles behind one accessor (§27.2 rule 4), which reads
 // better where a call site is already dense with §1 operations:
 auto mgmt = client.management();
 const auto same = mgmt.roles().list();
@@ -1768,7 +1802,7 @@ makes committed generated code trustworthy rather than merely convenient.
 **It sits on the SDK's existing request path** (§27.8), not beside it. Every
 operation inherits §5's tenant/org headers, §6's TLS floor, §9's single-flight
 refresh, §16's retry policy and §19's telemetry by construction. An SDK whose
-management layer opened its own connection would have 190 endpoints outside its
+management layer opened its own connection would have 202 endpoints outside its
 own refresh guard; the suite asserts against that by driving the fake transport
 at the bottom of a real client, so a §27.8 violation fails the tests rather than
 passing them.
@@ -1996,11 +2030,90 @@ device.roles = {{"editor_role", std::nullopt, std::nullopt}};
 
 **This SDK ships the flat-entity tier** (§27.10): no `users`, no `scopes`, and
 no role → permission grant reconciliation. `resources`, `permissions`, `roles`,
-`groups` and (since contract 1.51) `service_accounts` are covered; a manifest
+`groups`, (since contract 1.51) `service_accounts` and (since contract 1.62) `network`
+are covered; a manifest
 needing a user or a scope, or needing to reconcile which permissions a role
 grants, still uses the imperative surface for that piece. `webhooks` is also
 unimplemented in the manifest, per §27.6's own note that no consumer has
 asked for it.
+
+### Network segments and reply profiles (§36)
+
+`client.network()` administers a tenant's RADIUS placement: a **segment** (a node of the reserved
+`/network` subtree — kind, VLAN, a `Filter-Id` envelope, a rank), the **reply profile** each owns, and
+the tenant's `Session-Timeout` cap. Twelve operations; the namespace is human-only (a service-account
+token meets `401`); FreeRADIUS's decision route is not here (§36.11) — an SDK never asks for a placement.
+
+```cpp
+using namespace axiam::management;
+auto net = client.network();
+
+CreateNetworkSegmentRequest seg;
+seg.kind = NetworkSegmentKind::Access;
+seg.site_key = "default"; seg.name = "staff"; seg.vlan_id = 110; seg.rank = 1;
+seg.filter_ids = std::vector<std::string>{"staff-filter"};
+const auto created = net.create_segment(seg);               // version 1
+
+NetworkReplyProfileInput profile;
+profile.session_timeout_secs = 3600;
+profile.filter_id = "staff-filter";
+net.create_profile({profile, created.id, created.version});  // segment_version: as read
+
+// Every write names the version it read, exactly -- a stale one is a 409 and writes nothing:
+try {
+    net.replace_segment(created.id, ReplaceNetworkSegmentRequest(created.version, 120, {"staff-filter"}, true));
+} catch (const axiam::management::ConflictError& e) {
+    if (e.reason_code() == "stale_version") { /* read again, decide again */ }
+}
+net.delete_segment(created.id, created.version);             // ?version= is required
+```
+
+- **Versions are the caller's.** `replace_*` and `delete_*` take the `version` you read; the SDK never
+  re-reads and retries on a `409`, because a `409` means another administrator wrote. A profile write
+  also carries `segment_version`. The seven writes are never retried; the five reads are.
+- **`ConflictError::reason_code()`** names which conflict — `stale_version`, `strands_profile`,
+  `has_children`, `site_gone`, `duplicate_name`, `duplicate_vlan`, `duplicate_rank`, `profile_exists`,
+  `other` — and is open: an unknown value comes back verbatim. Branch on it, never on `what()`.
+- **A read of a profile is the effective one** (§36.3 rule 6): `session_timeout_secs` is lowered to the
+  tenant's current cap and `session_timeout_clamped` says so. Writing a clamped profile back stores the
+  clamped value; to restore the stored one, raise the cap first (`replace_policy`) and leave the profile
+  alone.
+- **The three `Replace*` bodies cannot be built without their required members** (constructor
+  arguments, no default constructor); an unset `rank`, `idle_timeout_secs`, `filter_id` or
+  `service_type` is absent from the body, never `null`, and a profile has no VLAN member.
+- **Pass `site` again** when you page `list_segments`: `PageRequest::next()` carries `search`, and
+  `site` is an argument of the call.
+
+**In a manifest (§27.6.2).** `network` is a manifest namespace: the tenant's cap, its segments and their
+profiles, reconciled like every other kind.
+
+```cpp
+ManifestEntity cap;   cap.kind = ManifestKind::NetworkPolicy;  cap.key = "cap";
+cap.network_policy = ManifestNetworkPolicy{7200};
+
+ManifestEntity staff; staff.kind = ManifestKind::NetworkSegment; staff.key = "staff";
+staff.network_segment = ManifestNetworkSegment{.site = "default", .kind = "access", .name = "staff",
+                                               .vlan_id = 110, .rank = 1};
+
+ManifestEntity staff_profile; staff_profile.kind = ManifestKind::NetworkProfile; staff_profile.key = "staff-profile";
+staff_profile.network_profile = ManifestNetworkProfile{.segment = "staff", .session_timeout_secs = 3600};
+staff_profile.network_profile->idle_timeout_secs = stated_none<std::int64_t>();   // left out of the body
+```
+
+A segment's natural key is **site + kind + name, `kind` being the wire spelling** (`access` or
+`quarantine`; the SDK has no `zones` spelling), a profile's is its segment, and the policy is a singleton.
+The order is the policy, then the segments, then the profiles (a profile follows its segment). A
+duplicate natural key, a second profile for one segment, a second policy, a `segment` that names none, and
+a segment listing one Filter-Id twice are `ManifestError`s before any request. `filter_ids` is compared as
+a **set** (a reorder is `Unchanged`) and written in the order stated. Every stated member is judged on the
+value **as read** — for a profile, the effective one — so a `session_timeout_secs` above the tenant cap is
+an `Update` that `apply` sends and the server refuses with `403`: reported as the action's failure
+(`ApplyReport::failed`, `failure` carrying the server's message), `apply` stops and nothing is retried or
+lowered by the SDK. An `Update` is the full replacement body built from the read (every unstated member
+carried, a member stated with `stated_none<T>()` left out) at the `version` `plan` read; a profile's
+`segment_version` is the response of the segment write earlier in the same `apply`. A `409` makes one
+request, stops the `apply` and is on `ApplyReport::failed_reason_code`; run `apply` again to recover. As
+for every kind, this SDK's manifest never deletes, so there is no `network` pruning.
 
 ### Worked examples
 
@@ -2381,6 +2494,25 @@ of being reverted; and its `events_requested`, where `{}` stays `[]` (the receiv
 build yourself is *absent*, and absent resets the stream to every event of
 `events_allowed`; if you lower `events_allowed`, cut `events_requested` to the new ceiling
 before sending.
+
+**The change-taking form (contract 1.62, §32.2).** `SsfStream::to_input(changes)` takes the stream you
+read **and the changes to make**, and does the part of a stream edit that is easy to get wrong: it sends
+the `events_requested` and the `expected_updated_at` **as read** (the server's own string, byte for byte;
+`{}` stays `[]`) and **cuts `events_requested` to the new `events_allowed`** when you lower the ceiling.
+
+```cpp
+const auto stream = client.ssf().get_stream(stream_id);
+SsfStreamChanges changes;
+changes.events_allowed = std::vector<SsfEventType>{ssf_event_type::kSessionRevoked};  // lower the ceiling
+client.ssf().update_stream(stream_id, stream.to_input(changes));   // events_requested cut to it
+```
+
+An `events_requested` you name in the changes is sent as given (the server judges it); an
+`expected_updated_at` assigned `std::optional<std::string>{}` is "none" and the key is omitted. The plain
+`to_input()` stays, and **cutting `events_requested` is then your duty** wherever you edit its result. The
+three meanings of `events_requested` on an update — absent resets the stream to every allowed event, `{}`
+is the receiver's "none", a list is stored as given and refused `400` outside `events_allowed` — are also
+on `update_stream`'s documentation, and bind a raw API client the same way.
 
 `ScimTargetAuth` / `ScimTargetScope` are open unions: an unknown `type` decodes, and
 sending one is refused locally (`std::invalid_argument`, before any request). Open enums

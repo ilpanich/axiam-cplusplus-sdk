@@ -6,39 +6,131 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
-## [1.0.1] - 2026-10-13
+## [1.1.0] - 2026-10-16
 
-Contract 1.61 (§34.5, the 1.0.1 fields): additive, with no new operation, no changed
-status code and no breaking change for a caller that ignores the new members.
-`CONTRACT.md`, `openapi.json` and `management-registry.json` are re-vendored from
-ilpanich/axiam `058d8e0` (branch `claude/release-1.0.1`; this SDK vendors no `proto/`) and
-the §27 surface regenerated with `scripts/gen_management.py`. The README states
-conformance at contract 1.61.
+Contract 1.62 (§34.6) on top of contract 1.61 (§34.5, the 1.0.1 fields). Release 1.0.1 was
+never tagged, so its entries are part of this one section, and **this is the release every
+1.61 and 1.62 change ships in** (§34.6 (j)). It is a minor release: a contract record may add
+a member or widen a type with a minor bump, and a removal waits for 2.0.0. On the wire it is
+additive for a caller that ignores the new members; one request now differs from 1.0.0's (the
+device grant's client authentication, below). `CONTRACT.md`, `openapi.json` and
+`management-registry.json` are re-vendored from ilpanich/axiam `d76c5a80b` (branch
+`claude/release-1.1.0`; this SDK vendors no `proto/`) and the §27 surface regenerated with
+`scripts/gen_management.py`: **202 operations across 29 namespaces** (was 190 across 28). The
+README states conformance at contract 1.62.
+
+### Source-breaking changes
+
+Neither is a change on the wire; each is a compile-time or build-warning difference.
+
+- **`ManifestKind` has three more enumerators** (`NetworkPolicy`, `NetworkSegment`,
+  `NetworkProfile`; §27.6.2). A `switch` over `ManifestKind` with no `default:` now warns
+  (`-Wswitch`), which a build with `-Werror` turns into an error. *Migration:* add the cases
+  (or a `default:`). `ManifestEntity`, `PlannedChange` and `ApplyReport` gained members at the
+  end, so designated and positional aggregate initialisers that already compiled still do.
+- **No request member loses a type in this SDK.** §34.6 (i) makes the request `user_id` an
+  untyped string in every SDK; here it already was (`std::optional<std::string>` on
+  `CreateCertificateRequest` and `SignCertificateCsrRequest`, sent as given and never checked
+  as a UUID), so nothing changes. Likewise (f) and (g) already held (below).
 
 ### Added
 
-- `user_id` (`std::optional<std::string>`) on `Certificate` and `GeneratedCertificate`:
+- **The `network` namespace (§36, contract 1.62): twelve operations.** `client.network()` (and
+  `client.management().network()`): `list_segments(page, site)`, `create_segment`,
+  `get_segment`, `replace_segment`, `delete_segment(id, version)`, `list_profiles(page)`,
+  `create_profile`, `get_profile(segment_id)`, `replace_profile`, `delete_profile(segment_id,
+  version)`, `get_policy()` and `replace_policy`. Every write is conditional on the `version`
+  you read and is never retried; `delete_*` take the `version` as a required `std::int64_t`
+  and cannot be called without one. The three `Replace*` bodies
+  (`ReplaceNetworkSegmentRequest`, `ReplaceNetworkReplyProfileRequest`,
+  `ReplaceNetworkPolicyRequest`) have no public default constructor, so none can be built
+  without its required members (§36.8 test 3). `NetworkSegmentKind`, `RadiusServiceType` and
+  `RadiusTerminationAction` are open enums. The decision route (`POST
+  /api/v1/network/decide`) is not SDK work and has no method (§27.0, §36.11); the registry
+  excludes it and the generator check keeps it out.
+- **`ConflictError::reason_code()` (§36.4).** The `409` body's `reason_code` as a string —
+  `stale_version`, `strands_profile`, `has_children`, `site_gone`, `duplicate_name`,
+  `duplicate_vlan`, `duplicate_rank`, `profile_exists`, `other`, or a value this SDK has never
+  seen, verbatim — and `std::nullopt` when the server named none. Branch on it, never on
+  `what()`, which now also carries the server's `message`.
+- **`network` in a manifest (§27.6.2, items (n), (u), (v), (w)).** `ManifestKind::NetworkPolicy`,
+  `NetworkSegment` and `NetworkProfile`, specified with `ManifestNetworkPolicy`,
+  `ManifestNetworkSegment` and `ManifestNetworkProfile` (and `AXIAM_NETWORK_POLICY` /
+  `_SEGMENT` / `_PROFILE`). A segment is keyed by site + kind + name, **`kind` being the wire
+  spelling** (`access` or `quarantine`; there is no `zones`), a profile by its segment, the
+  policy a singleton; the order is policy, segments, profiles. A duplicate natural key, a
+  second profile for a segment, a second policy, a dangling `segment` and a segment listing one
+  Filter-Id twice are refused with `ManifestError` before any request. `filter_ids` is compared
+  as a **set** and written in the order stated. Every member is judged on the value **as
+  read** — a profile is the effective, clamped one, so a stated `session_timeout_secs` above
+  the cap is an `Update` that `apply` sends and the server refuses (`403`), which is reported
+  as the action's failure and stops the `apply`. An `Update` is the full replacement body built
+  from the read (every unstated member carried, a member stated with `stated_none<T>()` left
+  out), the `version` is the one `plan` read, and a profile's `segment_version` is the response
+  of the segment write earlier in the same `apply` when there was one. `ApplyReport` gained
+  `failed_reason_code`; a `409` stops the `apply` after one request. `plan` reads with `GET`s
+  only (`get_policy`, `list_segments`, `list_profiles`, each to exhaustion). This SDK's
+  manifest has no pruning for any kind, so there is no `network` pruning either.
+- **`SsfStream::to_input(const SsfStreamChanges&)` — the change-taking form (§32.2, item (e)).**
+  Sends the `events_requested` and the `expected_updated_at` **as read** (the server's own
+  string; `{}` stays `[]`) and cuts `events_requested` to the new `events_allowed` when the
+  changes lower it; an `events_requested` named in the changes is sent as given. An assigned
+  `null` for `expected_updated_at` (`std::optional<std::string>{}`) is "none": the key is
+  omitted. The plain `to_input()` remains and its documentation now names the caller's duty.
+- **`user_id` on `Certificate` and `GeneratedCertificate`** (`std::optional<std::string>`):
   a UUID, `null` and an absent member (a server before 1.0.1) decode, the last two as
   `std::nullopt`, "no account named" — never coalesced or synthesised. Contract 1.61,
   §27.11 rule 5.
-- `user_id` on `CreateCertificateRequest` and `SignCertificateCsrRequest`, sent exactly as
+- **`user_id` on `CreateCertificateRequest` and `SignCertificateCsrRequest`**, sent exactly as
   set and omitted (never `null`) when unset. Contract 1.61, §27.11 rule 5.
-- `expected_updated_at` on `SsfStreamInput` (update only; sent as the string given,
+- **`expected_updated_at` on `SsfStreamInput`** (update only; sent as the string given,
   omitted when unset). Contract 1.61, §32.2.
 
 ### Changed
 
-- `SsfStream::to_input()` also sets `expected_updated_at` to the read's `updated_at`,
-  verbatim, and keeps the `events_requested` it read (`{}` as `[]`, never omitted), so an
-  edit built from a read can neither silently overwrite a write that landed since (a
-  `409`, not retried) nor widen what the receiver narrowed. Contract 1.61, §32.2, §32.3
-  rule 4, §32.8 test 1.
-- `CibaPendingList.total_pending` and `truncated` (§33.3 rule 16) are not modelled: this
+- **The device grant authenticates its client (§14.1 rule 2, item (m); the 1.1.0 server
+  requires it of a confidential client).** `device_authorize()` and every `device_poll()` of
+  a client built with `oidc_client_secret()` now send it as `client_secret` in the form body —
+  as at its other token requests, and never as `Authorization: Basic`, whichever of
+  `client_secret_post` and `client_secret_basic` the client is registered for (§12.1 rule 3
+  stands; item (t)). A public client sends `client_id` and no credential at either endpoint
+  and is not refused for having none. `device_poll()` sends `client_id` on every poll. 1.0.0
+  and 1.0.1 sent no secret at `device_authorize()`; that was the 1.60 rule, which 1.62
+  replaces. A `401 invalid_client` is an `OAuthProtocolError`, sent once and never retried. This
+  SDK implements no `private_key_jwt` assertion and no DPoP proof, so a client bound to DPoP
+  cannot be driven by it (the server answers `401 invalid_client`); an mTLS client presents its
+  certificate on the connection at both endpoints, and `token_type` is read as the response
+  says.
+- **`update_stream` documents the three meanings of `events_requested` (§32.2, item (h))** at
+  the call: absent resets the stream to every event of `events_allowed`, `{}` is the receiver's
+  "none", a list is stored as given and refused `400` outside `events_allowed`; and every other
+  omitted optional member takes its default.
+- **A management `409` carries the server's `message` in `what()`** next to `reason_code()`.
+- **`SsfStream::to_input()` also sets `expected_updated_at` to the read's `updated_at`,
+  verbatim, and keeps the `events_requested` it read (`{}` as `[]`, never omitted)**, so an
+  edit built from a read can neither silently overwrite a write that landed since (a `409`,
+  not retried) nor widen what the receiver narrowed. Contract 1.61, §32.2, §32.3 rule 4,
+  §32.8 test 1.
+- **`CibaPendingList.total_pending` and `truncated` (§33.3 rule 16) are not modelled**: this
   SDK generates the models a registry operation reaches, and none returns the console's
-  pending-request list.
+  pending-request list. Contract 1.62 item (d) confirms that "not modelled" is conformant.
+
+### Already held (contract 1.62 items checked, no change needed)
+
+- **(f) An assigned `null` is "none".** `std::optional` has no `null` to send: assigning
+  `std::nullopt` to `user_id` (on `CreateCertificateRequest` and `SignCertificateCsrRequest`)
+  or `expected_updated_at` (on `SsfStreamInput` and `ScimTargetInput`) omits the key.
+- **(g) `expected_updated_at` is the response's own string.** `SsfStream::updated_at` is a
+  `std::string`, and both `to_input()` forms send it byte for byte.
+- **(i) The request `user_id` is an untyped string**, as above.
 
 ### Tests
 
+- `test_network.cpp` (§36.8's five tests, and the decision route's absence),
+  `test_manifest_network.cpp` (§27.9 "Manifest, `network`", and the §27.6.2 refusals),
+  `test_contract_162.cpp` (§32.8 test 7, the call-site text, and items (f), (g), (i)), the
+  device-grant cases of §14.6 in `test_oidc_grants.cpp` and `test_mtls_endpoint_aliases.cpp`,
+  and the generated §27 suites for the twelve new operations.
 - `test_contract_161.cpp` (§27.11 rule 5's required test) and three cases in
   `test_ssf_management.cpp` (§32.8 test 1's contract 1.61 assertions, the `409` that is not
   retried, and `to_input()`).

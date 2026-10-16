@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 # Plain MAJOR.MINOR.PATCH in CMake; the full version (any pre-release suffix
 # included) lives in vcpkg.json / conanfile.py / README per the packaging
 # conventions.
-project(axiam_cpp_sdk VERSION 1.0.0 LANGUAGES CXX)
+project(axiam_cpp_sdk VERSION 1.1.0 LANGUAGES CXX)
 
 # C++17 is the DECLARED FLOOR: the standard the SDK promises to compile under, and
 # what every consumer inherits by default. It is deliberately not the newest —
