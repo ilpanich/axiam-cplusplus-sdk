@@ -14,7 +14,7 @@ never tagged, so its entries are part of this one section, and **this is the rel
 a member or widen a type with a minor bump, and a removal waits for 2.0.0. On the wire it is
 additive for a caller that ignores the new members; one request now differs from 1.0.0's (the
 device grant's client authentication, below). `CONTRACT.md`, `openapi.json` and
-`management-registry.json` are re-vendored from ilpanich/axiam `d25413506` (branch
+`management-registry.json` are re-vendored from ilpanich/axiam `e8722b668` (branch
 `claude/release-1.1.0`; this SDK vendors no `proto/`) and the §27 surface regenerated with
 `scripts/gen_management.py`: **202 operations across 29 namespaces** (was 190 across 28). The
 README states conformance at contract 1.62.
@@ -141,8 +141,8 @@ Neither is a change on the wire; each is a compile-time or build-warning differe
 ### Contract 1.62 corrections (fix pass)
 
 - Re-vendored `CONTRACT.md`, `openapi.json` (version 1.1.0, digest
-  `sha256:cf0fc71c2061576b077afd48d9903f9f4ef26d66e9edbebe5e3020be89fc59a7`) and
-  `management-registry.json` byte for byte from ilpanich/axiam `d25413506`; the generator's
+  `sha256:7c3a5091d9d515b1aa3e157e74d342faf64a2c88e735f3c873b66951b3fac8a1`) and
+  `management-registry.json` byte for byte from ilpanich/axiam `e8722b668`; the generator's
   `--check` stays clean. Ships the shared library's ABI version 2 (C162-02, above).
 
 ### Tests
