@@ -18,6 +18,7 @@
 // network, and instructs the RP to terminate a session — so the two tests that
 // matter most are the two an implementer is most likely to skip.
 
+#include <cctype>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -179,7 +180,7 @@ const char* kSuccessTokens =
 // §14.1 device_authorize
 // ---------------------------------------------------------------------------
 
-AXIAM_TEST("§14.1 device_authorize sends no secret, and works without one") {
+AXIAM_TEST("§14.1 device_authorize works from a public client, with no secret field") {
     Fixture f;
     f.replies->device_body = device_body(R"(,"interval":3)", 600);
     // A PUBLIC client. §14.1 forbids refusing to call this from one, because a
@@ -196,17 +197,158 @@ AXIAM_TEST("§14.1 device_authorize sends no secret, and works without one") {
     AXIAM_REQUIRE_FALSE(a.verification_uri_complete.has_value());
 }
 
-AXIAM_TEST("§14.1 device_authorize never sends a secret even when one is configured") {
-    // The other half of the rule: "SDKs MUST NOT send client_secret on it". A
-    // confidential client calling this must still not leak its secret to an
-    // unauthenticated endpoint.
+// ---------------------------------------------------------------------------
+// §14.1 rule 2 (contract 1.62): the device grant authenticates its client.
+// 1.60 said "SDKs MUST NOT send client_secret on it"; that sentence is replaced.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+bool has_header(const axtest::RecordedReq& req, const std::string& name) {
+    for (const auto& h : req.headers) {
+        std::string lower = h.first;
+        for (auto& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (lower == name) return true;
+    }
+    return false;
+}
+
+/// Every token-endpoint request this fixture recorded, oldest first.
+std::vector<axtest::RecordedReq> token_requests(axtest::FakeState& st) {
+    std::lock_guard<std::mutex> lock(st.mtx);
+    std::vector<axtest::RecordedReq> out;
+    for (const auto& r : st.requests) {
+        if (r.url.find("/oauth2/token") != std::string::npos) out.push_back(r);
+    }
+    return out;
+}
+
+bool body_field_is(const axtest::RecordedReq& req, const std::string& field, const std::string& value) {
+    const std::string pair = field + "=" + value;
+    return req.body == pair || req.body.rfind(pair + "&", 0) == 0 ||
+           req.body.find("&" + pair + "&") != std::string::npos ||
+           (req.body.size() > pair.size() &&
+            req.body.compare(req.body.size() - pair.size() - 1, pair.size() + 1, "&" + pair) == 0);
+}
+
+}  // namespace
+
+AXIAM_TEST("§14.1 rule 2 (1.62): a client configured with a secret sends it, in the form body, at device_authorize and at every poll -- and no Authorization header at either") {
+    // The SDK has no notion of the client's registration: client_secret_post and
+    // client_secret_basic both come out as this one request (§12.1 rule 3), so a single
+    // configured client covers "whichever of the two it is registered for".
     Fixture f;
-    f.replies->device_body = device_body(R"(,"interval":3)", 600);
+    f.replies->device_body = device_body(R"(,"interval":1)", 600);
+    f.replies->token_script = {{400, R"({"error":"authorization_pending"})"},
+                               {400, R"({"error":"authorization_pending"})"},
+                               {200, kSuccessTokens}};
+    auto client = make_client(f);  // kClientId + kClientSecret
+
+    client.device_login(nullptr);
+
+    const auto authorize = last_request(*f.st, "/oauth2/device_authorization");
+    AXIAM_REQUIRE(body_field_is(authorize, "client_id", kClientId));
+    AXIAM_REQUIRE(body_field_is(authorize, "client_secret", kClientSecret));
+    AXIAM_REQUIRE_FALSE(has_header(authorize, "authorization"));
+    AXIAM_REQUIRE(authorize.headers.at("Content-Type") == "application/x-www-form-urlencoded");
+
+    const auto polls = token_requests(*f.st);
+    AXIAM_REQUIRE(polls.size() == 3);
+    for (const auto& poll : polls) {
+        AXIAM_REQUIRE(poll.body.find("grant_type=") != std::string::npos);
+        AXIAM_REQUIRE(poll.body.find("device_code") != std::string::npos);
+        AXIAM_REQUIRE(body_field_is(poll, "device_code", "the-device-code"));
+        AXIAM_REQUIRE(body_field_is(poll, "client_id", kClientId));  // §14.1 rule 3: every poll
+        AXIAM_REQUIRE(body_field_is(poll, "client_secret", kClientSecret));
+        AXIAM_REQUIRE_FALSE(has_header(poll, "authorization"));
+        AXIAM_REQUIRE(poll.body.find("client_assertion") == std::string::npos);
+    }
+}
+
+AXIAM_TEST("§14.1 rule 2 (1.62): a public client sends no credential at either endpoint, and is not refused client-side") {
+    Fixture f;
+    f.replies->device_body = device_body(R"(,"interval":1)", 600);
+    f.replies->token_script = {{400, R"({"error":"authorization_pending"})"}, {200, kSuccessTokens}};
+    auto client = make_client(f, /*secret=*/nullptr);
+
+    const auto set = client.device_login(nullptr);
+    AXIAM_REQUIRE(axiam::detail::reveal(set.access_token) == "the-access-token");
+
+    auto requests = std::vector<axtest::RecordedReq>{last_request(*f.st, "/oauth2/device_authorization")};
+    for (const auto& r : token_requests(*f.st)) requests.push_back(r);
+    AXIAM_REQUIRE(requests.size() == 3);
+    for (const auto& r : requests) {
+        AXIAM_REQUIRE(body_field_is(r, "client_id", kClientId));
+        AXIAM_REQUIRE(r.body.find("client_secret") == std::string::npos);
+        AXIAM_REQUIRE(r.body.find("client_assertion") == std::string::npos);
+        AXIAM_REQUIRE_FALSE(has_header(r, "authorization"));
+    }
+}
+
+AXIAM_TEST("§14.1 rule 2 (1.62): the credential is only ever the caller's own -- none is borrowed, and the secret is not in the request URL") {
+    Fixture f;
+    f.replies->device_body = device_body(R"(,"interval":1)", 600);
     auto client = make_client(f);
     client.device_authorize();
-    AXIAM_REQUIRE_FALSE(body_has_field(*f.st, "/oauth2/device_authorization", "client_secret"));
-    AXIAM_REQUIRE(last_request(*f.st, "/oauth2/device_authorization").body.find(kClientSecret) ==
-                  std::string::npos);
+    const auto authorize = last_request(*f.st, "/oauth2/device_authorization");
+    // tenant_id is a QUERY parameter and the secret never is (§12.1 rules).
+    AXIAM_REQUIRE(authorize.url.find("tenant_id=") != std::string::npos);
+    AXIAM_REQUIRE(authorize.url.find(kClientSecret) == std::string::npos);
+    AXIAM_REQUIRE(authorize.body.find("tenant_id") == std::string::npos);
+}
+
+AXIAM_TEST("§14.1 rule 4 (1.62): a 401 invalid_client from device_authorize is an OAuthProtocolError, sent once, never retried") {
+    Fixture f;
+    f.replies->device_status = 401;
+    f.replies->device_body = R"({"error":"invalid_client","error_description":"client authentication failed"})";
+    auto client = make_client(f);
+    try {
+        client.device_authorize();
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OAuthProtocolError& e) {
+        AXIAM_REQUIRE(e.error_code() == "invalid_client");
+    }
+    AXIAM_REQUIRE(f.replies->device_calls == 1);
+    AXIAM_REQUIRE(f.replies->token_calls == 0);
+}
+
+AXIAM_TEST("§14.2 rule 5 (1.62): a 401 invalid_client from the poll is an OAuthProtocolError, terminal: one request, no retry, no refresh") {
+    for (const char* mode : {"device_poll", "device_login"}) {
+        Fixture f;
+        f.replies->device_body = device_body(R"(,"interval":1)", 600);
+        f.replies->token_script = {{401, R"({"error":"invalid_client"})"}, {200, kSuccessTokens}};
+        auto client = make_client(f);
+        try {
+            if (std::string(mode) == "device_poll") {
+                client.device_poll(axiam::Sensitive<std::string>("dc"));
+            } else {
+                client.device_login(nullptr);
+            }
+            AXIAM_REQUIRE(false);
+        } catch (const axiam::OAuthProtocolError& e) {
+            AXIAM_REQUIRE(e.error_code() == "invalid_client");
+        }
+        // Exactly one poll: not retried inside it (§16 retries 5xx and transport failures,
+        // not a 401) and not repeated by the device_login loop (terminal).
+        AXIAM_REQUIRE(f.replies->token_calls == 1);
+        // It does not enter a §9 refresh: every token request is the device-code grant.
+        for (const auto& r : token_requests(*f.st)) {
+            AXIAM_REQUIRE(r.body.find("grant_type=refresh_token") == std::string::npos);
+        }
+        AXIAM_REQUIRE_FALSE(client.has_session());
+    }
+}
+
+AXIAM_TEST("§14.2 rule 8 (1.62): a DPoP-bound grant's response is surfaced as the server says -- token_type DPoP, never assumed Bearer") {
+    // This SDK generates no DPoP proofs (§21.7.3 declined), so it cannot drive a bound client:
+    // the server refuses such a poll `401 invalid_client` (rule 5, tested above). What it does
+    // owe is reading `token_type` from the response.
+    Fixture f;
+    f.replies->token_script = {{200, R"({"access_token":"bound","token_type":"DPoP","expires_in":900})"}};
+    auto client = make_client(f);
+    const auto set = client.device_poll(axiam::Sensitive<std::string>("dc"));
+    AXIAM_REQUIRE(set.token_type == "DPoP");
+    AXIAM_REQUIRE(axiam::detail::reveal(set.access_token) == "bound");
 }
 
 AXIAM_TEST("§14.2 rule 2 an omitted interval defaults to five seconds") {

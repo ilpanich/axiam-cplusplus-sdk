@@ -777,6 +777,44 @@ void from_json(const nlohmann::json& j, NameIdFormat& value) {
     value = name_id_format_from_wire(j.get<std::string>());
 }
 
+std::string to_wire(NetworkSegmentKind value) {
+    switch (value) {
+        case NetworkSegmentKind::Access: return "access";
+        case NetworkSegmentKind::Quarantine: return "quarantine";
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
+        case NetworkSegmentKind::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "access";
+}
+
+NetworkSegmentKind network_segment_kind_from_wire(const std::string& value) {
+    if (value == "access") return NetworkSegmentKind::Access;
+    if (value == "quarantine") return NetworkSegmentKind::Quarantine;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return NetworkSegmentKind::Unknown;
+}
+
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(NetworkSegmentKind value) {
+    if (value == NetworkSegmentKind::Unknown) {
+        throw std::invalid_argument("NetworkSegmentKind: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const NetworkSegmentKind& value) { j = send_wire(value); }
+void from_json(const nlohmann::json& j, NetworkSegmentKind& value) {
+    value = network_segment_kind_from_wire(j.get<std::string>());
+}
+
 std::string to_wire(NotificationEventType value) {
     switch (value) {
         case NotificationEventType::LoginFailure: return "login_failure";
@@ -997,6 +1035,80 @@ static std::string send_wire(PgpKeyStatus value) {
 void to_json(nlohmann::json& j, const PgpKeyStatus& value) { j = send_wire(value); }
 void from_json(const nlohmann::json& j, PgpKeyStatus& value) {
     value = pgp_key_status_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(RadiusServiceType value) {
+    switch (value) {
+        case RadiusServiceType::FramedUser: return "framed_user";
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
+        case RadiusServiceType::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "framed_user";
+}
+
+RadiusServiceType radius_service_type_from_wire(const std::string& value) {
+    if (value == "framed_user") return RadiusServiceType::FramedUser;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return RadiusServiceType::Unknown;
+}
+
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(RadiusServiceType value) {
+    if (value == RadiusServiceType::Unknown) {
+        throw std::invalid_argument("RadiusServiceType: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const RadiusServiceType& value) { j = send_wire(value); }
+void from_json(const nlohmann::json& j, RadiusServiceType& value) {
+    value = radius_service_type_from_wire(j.get<std::string>());
+}
+
+std::string to_wire(RadiusTerminationAction value) {
+    switch (value) {
+        case RadiusTerminationAction::Default_: return "default";
+        case RadiusTerminationAction::RadiusRequest: return "radius_request";
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
+        case RadiusTerminationAction::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "default";
+}
+
+RadiusTerminationAction radius_termination_action_from_wire(const std::string& value) {
+    if (value == "default") return RadiusTerminationAction::Default_;
+    if (value == "radius_request") return RadiusTerminationAction::RadiusRequest;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return RadiusTerminationAction::Unknown;
+}
+
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(RadiusTerminationAction value) {
+    if (value == RadiusTerminationAction::Unknown) {
+        throw std::invalid_argument("RadiusTerminationAction: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const RadiusTerminationAction& value) { j = send_wire(value); }
+void from_json(const nlohmann::json& j, RadiusTerminationAction& value) {
+    value = radius_termination_action_from_wire(j.get<std::string>());
 }
 
 std::string to_wire(ReactorMode value) {
@@ -1592,6 +1704,15 @@ void to_json(nlohmann::json& j, const UserStatus& value) { j = send_wire(value);
 void from_json(const nlohmann::json& j, UserStatus& value) {
     value = user_status_from_wire(j.get<std::string>());
 }
+
+ReplaceNetworkPolicyRequest::ReplaceNetworkPolicyRequest(std::int64_t session_timeout_max_secs, std::int64_t version)
+    : session_timeout_max_secs(session_timeout_max_secs), version(version) {}
+
+ReplaceNetworkReplyProfileRequest::ReplaceNetworkReplyProfileRequest(std::int64_t version, std::int64_t segment_version, NetworkReplyProfileInput profile)
+    : profile(std::move(profile)), segment_version(segment_version), version(version) {}
+
+ReplaceNetworkSegmentRequest::ReplaceNetworkSegmentRequest(std::int64_t version, std::int64_t vlan_id, std::vector<std::string> filter_ids, bool enabled)
+    : enabled(enabled), filter_ids(std::move(filter_ids)), version(version), vlan_id(vlan_id) {}
 
 SamlServiceProviderInput::SamlServiceProviderInput(std::string display_name, std::string entity_id, std::vector<AcsEndpoint> acs_urls)
     : acs_urls(std::move(acs_urls)), display_name(std::move(display_name)), entity_id(std::move(entity_id)) {}
@@ -2325,6 +2446,91 @@ void from_json(const nlohmann::json& j, CreateIntermediateCaRequest& value) {
     value.parent_ca_id = j.at("parent_ca_id").get<std::string>();
     value.subject = j.at("subject").get<std::string>();
     value.validity_days = j.at("validity_days").get<std::int64_t>();
+}
+
+void to_json(nlohmann::json& j, const NetworkReplyProfileInput& value) {
+    j = nlohmann::json::object();
+    if (value.dictionary) {
+        j["dictionary"] = *value.dictionary;
+    }
+    if (value.filter_id) {
+        j["filter_id"] = *value.filter_id;
+    }
+    if (value.idle_timeout_secs) {
+        j["idle_timeout_secs"] = *value.idle_timeout_secs;
+    }
+    if (value.service_type) {
+        j["service_type"] = send_wire(*value.service_type);
+    }
+    j["session_timeout_secs"] = value.session_timeout_secs;
+    if (value.termination_action) {
+        j["termination_action"] = send_wire(*value.termination_action);
+    }
+}
+
+void from_json(const nlohmann::json& j, NetworkReplyProfileInput& value) {
+    if (auto it = j.find("dictionary"); it != j.end() && !it->is_null()) {
+        value.dictionary = it->get<std::string>();
+    }
+    if (auto it = j.find("filter_id"); it != j.end() && !it->is_null()) {
+        value.filter_id = it->get<std::string>();
+    }
+    if (auto it = j.find("idle_timeout_secs"); it != j.end() && !it->is_null()) {
+        value.idle_timeout_secs = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("service_type"); it != j.end() && !it->is_null()) {
+        value.service_type = radius_service_type_from_wire(it->get<std::string>());
+    }
+    value.session_timeout_secs = j.at("session_timeout_secs").get<std::int64_t>();
+    if (auto it = j.find("termination_action"); it != j.end() && !it->is_null()) {
+        value.termination_action = radius_termination_action_from_wire(it->get<std::string>());
+    }
+}
+
+void to_json(nlohmann::json& j, const CreateNetworkReplyProfileRequest& value) {
+    j = nlohmann::json::object();
+    j["profile"] = value.profile;
+    j["segment_id"] = value.segment_id;
+    j["segment_version"] = value.segment_version;
+}
+
+void from_json(const nlohmann::json& j, CreateNetworkReplyProfileRequest& value) {
+    value.profile = j.at("profile").get<NetworkReplyProfileInput>();
+    value.segment_id = j.at("segment_id").get<std::string>();
+    value.segment_version = j.at("segment_version").get<std::int64_t>();
+}
+
+void to_json(nlohmann::json& j, const CreateNetworkSegmentRequest& value) {
+    j = nlohmann::json::object();
+    if (value.enabled) {
+        j["enabled"] = *value.enabled;
+    }
+    if (value.filter_ids) {
+        j["filter_ids"] = *value.filter_ids;
+    }
+    j["kind"] = send_wire(value.kind);
+    j["name"] = value.name;
+    if (value.rank) {
+        j["rank"] = *value.rank;
+    }
+    j["site_key"] = value.site_key;
+    j["vlan_id"] = value.vlan_id;
+}
+
+void from_json(const nlohmann::json& j, CreateNetworkSegmentRequest& value) {
+    if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
+        value.enabled = it->get<bool>();
+    }
+    if (auto it = j.find("filter_ids"); it != j.end() && !it->is_null()) {
+        value.filter_ids = it->get<std::vector<std::string>>();
+    }
+    value.kind = network_segment_kind_from_wire(j.at("kind").get<std::string>());
+    value.name = j.at("name").get<std::string>();
+    if (auto it = j.find("rank"); it != j.end() && !it->is_null()) {
+        value.rank = it->get<std::int64_t>();
+    }
+    value.site_key = j.at("site_key").get<std::string>();
+    value.vlan_id = j.at("vlan_id").get<std::int64_t>();
 }
 
 void to_json(nlohmann::json& j, const CreateNotificationRuleRequest& value) {
@@ -3629,6 +3835,119 @@ void from_json(const nlohmann::json& j, MtlsTrustAnchorResponse& value) {
     }
 }
 
+void to_json(nlohmann::json& j, const NetworkPolicyResponse& value) {
+    j = nlohmann::json::object();
+    j["session_timeout_max_secs"] = value.session_timeout_max_secs;
+    j["tenant_id"] = value.tenant_id;
+    if (value.updated_at) {
+        j["updated_at"] = *value.updated_at;
+    }
+    if (value.updated_by) {
+        j["updated_by"] = *value.updated_by;
+    }
+    j["version"] = value.version;
+}
+
+void from_json(const nlohmann::json& j, NetworkPolicyResponse& value) {
+    value.session_timeout_max_secs = j.at("session_timeout_max_secs").get<std::int64_t>();
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+    if (auto it = j.find("updated_at"); it != j.end() && !it->is_null()) {
+        value.updated_at = it->get<std::string>();
+    }
+    if (auto it = j.find("updated_by"); it != j.end() && !it->is_null()) {
+        value.updated_by = it->get<std::string>();
+    }
+    value.version = j.at("version").get<std::int64_t>();
+}
+
+void to_json(nlohmann::json& j, const NetworkReplyProfile& value) {
+    j = nlohmann::json::object();
+    j["created_at"] = value.created_at;
+    j["created_by"] = value.created_by;
+    j["dictionary"] = value.dictionary;
+    if (value.filter_id) {
+        j["filter_id"] = *value.filter_id;
+    }
+    if (value.idle_timeout_secs) {
+        j["idle_timeout_secs"] = *value.idle_timeout_secs;
+    }
+    j["segment_id"] = value.segment_id;
+    if (value.service_type) {
+        j["service_type"] = send_wire(*value.service_type);
+    }
+    j["session_timeout_clamped"] = value.session_timeout_clamped;
+    j["session_timeout_secs"] = value.session_timeout_secs;
+    j["tenant_id"] = value.tenant_id;
+    j["termination_action"] = send_wire(value.termination_action);
+    j["updated_at"] = value.updated_at;
+    j["updated_by"] = value.updated_by;
+    j["version"] = value.version;
+}
+
+void from_json(const nlohmann::json& j, NetworkReplyProfile& value) {
+    value.created_at = j.at("created_at").get<std::string>();
+    value.created_by = j.at("created_by").get<std::string>();
+    value.dictionary = j.at("dictionary").get<std::string>();
+    if (auto it = j.find("filter_id"); it != j.end() && !it->is_null()) {
+        value.filter_id = it->get<std::string>();
+    }
+    if (auto it = j.find("idle_timeout_secs"); it != j.end() && !it->is_null()) {
+        value.idle_timeout_secs = it->get<std::int64_t>();
+    }
+    value.segment_id = j.at("segment_id").get<std::string>();
+    if (auto it = j.find("service_type"); it != j.end() && !it->is_null()) {
+        value.service_type = radius_service_type_from_wire(it->get<std::string>());
+    }
+    value.session_timeout_clamped = j.at("session_timeout_clamped").get<bool>();
+    value.session_timeout_secs = j.at("session_timeout_secs").get<std::int64_t>();
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+    value.termination_action = radius_termination_action_from_wire(j.at("termination_action").get<std::string>());
+    value.updated_at = j.at("updated_at").get<std::string>();
+    value.updated_by = j.at("updated_by").get<std::string>();
+    value.version = j.at("version").get<std::int64_t>();
+}
+
+void to_json(nlohmann::json& j, const NetworkSegmentResponse& value) {
+    j = nlohmann::json::object();
+    j["created_at"] = value.created_at;
+    j["created_by"] = value.created_by;
+    j["enabled"] = value.enabled;
+    j["filter_ids"] = value.filter_ids;
+    j["id"] = value.id;
+    j["kind"] = send_wire(value.kind);
+    j["name"] = value.name;
+    j["path"] = value.path;
+    if (value.rank) {
+        j["rank"] = *value.rank;
+    }
+    j["site_key"] = value.site_key;
+    j["tenant_id"] = value.tenant_id;
+    j["updated_at"] = value.updated_at;
+    j["updated_by"] = value.updated_by;
+    j["version"] = value.version;
+    j["vlan_id"] = value.vlan_id;
+}
+
+void from_json(const nlohmann::json& j, NetworkSegmentResponse& value) {
+    value.created_at = j.at("created_at").get<std::string>();
+    value.created_by = j.at("created_by").get<std::string>();
+    value.enabled = j.at("enabled").get<bool>();
+    value.filter_ids = j.at("filter_ids").get<std::vector<std::string>>();
+    value.id = j.at("id").get<std::string>();
+    value.kind = network_segment_kind_from_wire(j.at("kind").get<std::string>());
+    value.name = j.at("name").get<std::string>();
+    value.path = j.at("path").get<std::string>();
+    if (auto it = j.find("rank"); it != j.end() && !it->is_null()) {
+        value.rank = it->get<std::int64_t>();
+    }
+    value.site_key = j.at("site_key").get<std::string>();
+    value.tenant_id = j.at("tenant_id").get<std::string>();
+    value.updated_at = j.at("updated_at").get<std::string>();
+    value.updated_by = j.at("updated_by").get<std::string>();
+    value.version = j.at("version").get<std::int64_t>();
+    value.vlan_id = j.at("vlan_id").get<std::int64_t>();
+}
+
 void to_json(nlohmann::json& j, const NotificationPolicy& value) {
     j = nlohmann::json::object();
     j["admin_notifications_enabled"] = value.admin_notifications_enabled;
@@ -4159,6 +4478,51 @@ void to_json(nlohmann::json& j, const ReadyResponse& value) {
 void from_json(const nlohmann::json& j, ReadyResponse& value) {
     value.database = j.at("database").get<std::string>();
     value.status = j.at("status").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const ReplaceNetworkPolicyRequest& value) {
+    j = nlohmann::json::object();
+    j["session_timeout_max_secs"] = value.session_timeout_max_secs;
+    j["version"] = value.version;
+}
+
+void from_json(const nlohmann::json& j, ReplaceNetworkPolicyRequest& value) {
+    value.session_timeout_max_secs = j.at("session_timeout_max_secs").get<std::int64_t>();
+    value.version = j.at("version").get<std::int64_t>();
+}
+
+void to_json(nlohmann::json& j, const ReplaceNetworkReplyProfileRequest& value) {
+    j = nlohmann::json::object();
+    j["profile"] = value.profile;
+    j["segment_version"] = value.segment_version;
+    j["version"] = value.version;
+}
+
+void from_json(const nlohmann::json& j, ReplaceNetworkReplyProfileRequest& value) {
+    value.profile = j.at("profile").get<NetworkReplyProfileInput>();
+    value.segment_version = j.at("segment_version").get<std::int64_t>();
+    value.version = j.at("version").get<std::int64_t>();
+}
+
+void to_json(nlohmann::json& j, const ReplaceNetworkSegmentRequest& value) {
+    j = nlohmann::json::object();
+    j["enabled"] = value.enabled;
+    j["filter_ids"] = value.filter_ids;
+    if (value.rank) {
+        j["rank"] = *value.rank;
+    }
+    j["version"] = value.version;
+    j["vlan_id"] = value.vlan_id;
+}
+
+void from_json(const nlohmann::json& j, ReplaceNetworkSegmentRequest& value) {
+    value.enabled = j.at("enabled").get<bool>();
+    value.filter_ids = j.at("filter_ids").get<std::vector<std::string>>();
+    if (auto it = j.find("rank"); it != j.end() && !it->is_null()) {
+        value.rank = it->get<std::int64_t>();
+    }
+    value.version = j.at("version").get<std::int64_t>();
+    value.vlan_id = j.at("vlan_id").get<std::int64_t>();
 }
 
 void to_json(nlohmann::json& j, const ResolvedPermissionGrant& value) {
@@ -6642,6 +7006,27 @@ void from_json(const nlohmann::json& j, WebhookResponse& value) {
 // R-27: the REQUIRED_CTOR inputs have no public default constructor, so nlohmann decodes them
 // through these: built with placeholder required members, then filled by from_json above, which
 // reads every required member (and throws when one is absent, as for any other model).
+axiam::management::ReplaceNetworkPolicyRequest nlohmann::adl_serializer<axiam::management::ReplaceNetworkPolicyRequest>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::ReplaceNetworkPolicyRequest value({}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}
+
+axiam::management::ReplaceNetworkReplyProfileRequest nlohmann::adl_serializer<axiam::management::ReplaceNetworkReplyProfileRequest>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::ReplaceNetworkReplyProfileRequest value({}, {}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}
+
+axiam::management::ReplaceNetworkSegmentRequest nlohmann::adl_serializer<axiam::management::ReplaceNetworkSegmentRequest>::from_json(
+    const nlohmann::json& j) {
+    axiam::management::ReplaceNetworkSegmentRequest value({}, {}, {}, {});
+    axiam::management::from_json(j, value);
+    return value;
+}
+
 axiam::management::SamlServiceProviderInput nlohmann::adl_serializer<axiam::management::SamlServiceProviderInput>::from_json(
     const nlohmann::json& j) {
     axiam::management::SamlServiceProviderInput value({}, {}, {});

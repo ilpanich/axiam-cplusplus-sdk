@@ -193,16 +193,24 @@ CALL_SITE_NOTES: dict[str, str] = {
         "every SP has refreshed the metadata, then promote."
     ),
     "ssf.update_stream": (
-        "An omitted optional member takes its default (§32.2) -- **except "
-        "`authorization_header`, which absent keeps the stored one** -- unless the update "
-        "moves `endpoint_url` to another scheme, host or port while a header is stored: "
-        "then it must carry `authorization_header` again or "
-        "`clear_authorization_header: true`, else `400` (§32.3 rule 5). Start from "
-        "`SsfStream::to_input()`, which sends back the `events_requested` and the "
-        "`expected_updated_at` it read (contract 1.61, §32.2): an omitted "
-        "`events_requested` *resets* the stream to every allowed event, `{}` keeps the "
-        "receiver's \"none\". An update overtaken by a write since the read -- the "
-        "receiver's included -- is `409`, never retried: read the stream again."
+        "**The three meanings of `events_requested` on an update** (§32.2, contract 1.62): "
+        "*absent* (`std::nullopt`) **resets** the stream to every event of "
+        "`events_allowed`, widening a narrowing the receiver made; **`{}`** is stored as "
+        "the receiver's \"none\" -- it does not widen, and the stream carries nothing; a "
+        "list of event types is stored as given and refused `400` if any is outside "
+        "`events_allowed`. A raw API client is bound by the same meaning. "
+        "**Every other omitted optional member takes its default on an update** -- "
+        "`description`, `endpoint_url` and `status_reason` null, `subject_format` "
+        "`iss_sub`, `status` `enabled`, `clear_authorization_header` false -- "
+        "**except `authorization_header`, which absent keeps the stored one**, unless the "
+        "update moves `endpoint_url` to another scheme, host or port while a header is "
+        "stored: then it must carry `authorization_header` again or "
+        "`clear_authorization_header: true`, else `400` (§32.3 rule 5). Build the body "
+        "with the change-taking form `SsfStream::to_input(const SsfStreamChanges&)`, which "
+        "sends the `events_requested` and the `expected_updated_at` it read and cuts "
+        "`events_requested` to a lowered `events_allowed`; the plain `to_input()` sends "
+        "them as read and leaves that cut to you. An update overtaken by a write since the "
+        "read -- the receiver's included -- is `409`, never retried: read the stream again."
     ),
     "scim_targets.create": (
         "`credential` is required here (§31.3 rule 2). It is write-only: no response "
@@ -260,7 +268,70 @@ REQUIRED_CTOR: dict[str, str] = {
     "SetDirectoryConfig": "\u00a730.8 test 4",
     "ScimTargetInput": "\u00a731.8 test 3",
     "SsfStreamInput": "\u00a732.8 test 1",
+    # Contract 1.62, section 36.8 test 3: "the replace types cannot be built without their
+    # required members". The three network PUT bodies are full-body and version-conditional
+    # (section 27.4 rule 5), so a body built without its `version` is a bug the type refuses.
+    "ReplaceNetworkSegmentRequest": "\u00a736.8 test 3",
+    "ReplaceNetworkReplyProfileRequest": "\u00a736.8 test 3",
+    "ReplaceNetworkPolicyRequest": "\u00a736.8 test 3",
 }
+
+
+def ctor_basis(name: str) -> str:
+    """Which contract revision asked for this REQUIRED_CTOR input."""
+    return "contract 1.62" if REQUIRED_CTOR[name].startswith("\u00a736") else "contract 1.59 R-27"
+
+
+# Models that are not in the spec: value types the SDK declares for its own composed forms.
+# Declared at the end of management_models.hpp (after every spec struct they refer to) and
+# forward-declared with the rest, so a generated struct may name them in a member signature.
+HAND_WRITTEN_MODELS = ["SsfStreamChanges"]
+
+HAND_WRITTEN_MODELS_TEXT: list[str] = [
+    "/// The changes the change-taking form `SsfStream::to_input(const SsfStreamChanges&)` applies over",
+    "/// a read (CONTRACT.md §32.2, contract 1.62). Every member is optional: a disengaged member",
+    "/// leaves what was read as it is.",
+    "///",
+    "/// A member that can be \"none\" is a doubly optional value: disengaged is \"no change\", and",
+    "/// engaged-with-`std::nullopt` is an assigned null, which sets it to none -- the key is omitted",
+    "/// from the body and `null` is never sent (§27.11 rule 5; on an update an omitted member takes its",
+    "/// default, which for these is null).",
+    "struct SsfStreamChanges {",
+    "    /// A new `receiver_client_id`.",
+    "    std::optional<std::string> receiver_client_id = std::nullopt;",
+    "    /// A new `audience`.",
+    "    std::optional<std::string> audience = std::nullopt;",
+    "    /// A new `delivery_method`.",
+    "    std::optional<SsfDeliveryMethod> delivery_method = std::nullopt;",
+    "    /// A new `events_allowed`. **Lowering the ceiling cuts `events_requested`** to it unless",
+    "    /// `events_requested` is named below: the entries of the read list that are in the new",
+    "    /// ceiling, in their order.",
+    "    std::optional<std::vector<SsfEventType>> events_allowed = std::nullopt;",
+    "    /// A new `events_requested`, sent as given (`{}` is sent as `[]`, the receiver's \"none\"):",
+    "    /// the server judges it, and refuses `400` one outside `events_allowed`.",
+    "    std::optional<std::vector<SsfEventType>> events_requested = std::nullopt;",
+    "    /// A new `description`; engaged with `std::nullopt` clears it.",
+    "    std::optional<std::optional<std::string>> description = std::nullopt;",
+    "    /// A new `endpoint_url`; engaged with `std::nullopt` clears it.",
+    "    std::optional<std::optional<std::string>> endpoint_url = std::nullopt;",
+    "    /// A new `status`.",
+    "    std::optional<SsfStreamStatus> status = std::nullopt;",
+    "    /// A new `status_reason`; engaged with `std::nullopt` clears it.",
+    "    std::optional<std::optional<std::string>> status_reason = std::nullopt;",
+    "    /// A new `subject_format`.",
+    "    std::optional<SsfSubjectFormat> subject_format = std::nullopt;",
+    "    /// The `authorization_header` to send (write-only; no read carries one, so absent keeps the",
+    "    /// stored one).",
+    "    std::optional<Sensitive<std::string>> authorization_header = std::nullopt;",
+    "    /// Remove the stored header. Refused by the server together with `authorization_header`.",
+    "    std::optional<bool> clear_authorization_header = std::nullopt;",
+    "    /// The `expected_updated_at` to send instead of the read's `updated_at`; engaged with",
+    "    /// `std::nullopt` is \"none\" (an unconditional replacement): the key is omitted and `null`",
+    "    /// is never sent.",
+    "    std::optional<std::optional<std::string>> expected_updated_at = std::nullopt;",
+    "};",
+    "",
+]
 
 
 def required_ctor_fields(name: str) -> list[dict[str, Any]]:
@@ -309,17 +380,35 @@ MODEL_MEMBERS: dict[str, list[tuple[str, str]]] = {
         "member takes its DEFAULT on an update.",
         "SamlServiceProviderInput to_input() const;",
     )],
-    "SsfStream": [(
-        "The replacement body for `ssf.update_stream` holding every member of this "
-        "read. `authorization_header` is absent: no read carries it, and absent keeps "
-        "the stored one -- unless the update moves the endpoint (§32.3 rule 5). "
-        "`expected_updated_at` is this read's `updated_at`, verbatim, so an update "
-        "overtaken by a later write is a `409`, and `events_requested` is the one this "
-        "read carried (an empty list stays empty, never omitted: omitting it would widen "
-        "the stream to every allowed event, §32.2). If you lower `events_allowed`, cut "
-        "`events_requested` to the new ceiling yourself.",
-        "SsfStreamInput to_input() const;",
-    )],
+    "SsfStream": [
+        ("The PLAIN converter: the replacement body for `ssf.update_stream` holding every "
+         "member of this read. `authorization_header` is absent: no read carries it, and "
+         "absent keeps the stored one -- unless the update moves the endpoint (§32.3 rule "
+         "5). `expected_updated_at` is this read's `updated_at`, verbatim (the server's "
+         "own string, §32.2), so an update overtaken by a later write is a `409`, and "
+         "`events_requested` is the one this read carried (an empty list stays empty, "
+         "never omitted: omitting it would widen the stream to every allowed event).\n\n"
+         "**The caller's duty (§32.2, contract 1.62).** This converter cannot know that "
+         "you are about to lower `events_allowed`, so **cutting `events_requested` to the "
+         "new `events_allowed` is yours** wherever you edit the result: a requested list "
+         "left outside the new ceiling is `400`, and one reset to `std::nullopt` "
+         "*resets* the stream to every allowed event (the three meanings of "
+         "`events_requested` are on `SsfStreamApi::update_stream`), and an update built "
+         "from a stale read is `409`. Use the change-taking overload below and the cut is "
+         "made for you.",
+         "SsfStreamInput to_input() const;"),
+        ("**The change-taking form** (§32.2, contract 1.62): this read with `changes` "
+         "applied, as the replacement body for `ssf.update_stream`. It sends the "
+         "`events_requested` and the `expected_updated_at` **as read** (the server's own "
+         "string; an empty list stays an empty list) and, when `changes` lowers "
+         "`events_allowed` without naming `events_requested`, **cuts `events_requested` to "
+         "the new `events_allowed`** (the entries of the read list that are in the new "
+         "ceiling, in their order). An `events_requested` named in `changes` is sent as "
+         "given: the server judges it. An `expected_updated_at` assigned `std::nullopt` in "
+         "`changes` is \"none\": the key is omitted and `null` is never sent. "
+         "`authorization_header` stays absent unless `changes` sets it.",
+         "SsfStreamInput to_input(const SsfStreamChanges& changes) const;"),
+    ],
     "ScimTargetResponse": [(
         "The replacement body for `scim_targets.update` holding every member of this "
         "read. `credential` is absent: no read carries it, and absent keeps the stored "
@@ -1157,6 +1246,8 @@ def emit_models_header() -> str:
         "directions, so every struct is named before any is defined."))
     for rendered in structs:
         out.append(f"struct {rendered};")
+    for rendered in HAND_WRITTEN_MODELS:
+        out.append(f"struct {rendered};")
     out.append("")
 
     # ---- structs ----
@@ -1228,7 +1319,7 @@ def emit_models_header() -> str:
             out.extend(doc(
                 f"Every required member -- {names} -- in the contract's order. This type "
                 "**cannot be built without them** (CONTRACT.md "
-                f"{REQUIRED_CTOR[name]}, contract 1.59 R-27): there is no public default "
+                f"{REQUIRED_CTOR[name]}, {ctor_basis(name)}): there is no public default "
                 "constructor. Set the optional members afterwards.", "    "))
             out.append(f"    {rendered}(" + ", ".join(ctor_param(f) for f in req) + ");")
             out.append("")
@@ -1242,6 +1333,7 @@ def emit_models_header() -> str:
         out.append("};")
         out.append("")
 
+    out.extend(HAND_WRITTEN_MODELS_TEXT)
     out.append("}  // namespace axiam::management")
     out.append("")
     out.append("#endif  // AXIAM_MANAGEMENT_MODELS_HPP")
@@ -1605,8 +1697,13 @@ def op_params(namespace: str, op: dict[str, Any]) -> list[dict[str, str]]:
         if op["paginated"] and q["name"] in {"offset", "limit", "search"}:
             continue
         if q["required"]:
-            params.append({"name": member(q["name"]), "decl": "const std::string&",
+            # An integer the caller read (a `version`, §36.3 rule 2) is an integer in the
+            # signature and is sent exactly as given; everything else stays a string.
+            is_int = q.get("type") == "integer"
+            params.append({"name": member(q["name"]),
+                           "decl": "std::int64_t" if is_int else "const std::string&",
                            "kind": "query", "wire": q["name"], "required": "1",
+                           "integer": "1" if is_int else "",
                            "text": f"The required `{q['name']}` query parameter."})
 
     if op["request_body"] != "none" and op["request_schema"]:
@@ -1629,6 +1726,16 @@ def op_params(namespace: str, op: dict[str, Any]) -> list[dict[str, str]]:
                            "text": f"The optional `{q['name']}` query parameter."})
 
     return params
+
+
+def query_expr(p: dict[str, str]) -> str:
+    """The `QueryValue` value for one parameter: an integer is spelled in decimal."""
+    return f"std::to_string({p['name']})" if p.get("integer") else p["name"]
+
+
+def query_example(p: dict[str, str]) -> str:
+    """A placeholder argument for a required query parameter, in the generated tests."""
+    return "1" if p.get("integer") else '"example"'
 
 
 def response_cpp(op: dict[str, Any]) -> str:
@@ -1701,6 +1808,7 @@ def emit_api_header() -> str:
     out.append("#include <memory>")
     out.append("#include <optional>")
     out.append("#include <string>")
+    out.append("#include <utility>")
     out.append("#include <vector>")
     out.append("")
     out.append('#include "axiam/errors.hpp"')
@@ -1730,7 +1838,7 @@ def emit_api_header() -> str:
         "what lets a pager built on it show a page count belonging to the result set it "
         "is paging.\n\n"
         "It lives here, beside `offset` and `limit`, rather than as an extra argument on "
-        "each of the twenty paginated `list` methods. That is what §27.4 rule 4 asks for "
+        "each of the twenty-six paginated `list` methods. That is what §27.4 rule 4 asks for "
         "and what makes `next()` -- and so `Page::next_request()` -- carry it across a "
         "whole walk: a walk that filtered its first request and dropped the term on the "
         "second would return the matches followed by the unfiltered tail, which reads as "
@@ -1818,6 +1926,22 @@ def emit_api_header() -> str:
     out.append("class ConflictError : public AuthzError {")
     out.append("public:")
     out.append("    explicit ConflictError(const std::string& message) : AuthzError(message) {}")
+    out.append("")
+    out.append("    ConflictError(const std::string& message, std::optional<std::string> reason_code)")
+    out.append("        : AuthzError(message), reason_code_(std::move(reason_code)) {}")
+    out.append("")
+    out.extend(doc(
+        "The `409` body's `reason_code` (§36.4, contract 1.62): which of the server's "
+        "conflicts this is -- `stale_version`, `strands_profile`, `has_children`, "
+        "`site_gone`, `duplicate_name`, `duplicate_vlan`, `duplicate_rank`, "
+        "`profile_exists`, `other` on the `network` operations. **Branch on this, never "
+        "on `what()`**, which carries text for a human. The vocabulary is open: a value "
+        "this SDK does not know is returned verbatim. `std::nullopt` when the body had "
+        "none (a server before 1.1.0, or an operation that does not name one).", "    "))
+    out.append("    const std::optional<std::string>& reason_code() const noexcept { return reason_code_; }")
+    out.append("")
+    out.append("private:")
+    out.append("    std::optional<std::string> reason_code_;")
     out.append("};")
     out.append("")
     out.extend(doc(
@@ -2016,10 +2140,10 @@ def emit_op_body(namespace: str, opname: str, op: dict[str, Any]) -> list[str]:
     if op["paginated"]:
         out.append("    auto query = Transport::paging(page);")
         for p in queries:
-            out.append(f'    query.push_back({{"{p["wire"]}", {p["name"]}}});')
+            out.append(f'    query.push_back({{"{p["wire"]}", {query_expr(p)}}});')
     elif queries:
         out.append("    const std::vector<QueryValue> query{"
-                   + ", ".join(f'{{"{p["wire"]}", {p["name"]}}}' for p in queries) + "};")
+                   + ", ".join(f'{{"{p["wire"]}", {query_expr(p)}}}' for p in queries) + "};")
     else:
         out.append("    const std::vector<QueryValue> query{};")
 
@@ -2317,7 +2441,7 @@ def emit_test() -> str:
                 if p["kind"] == "path":
                     args.append(f'"{EXAMPLE_UUID}"')
                 elif p["kind"] == "query" and p["required"]:
-                    args.append('"example"')
+                    args.append(query_example(p))
                 elif p["kind"] == "body":
                     bschema = op["request_schema"].lstrip("[]")
                     bmodel = model_type(bschema)
@@ -2528,7 +2652,7 @@ def emit_models_test() -> str:
             if prm["kind"] == "path":
                 args.append(f'"{EXAMPLE_UUID}"')
             elif prm["kind"] == "query" and prm["required"]:
-                args.append('"example"')
+                args.append(query_example(prm))
         call_args = ", ".join(args)
         body = example_response(op)
         fixture_body = cpp_raw_string(json.dumps(body)) if body is not None else '""'
@@ -2592,7 +2716,7 @@ def emit_models_test() -> str:
             if prm["kind"] == "path":
                 args.append(f'"{EXAMPLE_UUID}"')
             elif prm["kind"] == "query" and prm["required"]:
-                args.append('"example"')
+                args.append(query_example(prm))
         call_args = ", ".join(args)
         body = example_response(op)
         fixture_body = cpp_raw_string(json.dumps(body)) if body is not None else '""'

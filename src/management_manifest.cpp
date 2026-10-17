@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <stdexcept>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -48,6 +49,9 @@ const char* kind_name(ManifestKind kind) {
         case ManifestKind::Role: return "role";
         case ManifestKind::Group: return "group";
         case ManifestKind::ServiceAccount: return "service_account";
+        case ManifestKind::NetworkPolicy: return "network_policy";
+        case ManifestKind::NetworkSegment: return "network_segment";
+        case ManifestKind::NetworkProfile: return "network_profile";
     }
     return "?";
 }
@@ -83,6 +87,221 @@ bool metadata_equal(const std::string& declared, const std::string& stored) {
     const auto a = nlohmann::json::parse(declared, nullptr, false);
     const auto b = nlohmann::json::parse(stored, nullptr, false);
     return !a.is_discarded() && !b.is_discarded() && a == b;
+}
+
+
+// ---- §27.6.2: the network kinds ----------------------------------------------------------
+
+bool is_network(ManifestKind kind) {
+    return kind == ManifestKind::NetworkPolicy || kind == ManifestKind::NetworkSegment ||
+           kind == ManifestKind::NetworkProfile;
+}
+
+// The natural key of a segment spec: site + kind + name, `kind` as the wire spells it. The
+// separator is a control character no site key, kind or name can hold (each matches
+// ^[A-Za-z0-9][A-Za-z0-9._-]*$ on the server), so two different triples never collide.
+std::string segment_natural_key(const std::string& site, const std::string& kind,
+                                const std::string& name) {
+    return site + '\x1f' + kind + '\x1f' + name;
+}
+
+std::string describe_segment_key(const ManifestNetworkSegment& s) {
+    return "site \"" + s.site + "\", kind \"" + s.kind + "\", name \"" + s.name + "\"";
+}
+
+// A set comparison of a Filter-Id list (§27.6.2 item 3): names compare as exact strings and
+// order is no drift.
+bool same_set(const std::vector<std::string>& a, const std::vector<std::string>& b) {
+    return std::set<std::string>(a.begin(), a.end()) == std::set<std::string>(b.begin(), b.end());
+}
+
+// Everything `plan` reads of the `network` namespace, once per plan and only what the
+// manifest has an entity for. Each list is walked to exhaustion (§27.4 rule 4): a page that
+// carried nothing, or the server's total reached, ends it.
+struct NetworkRead {
+    std::optional<NetworkPolicyResponse> policy;
+    std::optional<std::vector<NetworkSegmentResponse>> segments;
+    std::optional<std::vector<NetworkReplyProfile>> profiles;
+};
+
+template <typename T, typename List>
+std::vector<T> walk(List&& list) {
+    std::vector<T> out;
+    PageRequest request{0, kScanLimit, {}};
+    for (;;) {
+        auto page = list(request);
+        if (page.empty()) break;
+        for (auto& item : page.items) out.push_back(std::move(item));
+        if (static_cast<std::int64_t>(out.size()) >= page.total) break;
+        request = page.next_request();
+    }
+    return out;
+}
+
+const NetworkPolicyResponse& read_policy(NetworkApi& net, NetworkRead& read) {
+    if (!read.policy) read.policy = net.get_policy();
+    return *read.policy;
+}
+
+const std::vector<NetworkSegmentResponse>& read_segments(NetworkApi& net, NetworkRead& read) {
+    if (!read.segments) {
+        read.segments = walk<NetworkSegmentResponse>(
+            [&net](const PageRequest& r) { return net.list_segments(r); });
+    }
+    return *read.segments;
+}
+
+const std::vector<NetworkReplyProfile>& read_profiles(NetworkApi& net, NetworkRead& read) {
+    if (!read.profiles) {
+        read.profiles = walk<NetworkReplyProfile>(
+            [&net](const PageRequest& r) { return net.list_profiles(r); });
+    }
+    return *read.profiles;
+}
+
+const NetworkSegmentResponse* find_read_segment(const std::vector<NetworkSegmentResponse>& all,
+                                                const ManifestNetworkSegment& spec) {
+    for (const auto& r : all) {
+        if (r.site_key == spec.site && to_wire(r.kind) == spec.kind && r.name == spec.name) return &r;
+    }
+    return nullptr;
+}
+
+// Whether a stated segment differs from the read in a member that is not its key (§27.6.2
+// item 3). Only stated members are compared; the read is taken as it is.
+bool segment_drifted(const ManifestNetworkSegment& want, const NetworkSegmentResponse& have) {
+    if (want.vlan_id != have.vlan_id) return true;
+    if (want.rank && *want.rank != have.rank) return true;
+    if (want.filter_ids && !same_set(*want.filter_ids, have.filter_ids)) return true;
+    if (want.enabled && *want.enabled != have.enabled) return true;
+    return false;
+}
+
+// The same for a profile, against the EFFECTIVE profile (clamped timeout included): no hidden
+// value and no stored one is compared.
+bool profile_drifted(const ManifestNetworkProfile& want, const NetworkReplyProfile& have) {
+    if (want.session_timeout_secs != have.session_timeout_secs) return true;
+    if (want.termination_action && *want.termination_action != have.termination_action) return true;
+    if (want.idle_timeout_secs && *want.idle_timeout_secs != have.idle_timeout_secs) return true;
+    if (want.filter_id && *want.filter_id != have.filter_id) return true;
+    if (want.service_type && *want.service_type != have.service_type) return true;
+    return false;
+}
+
+// The body of a `create_segment` from a spec: every stated member, in the order stated, and
+// nothing that was not stated (an unset member is absent, never `null`).
+CreateNetworkSegmentRequest segment_create_body(const ManifestNetworkSegment& spec) {
+    CreateNetworkSegmentRequest body;
+    body.kind = network_segment_kind_from_wire(spec.kind);
+    body.site_key = spec.site;
+    body.name = spec.name;
+    body.vlan_id = spec.vlan_id;
+    if (spec.rank && *spec.rank) body.rank = **spec.rank;
+    if (spec.filter_ids) body.filter_ids = *spec.filter_ids;
+    if (spec.enabled) body.enabled = *spec.enabled;
+    return body;
+}
+
+// The full replacement body of an `Update` (§27.6.2 item 4): the version as read; every
+// stated member replacing the read's; every unstated one carried from the read; a stated
+// "none" left out. No kind, site_key or name: they do not change (§36.3 rule 4).
+ReplaceNetworkSegmentRequest segment_replace_body(const ManifestNetworkSegment& spec,
+                                                  const NetworkSegmentResponse& read) {
+    ReplaceNetworkSegmentRequest body(
+        read.version, spec.vlan_id, spec.filter_ids ? *spec.filter_ids : read.filter_ids,
+        spec.enabled ? *spec.enabled : read.enabled);
+    const std::optional<std::int64_t> rank = spec.rank ? *spec.rank : read.rank;
+    if (rank) body.rank = rank;
+    return body;
+}
+
+NetworkReplyProfileInput profile_create_input(const ManifestNetworkProfile& spec) {
+    NetworkReplyProfileInput in;
+    in.session_timeout_secs = spec.session_timeout_secs;
+    in.termination_action = spec.termination_action;
+    if (spec.idle_timeout_secs) in.idle_timeout_secs = *spec.idle_timeout_secs;
+    if (spec.filter_id) in.filter_id = *spec.filter_id;
+    if (spec.service_type) in.service_type = *spec.service_type;
+    return in;
+}
+
+// An `Update` of a profile: the stated members replace the read's, the unstated are carried
+// from it, a stated "none" is left out. The read's `session_timeout_secs` is the EFFECTIVE
+// value, so a replacement that does not state its timeout would store the clamped one -- but
+// the timeout is always stated, so it is the stated value that is sent (and refused with
+// `403` when it is above the cap, which is the action's failure).
+NetworkReplyProfileInput profile_replace_input(const ManifestNetworkProfile& spec,
+                                               const NetworkReplyProfile& read) {
+    NetworkReplyProfileInput in;
+    in.dictionary = read.dictionary;
+    in.session_timeout_secs = spec.session_timeout_secs;
+    in.termination_action = spec.termination_action ? *spec.termination_action
+                                                    : read.termination_action;
+    in.idle_timeout_secs = spec.idle_timeout_secs ? *spec.idle_timeout_secs : read.idle_timeout_secs;
+    in.filter_id = spec.filter_id ? *spec.filter_id : read.filter_id;
+    in.service_type = spec.service_type ? *spec.service_type : read.service_type;
+    return in;
+}
+
+
+// The `plan` of one network entity (§27.6.2 item 3). Reads only what the manifest has an
+// entity for, once, with `GET`s; the tenant's policy always exists, so it is never `Create`.
+PlannedChange plan_network_entity(const ManifestEntity& e, const Manifest& manifest,
+                                  NetworkApi& net, NetworkRead& read) {
+    PlannedChange change;
+    change.entity = e;
+    switch (e.kind) {
+        case ManifestKind::NetworkPolicy: {
+            const auto& have = read_policy(net, read);
+            change.read_policy = have;
+            change.action = e.network_policy->session_timeout_max_secs != have.session_timeout_max_secs
+                                ? ChangeAction::Update
+                                : ChangeAction::Unchanged;
+            break;
+        }
+        case ManifestKind::NetworkSegment: {
+            const auto* have = find_read_segment(read_segments(net, read), *e.network_segment);
+            if (!have) {
+                change.action = ChangeAction::Create;
+            } else {
+                change.id = have->id;
+                change.read_segment = *have;
+                change.action = segment_drifted(*e.network_segment, *have) ? ChangeAction::Update
+                                                                          : ChangeAction::Unchanged;
+            }
+            break;
+        }
+        case ManifestKind::NetworkProfile: {
+            const auto& spec = *e.network_profile;
+            // Both lists are read (item 3), the profile matched to its segment by `segment_id`.
+            const auto& segments = read_segments(net, read);
+            const auto& profiles = read_profiles(net, read);
+            const auto* segment_spec = find_key_of_kind(manifest, spec.segment, ManifestKind::NetworkSegment);
+            const auto* segment = segment_spec ? find_read_segment(segments, *segment_spec->network_segment)
+                                               : nullptr;
+            const NetworkReplyProfile* have = nullptr;
+            if (segment) {
+                for (const auto& p : profiles) {
+                    if (p.segment_id == segment->id) {
+                        have = &p;
+                        break;
+                    }
+                }
+            }
+            if (!have) {
+                // No segment yet (this apply creates it) or a segment without a profile.
+                change.action = ChangeAction::Create;
+            } else {
+                change.id = segment->id;
+                change.read_profile = *have;
+                change.action = profile_drifted(spec, *have) ? ChangeAction::Update
+                                                             : ChangeAction::Unchanged;
+            }
+            break;
+        }
+        default: break;
+    }
+    return change;
 }
 
 }  // namespace
@@ -173,6 +392,68 @@ void ManifestApi::validate(const Manifest& manifest) {
         }
     }
 
+    // §27.6.2 item 1: the `network` namespace. Everything below is refused BEFORE any request.
+    std::set<std::string> segment_keys_seen;     // site + kind + name
+    std::set<std::string> profile_segments_seen;
+    bool policy_seen = false;
+    for (const auto& e : manifest.entities) {
+        if (e.kind == ManifestKind::NetworkPolicy) {
+            if (!e.network_policy) {
+                throw ManifestError("\"" + e.key + "\" (network_policy) states no network_policy "
+                                    "spec (CONTRACT.md §27.6.2)");
+            }
+            // A singleton: the tenant has exactly one cap, so a manifest carries at most one.
+            if (policy_seen) {
+                throw ManifestError("manifest declares more than one network policy -- the tenant "
+                                    "has exactly one (CONTRACT.md §27.6.2 item 1)");
+            }
+            policy_seen = true;
+        } else if (e.kind == ManifestKind::NetworkSegment) {
+            if (!e.network_segment) {
+                throw ManifestError("\"" + e.key + "\" (network_segment) states no network_segment "
+                                    "spec (CONTRACT.md §27.6.2)");
+            }
+            const auto& seg = *e.network_segment;
+            // One natural key twice cannot be reconciled with one server row.
+            if (!segment_keys_seen.insert(segment_natural_key(seg.site, seg.kind, seg.name)).second) {
+                throw ManifestError("manifest declares two network segments with " +
+                                    describe_segment_key(seg) +
+                                    " -- the natural key is site + kind + name (CONTRACT.md "
+                                    "§27.6.2 item 1)");
+            }
+            // The list is compared as a set, and a set has no repeated member.
+            if (seg.filter_ids) {
+                std::set<std::string> names;
+                for (const auto& f : *seg.filter_ids) {
+                    if (!names.insert(f).second) {
+                        throw ManifestError("\"" + e.key + "\" (network segment) lists Filter-Id \"" +
+                                            f + "\" twice in filter_ids -- the list is compared as a "
+                                            "set (CONTRACT.md §27.6.2 items 1 and 3)");
+                    }
+                }
+            }
+        } else if (e.kind == ManifestKind::NetworkProfile) {
+            if (!e.network_profile) {
+                throw ManifestError("\"" + e.key + "\" (network_profile) states no network_profile "
+                                    "spec (CONTRACT.md §27.6.2)");
+            }
+            const auto& prof = *e.network_profile;
+            // A profile with no segment spec of the manifest is a dangling key: the manifest
+            // does not reach for a segment it does not declare.
+            if (!find_key_of_kind(manifest, prof.segment, ManifestKind::NetworkSegment)) {
+                throw ManifestError("\"" + e.key + "\" (network profile) names segment \"" +
+                                    prof.segment + "\", which this manifest does not declare as a "
+                                    "network segment (CONTRACT.md §27.6.2 item 1)");
+            }
+            // A profile is addressed by its segment: one profile per segment.
+            if (!profile_segments_seen.insert(prof.segment).second) {
+                throw ManifestError("manifest declares two profiles for network segment \"" +
+                                    prof.segment + "\" -- a segment has at most one profile "
+                                    "(CONTRACT.md §27.6.2 item 1)");
+            }
+        }
+    }
+
     // §27.6.1 item 2: the two-shape role binding, for Group and ServiceAccount specs.
     for (const auto& e : manifest.entities) {
         if (e.kind != ManifestKind::Group && e.kind != ManifestKind::ServiceAccount) continue;
@@ -256,6 +537,13 @@ std::vector<ManifestEntity> ManifestApi::ordered(const Manifest& manifest) {
                          const int da = depth_of(a);
                          const int db = depth_of(b);
                          if (da != db) return da < db;
+                         // §27.6.2 item 2: a profile follows its segment, so within the
+                         // profiles the order is the segments' (which is by key). validate()
+                         // already guaranteed each profile names a segment spec.
+                         if (a.kind == ManifestKind::NetworkProfile && a.network_profile &&
+                             b.network_profile && a.network_profile->segment != b.network_profile->segment) {
+                             return a.network_profile->segment < b.network_profile->segment;
+                         }
                          // The tie-break that makes a plan stable across runs.
                          return a.key < b.key;
                      });
@@ -304,6 +592,10 @@ ExistingSet read_existing(const ManagementApi& api, ManifestKind kind) {
                 out[g.name] = Existing{g.id, g.description, "", false};
             }
             break;
+        case ManifestKind::NetworkPolicy:
+        case ManifestKind::NetworkSegment:
+        case ManifestKind::NetworkProfile:
+            break;  // §27.6.2: read through the network handle by plan_network_entity()
         case ManifestKind::ServiceAccount:
             // §27.6.1 item 3: "The natural key is `name`, and the server does not
             // enforce it." A second match for one name marks the FIRST entry ambiguous
@@ -360,6 +652,13 @@ bool binding_satisfied(const RoleAssignment& existing, const std::optional<std::
 // Seeded from every EXISTING entity's id before any write (see apply()), so an entity
 // that needs no change of its own can still be somebody else's dependency.
 using ResolvedIds = std::map<std::pair<ManifestKind, std::string>, std::string>;
+
+// manifest-local segment key -> the segment's `version` as of the LAST thing known about it
+// (§27.6.2 item 4): seeded from what `plan` read, and replaced by the response of the write
+// that changed it, because a profile is checked against the segment's current envelope and
+// the stale version would be `409 stale_version` on every profile that follows a changed
+// segment.
+using SegmentVersions = std::map<std::string, std::int64_t>;
 
 namespace {
 
@@ -495,7 +794,7 @@ void reconcile_role_bindings(
 // own (kind, key) -> id into `resolved` so a LATER entity in the same run that depends
 // on this one can find it.
 void perform(const ManagementApi& api, const Manifest& manifest, PlannedChange& change,
-            ResolvedIds& resolved) {
+            ResolvedIds& resolved, SegmentVersions& segment_versions) {
     const auto& e = change.entity;
     const bool create = change.action == ChangeAction::Create;
     const std::string id = change.id.value_or("");
@@ -623,6 +922,46 @@ void perform(const ManagementApi& api, const Manifest& manifest, PlannedChange& 
             }
             break;
         }
+        case ManifestKind::NetworkPolicy: {
+            // `version` as read (0 for a tenant that has never written a cap), sent exactly.
+            NetworkApi net = api.network();
+            net.replace_policy(ReplaceNetworkPolicyRequest(e.network_policy->session_timeout_max_secs,
+                                                           change.read_policy->version));
+            break;
+        }
+        case ManifestKind::NetworkSegment: {
+            NetworkApi net = api.network();
+            const auto written = create
+                                     ? net.create_segment(segment_create_body(*e.network_segment))
+                                     : net.replace_segment(id, segment_replace_body(*e.network_segment,
+                                                                                    *change.read_segment));
+            change.id = written.id;
+            resolved[{ManifestKind::NetworkSegment, e.key}] = written.id;
+            segment_versions[e.key] = written.version;
+            break;
+        }
+        case ManifestKind::NetworkProfile: {
+            NetworkApi net = api.network();
+            const auto& spec = *e.network_profile;
+            const std::string segment_id =
+                require_resolved(resolved, ManifestKind::NetworkSegment, spec.segment, "network segment");
+            const auto version = segment_versions.find(spec.segment);
+            if (version == segment_versions.end()) {
+                throw ManifestError("manifest: network segment \"" + spec.segment +
+                                    "\" has no known version -- internal ordering error");
+            }
+            if (create) {
+                net.create_profile(CreateNetworkReplyProfileRequest{profile_create_input(spec),
+                                                                    segment_id, version->second});
+            } else {
+                net.replace_profile(
+                    segment_id,
+                    ReplaceNetworkReplyProfileRequest(change.read_profile->version, version->second,
+                                                      profile_replace_input(spec, *change.read_profile)));
+            }
+            change.id = segment_id;
+            break;
+        }
         case ManifestKind::ServiceAccount: {
             std::string new_id = id;
             if (create) {
@@ -683,8 +1022,16 @@ Plan ManifestApi::plan(const Manifest& manifest) const {
     // One read per KIND, not one per entity: ten roles is one list call.
     std::map<ManifestKind, ExistingSet> cache;
 
+    // §27.6.2: the `network` namespace is read through its own handle, once.
+    NetworkApi network = api.network();
+    NetworkRead network_read;
+
     Plan out;
     for (const auto& e : entities) {
+        if (is_network(e.kind)) {
+            out.changes.push_back(plan_network_entity(e, manifest, network, network_read));
+            continue;
+        }
         if (cache.find(e.kind) == cache.end()) {
             cache[e.kind] = read_existing(api, e.kind);
         }
@@ -789,13 +1136,19 @@ ApplyReport ManifestApi::apply(const Manifest& manifest) const {
     for (const auto& c : computed.changes) {
         if (c.id) resolved[{c.entity.kind, c.entity.key}] = *c.id;
     }
+    SegmentVersions segment_versions;
+    for (const auto& c : computed.changes) {
+        if (c.entity.kind == ManifestKind::NetworkSegment && c.read_segment) {
+            segment_versions[c.entity.key] = c.read_segment->version;
+        }
+    }
 
     auto pending = computed.pending();
 
     ApplyReport report;
     for (std::size_t i = 0; i < pending.size(); ++i) {
         try {
-            perform(api, manifest, pending[i], resolved);
+            perform(api, manifest, pending[i], resolved, segment_versions);
         } catch (const AxiamError& e) {
             // §27.7: stop here, do not undo what landed. A partial apply against a live
             // IAM tenant is a state an operator inspects and resumes from; an automatic
@@ -807,12 +1160,24 @@ ApplyReport ManifestApi::apply(const Manifest& manifest) const {
             // rebind case with a RebindFailure rather than a plain AxiamError, but
             // e.what() above already carries the SAME message either way -- an
             // existing caller reading only `failed`/`failure` sees no change.
+            // §27.6.2 item 5: a `409` is that action's failure and says which in
+            // `reason_code`; surfaced verbatim, never parsed out of the message.
+            if (const auto* conflict = dynamic_cast<const ConflictError*>(&e)) {
+                report.failed_reason_code = conflict->reason_code();
+            }
             if (const auto* rebind = dynamic_cast<const RebindFailure*>(&e)) {
                 report.restore_attempted = true;
                 report.restore_succeeded = rebind->restore_succeeded();
                 report.restore_error = rebind->restore_error();
                 report.failed_binding = rebind->binding();
             }
+            report.remaining.assign(pending.begin() + static_cast<long>(i) + 1, pending.end());
+            return report;
+        } catch (const std::invalid_argument& e) {
+            // A local refusal of a body the SDK would not send (an enumeration value it does not
+            // know, §34.2 P12.2): before any request, and the action's failure all the same.
+            report.failed = pending[i];
+            report.failure = e.what();
             report.remaining.assign(pending.begin() + static_cast<long>(i) + 1, pending.end());
             return report;
         }

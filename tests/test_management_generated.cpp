@@ -10,7 +10,7 @@
 #include "axiam/management.hpp"
 #include "management_test_util.hpp"
 
-// One case per CONTRACT.md §27 operation -- all 190 of them. Each asserts the operation issues
+// One case per CONTRACT.md §27 operation -- all 202 of them. Each asserts the operation issues
 // the METHOD the registry names against the PATH the registry names, and that the response
 // decodes into the model without throwing. The fake transport sits at the BOTTOM of the real
 // client, so a §27.8 violation (an operation opening its own request path) fails these rather
@@ -1588,6 +1588,127 @@ AXIAM_TEST("management scim_targets.reconcile reaches its route") {
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/scim-targets/11111111-1111-4111-8111-111111111111/reconcile");
 }
 
+AXIAM_TEST("management network.list_segments reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "enabled": true, "filter_ids": ["example"], "id": "11111111-1111-4111-8111-111111111111", "kind": "access", "name": "example", "path": "example", "rank": 1, "site_key": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1, "vlan_id": 1}], "total": 1, "offset": 0, "limit": 50})json");
+    const auto result = fixture.client.management().network().list_segments();
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/segments");
+}
+
+AXIAM_TEST("management network.create_segment reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "enabled": true, "filter_ids": ["example"], "id": "11111111-1111-4111-8111-111111111111", "kind": "access", "name": "example", "path": "example", "rank": 1, "site_key": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1, "vlan_id": 1})json");
+    CreateNetworkSegmentRequest body{};
+    const auto result = fixture.client.management().network().create_segment(body);
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "POST");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/segments");
+}
+
+AXIAM_TEST("management network.get_segment reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "enabled": true, "filter_ids": ["example"], "id": "11111111-1111-4111-8111-111111111111", "kind": "access", "name": "example", "path": "example", "rank": 1, "site_key": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1, "vlan_id": 1})json");
+    const auto result = fixture.client.management().network().get_segment("11111111-1111-4111-8111-111111111111");
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/segments/11111111-1111-4111-8111-111111111111");
+}
+
+AXIAM_TEST("management network.replace_segment reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "enabled": true, "filter_ids": ["example"], "id": "11111111-1111-4111-8111-111111111111", "kind": "access", "name": "example", "path": "example", "rank": 1, "site_key": "example", "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1, "vlan_id": 1})json");
+    ReplaceNetworkSegmentRequest body({}, {}, {}, {});
+    const auto result = fixture.client.management().network().replace_segment("11111111-1111-4111-8111-111111111111", body);
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "PUT");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/segments/11111111-1111-4111-8111-111111111111");
+}
+
+AXIAM_TEST("management network.delete_segment reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(204, "");
+    fixture.client.management().network().delete_segment("11111111-1111-4111-8111-111111111111", 1);
+
+    AXIAM_CHECK(fixture.state->last().method == "DELETE");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/segments/11111111-1111-4111-8111-111111111111");
+}
+
+AXIAM_TEST("management network.list_profiles reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"items": [{"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "dictionary": "example", "filter_id": "example", "idle_timeout_secs": 1, "segment_id": "11111111-1111-4111-8111-111111111111", "service_type": "framed_user", "session_timeout_clamped": true, "session_timeout_secs": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "termination_action": "default", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1}], "total": 1, "offset": 0, "limit": 50})json");
+    const auto result = fixture.client.management().network().list_profiles();
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/profiles");
+}
+
+AXIAM_TEST("management network.create_profile reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "dictionary": "example", "filter_id": "example", "idle_timeout_secs": 1, "segment_id": "11111111-1111-4111-8111-111111111111", "service_type": "framed_user", "session_timeout_clamped": true, "session_timeout_secs": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "termination_action": "default", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1})json");
+    CreateNetworkReplyProfileRequest body{};
+    const auto result = fixture.client.management().network().create_profile(body);
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "POST");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/profiles");
+}
+
+AXIAM_TEST("management network.get_profile reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "dictionary": "example", "filter_id": "example", "idle_timeout_secs": 1, "segment_id": "11111111-1111-4111-8111-111111111111", "service_type": "framed_user", "session_timeout_clamped": true, "session_timeout_secs": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "termination_action": "default", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1})json");
+    const auto result = fixture.client.management().network().get_profile("11111111-1111-4111-8111-111111111111");
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/profiles/11111111-1111-4111-8111-111111111111");
+}
+
+AXIAM_TEST("management network.replace_profile reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"created_at": "2026-08-26T00:00:00Z", "created_by": "11111111-1111-4111-8111-111111111111", "dictionary": "example", "filter_id": "example", "idle_timeout_secs": 1, "segment_id": "11111111-1111-4111-8111-111111111111", "service_type": "framed_user", "session_timeout_clamped": true, "session_timeout_secs": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "termination_action": "default", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1})json");
+    ReplaceNetworkReplyProfileRequest body({}, {}, {});
+    const auto result = fixture.client.management().network().replace_profile("11111111-1111-4111-8111-111111111111", body);
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "PUT");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/profiles/11111111-1111-4111-8111-111111111111");
+}
+
+AXIAM_TEST("management network.delete_profile reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(204, "");
+    fixture.client.management().network().delete_profile("11111111-1111-4111-8111-111111111111", 1);
+
+    AXIAM_CHECK(fixture.state->last().method == "DELETE");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/profiles/11111111-1111-4111-8111-111111111111");
+}
+
+AXIAM_TEST("management network.get_policy reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"session_timeout_max_secs": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1})json");
+    const auto result = fixture.client.management().network().get_policy();
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "GET");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/policy");
+}
+
+AXIAM_TEST("management network.replace_policy reaches its route") {
+    auto fixture = axtest::mgmt::signed_in(200,
+        R"json({"session_timeout_max_secs": 1, "tenant_id": "11111111-1111-4111-8111-111111111111", "updated_at": "2026-08-26T00:00:00Z", "updated_by": "11111111-1111-4111-8111-111111111111", "version": 1})json");
+    ReplaceNetworkPolicyRequest body({}, {});
+    const auto result = fixture.client.management().network().replace_policy(body);
+    (void) result;
+
+    AXIAM_CHECK(fixture.state->last().method == "PUT");
+    AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/network/policy");
+}
+
 AXIAM_TEST("management settings.get_org reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
         R"json({"certificate": {"default_cert_validity_days": 1, "max_cert_validity_days": 1, "server_cert_allowed_names": ["example"]}, "created_at": "2026-08-26T00:00:00Z", "email": {"email_verification_grace_period_hours": 1, "email_verification_required": true}, "id": "11111111-1111-4111-8111-111111111111", "lockout": {"lockout_backoff_multiplier": 1.5, "lockout_duration_secs": 1, "max_failed_login_attempts": 1, "max_lockout_duration_secs": 1}, "mfa": {"mfa_challenge_lifetime_secs": 1, "mfa_enforced": true}, "notification": {"admin_notifications_enabled": true}, "oidc": {"cimd": {"allow_http": true, "confidential_only": true, "enabled": true, "max_cache_secs": 1, "max_metadata_bytes": 1, "min_cache_secs": 1, "restrict_same_domain": true, "trusted_client_id_domains": ["example"], "trusted_redirect_domains": ["example"]}, "dcr_allowed_redirect_hosts": ["example"], "dcr_allowed_scopes": ["example"], "dcr_max_clients": 1, "dcr_unused_client_ttl_days": 1, "default_locale": "example", "dynamic_registration": "example", "external_client_allowed_resources": ["example"], "saml_idp_enabled": true, "sensitive_scopes_enabled": true, "ssf_enabled": true, "ssf_inactive_reason": "example"}, "opaque": {"opaque_ksf": "example", "opaque_mode": "example", "opaque_suite": "example"}, "password": {"hibp_check_enabled": true, "min_length": 1, "password_history_count": 1, "require_digits": true, "require_lowercase": true, "require_symbols": true, "require_uppercase": true}, "privacy": {"deletion_grace_period_days": 1}, "scope": "Org", "scope_id": "11111111-1111-4111-8111-111111111111", "token": {"access_token_lifetime_secs": 1, "refresh_token_lifetime_secs": 1}, "updated_at": "2026-08-26T00:00:00Z", "webauthn": {"webauthn_user_verification": "example"}})json");
@@ -1898,11 +2019,11 @@ AXIAM_TEST("management platform.mds_refresh reaches its route") {
     AXIAM_CHECK(axtest::mgmt::path_of(fixture.state->last().url) == "/api/v1/mds/refresh");
 }
 
-// §27.9: all 190 registry operations are covered by a case above. Counted from the test
-// registry rather than written as a literal on both sides. `AXIAM_CHECK(190 == 190)` is a
+// §27.9: all 202 registry operations are covered by a case above. Counted from the test
+// registry rather than written as a literal on both sides. `AXIAM_CHECK(202 == 202)` is a
 // tautology, and a case removed by a bad regeneration would still pass it -- this fails
 // instead.
-AXIAM_TEST("management surface covers all 190 registry operations") {
+AXIAM_TEST("management surface covers all 202 registry operations") {
     int reached = 0;
     for (const auto& test : axtest::registry()) {
         if (test.name.rfind("management ", 0) == 0 &&
@@ -1910,7 +2031,7 @@ AXIAM_TEST("management surface covers all 190 registry operations") {
             ++reached;
         }
     }
-    AXIAM_CHECK(reached == 190);
+    AXIAM_CHECK(reached == 202);
 }
 
 }  // namespace
