@@ -1919,6 +1919,142 @@ ScimReconcileAccepted ScimTargetsApi::reconcile(const std::string& id) {
     return Transport::decode<ScimReconcileAccepted>(response, "scim_targets.reconcile");
 }
 
+NetworkApi::NetworkApi(std::shared_ptr<Transport> transport, CallScope scope)
+    : transport_(std::move(transport)), scope_(std::move(scope)) {}
+
+// A COPY, not a mutation. §27.4 rule 3: an administrator holding a handle to their own tenant
+// should not find it repointed at someone else's because an unrelated code path re-scoped a
+// shared object -- and on a management surface that failure mode writes to the wrong tenant
+// rather than merely reading.
+NetworkApi NetworkApi::in_org(std::string org) const {
+    CallScope next = scope_;
+    next.org_id = std::move(org);
+    return NetworkApi(transport_, std::move(next));
+}
+
+NetworkApi NetworkApi::for_tenant(std::string tenant) const {
+    CallScope next = scope_;
+    next.tenant_id = std::move(tenant);
+    return NetworkApi(transport_, std::move(next));
+}
+
+Page<NetworkSegmentResponse> NetworkApi::list_segments(const PageRequest& page, const std::optional<std::string>& site) {
+    const std::vector<PathValue> values{};
+    auto query = Transport::paging(page);
+    query.push_back({"site", site});
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("network.list_segments", "GET", "/api/v1/network/segments",
+                                            values, query, payload);
+
+    return Transport::to_page<NetworkSegmentResponse>(response, page, "network.list_segments");
+}
+
+NetworkSegmentResponse NetworkApi::create_segment(const CreateNetworkSegmentRequest& body) {
+    const std::vector<PathValue> values{};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("network.create_segment", "POST", "/api/v1/network/segments",
+                                            values, query, payload);
+
+    return Transport::decode<NetworkSegmentResponse>(response, "network.create_segment");
+}
+
+NetworkSegmentResponse NetworkApi::get_segment(const std::string& id) {
+    const std::vector<PathValue> values{{"id", id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("network.get_segment", "GET", "/api/v1/network/segments/{id}",
+                                            values, query, payload);
+
+    return Transport::decode<NetworkSegmentResponse>(response, "network.get_segment");
+}
+
+NetworkSegmentResponse NetworkApi::replace_segment(const std::string& id, const ReplaceNetworkSegmentRequest& body) {
+    const std::vector<PathValue> values{{"id", id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("network.replace_segment", "PUT", "/api/v1/network/segments/{id}",
+                                            values, query, payload);
+
+    return Transport::decode<NetworkSegmentResponse>(response, "network.replace_segment");
+}
+
+void NetworkApi::delete_segment(const std::string& id, std::int64_t version) {
+    const std::vector<PathValue> values{{"id", id}};
+    const std::vector<QueryValue> query{{"version", std::to_string(version)}};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    transport_->send("network.delete_segment", "DELETE", "/api/v1/network/segments/{id}",
+                                            values, query, payload);
+}
+
+Page<NetworkReplyProfile> NetworkApi::list_profiles(const PageRequest& page) {
+    const std::vector<PathValue> values{};
+    auto query = Transport::paging(page);
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("network.list_profiles", "GET", "/api/v1/network/profiles",
+                                            values, query, payload);
+
+    return Transport::to_page<NetworkReplyProfile>(response, page, "network.list_profiles");
+}
+
+NetworkReplyProfile NetworkApi::create_profile(const CreateNetworkReplyProfileRequest& body) {
+    const std::vector<PathValue> values{};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("network.create_profile", "POST", "/api/v1/network/profiles",
+                                            values, query, payload);
+
+    return Transport::decode<NetworkReplyProfile>(response, "network.create_profile");
+}
+
+NetworkReplyProfile NetworkApi::get_profile(const std::string& segment_id) {
+    const std::vector<PathValue> values{{"segment_id", segment_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("network.get_profile", "GET", "/api/v1/network/profiles/{segment_id}",
+                                            values, query, payload);
+
+    return Transport::decode<NetworkReplyProfile>(response, "network.get_profile");
+}
+
+NetworkReplyProfile NetworkApi::replace_profile(const std::string& segment_id, const ReplaceNetworkReplyProfileRequest& body) {
+    const std::vector<PathValue> values{{"segment_id", segment_id}};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("network.replace_profile", "PUT", "/api/v1/network/profiles/{segment_id}",
+                                            values, query, payload);
+
+    return Transport::decode<NetworkReplyProfile>(response, "network.replace_profile");
+}
+
+void NetworkApi::delete_profile(const std::string& segment_id, std::int64_t version) {
+    const std::vector<PathValue> values{{"segment_id", segment_id}};
+    const std::vector<QueryValue> query{{"version", std::to_string(version)}};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    transport_->send("network.delete_profile", "DELETE", "/api/v1/network/profiles/{segment_id}",
+                                            values, query, payload);
+}
+
+NetworkPolicyResponse NetworkApi::get_policy() {
+    const std::vector<PathValue> values{};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = std::nullopt;
+    const auto response = transport_->send("network.get_policy", "GET", "/api/v1/network/policy",
+                                            values, query, payload);
+
+    return Transport::decode<NetworkPolicyResponse>(response, "network.get_policy");
+}
+
+NetworkPolicyResponse NetworkApi::replace_policy(const ReplaceNetworkPolicyRequest& body) {
+    const std::vector<PathValue> values{};
+    const std::vector<QueryValue> query{};
+    const std::optional<nlohmann::json> payload = nlohmann::json(body);
+    const auto response = transport_->send("network.replace_policy", "PUT", "/api/v1/network/policy",
+                                            values, query, payload);
+
+    return Transport::decode<NetworkPolicyResponse>(response, "network.replace_policy");
+}
+
 SettingsApi::SettingsApi(std::shared_ptr<Transport> transport, CallScope scope)
     : transport_(std::move(transport)), scope_(std::move(scope)) {}
 
@@ -2453,6 +2589,10 @@ ScimTargetsApi ManagementApi::scim_targets() const {
     return ScimTargetsApi(transport_, scope_);
 }
 
+NetworkApi ManagementApi::network() const {
+    return NetworkApi(transport_, scope_);
+}
+
 SettingsApi ManagementApi::settings() const {
     return SettingsApi(transport_, scope_);
 }
@@ -2486,7 +2626,7 @@ PlatformApi ManagementApi::platform() const {
 namespace axiam {
 
 // The one place the §27 surface is attached to a Client. Defined here rather than in client.cpp
-// so that translation unit keeps knowing nothing about the 190 generated operations.
+// so that translation unit keeps knowing nothing about the 202 generated operations.
 management::ManagementApi Client::management() {
     p_->ensure_open();
     management::CallScope scope;
@@ -2580,6 +2720,10 @@ management::SsfApi Client::ssf() {
 
 management::ScimTargetsApi Client::scim_targets() {
     return management().scim_targets();
+}
+
+management::NetworkApi Client::network() {
+    return management().network();
 }
 
 management::SettingsApi Client::settings() {

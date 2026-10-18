@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "axiam/errors.hpp"
@@ -37,10 +38,11 @@ struct PageRequest {
     /// it show a page count belonging to the result set it is paging.
     ///
     /// It lives here, beside `offset` and `limit`, rather than as an extra argument on each of
-    /// the twenty paginated `list` methods. That is what §27.4 rule 4 asks for and what makes
-    /// `next()` -- and so `Page::next_request()` -- carry it across a whole walk: a walk that
-    /// filtered its first request and dropped the term on the second would return the matches
-    /// followed by the unfiltered tail, which reads as a server bug from the caller's side.
+    /// the twenty-six paginated `list` methods. That is what §27.4 rule 4 asks for and what
+    /// makes `next()` -- and so `Page::next_request()` -- carry it across a whole walk: a walk
+    /// that filtered its first request and dropped the term on the second would return the
+    /// matches followed by the unfiltered tail, which reads as a server bug from the caller's
+    /// side.
     ///
     /// An empty or all-whitespace term is the SAME request as none: no `search` parameter is
     /// sent at all. A search box that fires on every keystroke sends one the moment it is
@@ -121,6 +123,21 @@ public:
 class ConflictError : public AuthzError {
 public:
     explicit ConflictError(const std::string& message) : AuthzError(message) {}
+
+    ConflictError(const std::string& message, std::optional<std::string> reason_code)
+        : AuthzError(message), reason_code_(std::move(reason_code)) {}
+
+    /// The `409` body's `reason_code` (§36.4, contract 1.62): which of the server's conflicts
+    /// this is -- `stale_version`, `strands_profile`, `has_children`, `site_gone`,
+    /// `duplicate_name`, `duplicate_vlan`, `duplicate_rank`, `profile_exists`, `other` on the
+    /// `network` operations. **Branch on this, never on `what()`**, which carries text for a
+    /// human. The vocabulary is open: a value this SDK does not know is returned verbatim.
+    /// `std::nullopt` when the body had none (a server before 1.1.0, or an operation that does
+    /// not name one).
+    const std::optional<std::string>& reason_code() const noexcept { return reason_code_; }
+
+private:
+    std::optional<std::string> reason_code_;
 };
 
 /// `400`/`422` on the management surface -- §27.4 rule 7.
@@ -2074,15 +2091,22 @@ public:
     ///
     /// `PUT /api/v1/tenants/{tenant_id}/ssf/streams/{stream_id}`.
     ///
-    /// An omitted optional member takes its default (§32.2) -- **except `authorization_header`,
-    /// which absent keeps the stored one** -- unless the update moves `endpoint_url` to another
-    /// scheme, host or port while a header is stored: then it must carry `authorization_header`
-    /// again or `clear_authorization_header: true`, else `400` (§32.3 rule 5). Start from
-    /// `SsfStream::to_input()`, which sends back the `events_requested` and the
-    /// `expected_updated_at` it read (contract 1.61, §32.2): an omitted `events_requested`
-    /// *resets* the stream to every allowed event, `{}` keeps the receiver's "none". An update
-    /// overtaken by a write since the read -- the receiver's included -- is `409`, never
-    /// retried: read the stream again.
+    /// **The three meanings of `events_requested` on an update** (§32.2, contract 1.62):
+    /// *absent* (`std::nullopt`) **resets** the stream to every event of `events_allowed`,
+    /// widening a narrowing the receiver made; **`{}`** is stored as the receiver's "none" --
+    /// it does not widen, and the stream carries nothing; a list of event types is stored as
+    /// given and refused `400` if any is outside `events_allowed`. A raw API client is bound by
+    /// the same meaning. **Every other omitted optional member takes its default on an update**
+    /// -- `description`, `endpoint_url` and `status_reason` null, `subject_format` `iss_sub`,
+    /// `status` `enabled`, `clear_authorization_header` false -- **except
+    /// `authorization_header`, which absent keeps the stored one**, unless the update moves
+    /// `endpoint_url` to another scheme, host or port while a header is stored: then it must
+    /// carry `authorization_header` again or `clear_authorization_header: true`, else `400`
+    /// (§32.3 rule 5). Build the body with the change-taking form `SsfStream::to_input(const
+    /// SsfStreamChanges&)`, which sends the `events_requested` and the `expected_updated_at` it
+    /// read and cuts `events_requested` to a lowered `events_allowed`; the plain `to_input()`
+    /// sends them as read and leaves that cut to you. An update overtaken by a write since the
+    /// read -- the receiver's included -- is `409`, never retried: read the stream again.
     ///
     /// @param stream_id The `{stream_id}` path parameter.
     /// @param body The request body.
@@ -2203,6 +2227,140 @@ public:
     ///
     /// @param id The `{id}` path parameter.
     ScimReconcileAccepted reconcile(const std::string& id);
+
+private:
+    std::shared_ptr<Transport> transport_;
+    CallScope scope_;
+};
+
+/// A tenant's network segments and the RADIUS reply profile each owns (RADIUS D4): a segment is
+/// a node of the reserved /network subtree of the resource tree (kind, VLAN, Filter-Id
+/// envelope, placement rank), and its profile is the typed `axiam-radius-reply/1` record a
+/// decision renders. Every write is conditional on the `version` the caller read and passes the
+/// server's write gate. The tenant's Session-Timeout cap is one more row of it (get_policy,
+/// replace_policy): lowering it is always allowed, raising it is allowed and audited. The
+/// decision route FreeRADIUS calls is not in this registry.
+///
+/// The `network` namespace handle (§27.2), reached as `client.management().network()`. §27.3's
+/// C++ row is `client.service_accounts().rotate_secret(id)` -- a method returning a handle,
+/// snake_case -- and that is what this is.
+///
+/// Every method goes through the one shared transport, so §3 CSRF, the §4 cookie jar, the §5
+/// tenant header, §6 TLS, §16 retry and §19 telemetry apply without this class doing anything
+/// to opt in (§27.8).
+class NetworkApi {
+public:
+    NetworkApi(std::shared_ptr<Transport> transport, CallScope scope);
+
+    /// A COPY of this handle scoped to `org_id` (§27.4 rule 3). Returns a new handle; the one
+    /// you called it on is untouched.
+    NetworkApi in_org(std::string org_id) const;
+
+    /// A COPY of this handle scoped to `tenant_id` (§27.4 rule 3). See in_org().
+    NetworkApi for_tenant(std::string tenant_id) const;
+
+    /// `GET /api/v1/network/segments`
+    ///
+    /// `GET /api/v1/network/segments`.
+    ///
+    /// Returns ONE page. `Page::total` is the server's count across all pages and is not
+    /// `items.size()` -- see §27.4 rule 4.
+    ///
+    /// @param page Which page to fetch; defaults to the first.
+    /// @param site The optional `site` query parameter.
+    Page<NetworkSegmentResponse> list_segments(const PageRequest& page = {}, const std::optional<std::string>& site = std::nullopt);
+
+    /// `POST /api/v1/network/segments`
+    ///
+    /// `POST /api/v1/network/segments`.
+    ///
+    /// @param body The request body.
+    NetworkSegmentResponse create_segment(const CreateNetworkSegmentRequest& body);
+
+    /// `GET /api/v1/network/segments/{id}`
+    ///
+    /// `GET /api/v1/network/segments/{id}`.
+    ///
+    /// @param id The `{id}` path parameter.
+    NetworkSegmentResponse get_segment(const std::string& id);
+
+    /// `PUT /api/v1/network/segments/{id}`
+    ///
+    /// `PUT /api/v1/network/segments/{id}`.
+    ///
+    /// @param id The `{id}` path parameter.
+    /// @param body The request body.
+    NetworkSegmentResponse replace_segment(const std::string& id, const ReplaceNetworkSegmentRequest& body);
+
+    /// `DELETE /api/v1/network/segments/{id}?version=`
+    ///
+    /// `DELETE /api/v1/network/segments/{id}`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
+    /// rather than succeeding quietly.
+    ///
+    /// @param id The `{id}` path parameter.
+    /// @param version The required `version` query parameter.
+    void delete_segment(const std::string& id, std::int64_t version);
+
+    /// `GET /api/v1/network/profiles`
+    ///
+    /// `GET /api/v1/network/profiles`.
+    ///
+    /// Returns ONE page. `Page::total` is the server's count across all pages and is not
+    /// `items.size()` -- see §27.4 rule 4.
+    ///
+    /// @param page Which page to fetch; defaults to the first.
+    Page<NetworkReplyProfile> list_profiles(const PageRequest& page = {});
+
+    /// `POST /api/v1/network/profiles`
+    ///
+    /// `POST /api/v1/network/profiles`.
+    ///
+    /// @param body The request body.
+    NetworkReplyProfile create_profile(const CreateNetworkReplyProfileRequest& body);
+
+    /// `GET /api/v1/network/profiles/{segment_id}`
+    ///
+    /// `GET /api/v1/network/profiles/{segment_id}`.
+    ///
+    /// @param segment_id The `{segment_id}` path parameter.
+    NetworkReplyProfile get_profile(const std::string& segment_id);
+
+    /// `PUT /api/v1/network/profiles/{segment_id}`
+    ///
+    /// `PUT /api/v1/network/profiles/{segment_id}`.
+    ///
+    /// @param segment_id The `{segment_id}` path parameter.
+    /// @param body The request body.
+    NetworkReplyProfile replace_profile(const std::string& segment_id, const ReplaceNetworkReplyProfileRequest& body);
+
+    /// `DELETE /api/v1/network/profiles/{segment_id}?version=`
+    ///
+    /// `DELETE /api/v1/network/profiles/{segment_id}`.
+    ///
+    /// Returns nothing; the server answers with an empty body.
+    ///
+    /// NOT idempotent (§27.4 rule 6): deleting something already deleted throws NotFoundError
+    /// rather than succeeding quietly.
+    ///
+    /// @param segment_id The `{segment_id}` path parameter.
+    /// @param version The required `version` query parameter.
+    void delete_profile(const std::string& segment_id, std::int64_t version);
+
+    /// `GET /api/v1/network/policy`
+    ///
+    /// `GET /api/v1/network/policy`.
+    NetworkPolicyResponse get_policy();
+
+    /// `PUT /api/v1/network/policy`
+    ///
+    /// `PUT /api/v1/network/policy`.
+    ///
+    /// @param body The request body.
+    NetworkPolicyResponse replace_policy(const ReplaceNetworkPolicyRequest& body);
 
 private:
     std::shared_ptr<Transport> transport_;
@@ -2650,7 +2808,7 @@ private:
     CallScope scope_;
 };
 
-/// The CONTRACT.md §27 management surface: 190 operations across 28 namespaces.
+/// The CONTRACT.md §27 management surface: 202 operations across 29 namespaces.
 ///
 /// Reached as `client.management()`. Each accessor hands back a namespace handle (§27.2) that
 /// can be re-scoped per call with `in_org()` / `for_tenant()`.
@@ -2745,6 +2903,15 @@ public:
     /// The credential AXIAM pushes with is write-only. Deleting a target does not deprovision
     /// anything downstream.
     ScimTargetsApi scim_targets() const;
+
+    /// A tenant's network segments and the RADIUS reply profile each owns (RADIUS D4): a
+    /// segment is a node of the reserved /network subtree of the resource tree (kind, VLAN,
+    /// Filter-Id envelope, placement rank), and its profile is the typed `axiam-radius-reply/1`
+    /// record a decision renders. Every write is conditional on the `version` the caller read
+    /// and passes the server's write gate. The tenant's Session-Timeout cap is one more row of
+    /// it (get_policy, replace_policy): lowering it is always allowed, raising it is allowed
+    /// and audited. The decision route FreeRADIUS calls is not in this registry.
+    NetworkApi network() const;
 
     /// Effective settings, and the organization/tenant layers they resolve from.
     SettingsApi settings() const;

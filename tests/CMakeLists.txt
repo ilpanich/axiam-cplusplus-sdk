@@ -44,6 +44,16 @@ add_executable(axiam_cpp_tests
   # CONTRACT.md §27.11 rule 5 (contract 1.61): Certificate.user_id on both requests and
   # every read -- sent as given, key omitted when unset, null and absent both decode.
   test_contract_161.cpp
+  # CONTRACT.md §36 (contract 1.62): the `network` namespace -- §36.8's five required tests
+  # (the surface, versions, closed bodies, open decoding and pagination, errors) and the one
+  # route that is NOT here, the RADIUS decision (§36.11).
+  test_network.cpp
+  # CONTRACT.md §27.6.2 / §27.9 (contract 1.62): the `network` namespace in a manifest.
+  test_manifest_network.cpp
+  # CONTRACT.md §34.6 (contract 1.62) items (e)-(i): the change-taking SSF form (§32.8 test 7),
+  # the update_stream call-site text, an assigned null being "none", the server's own
+  # expected_updated_at string, and the untyped request user_id.
+  test_contract_162.cpp
   # CONTRACT.md §5.2 rule 1 (contract 1.51): the acting-tenant helper -- sent when
   # set, absent when not, gated on a held login result, and part of the §17 memo key.
   test_acting_tenant.cpp
@@ -182,3 +192,20 @@ target_compile_definitions(axiam_cpp_tests PRIVATE
 
 add_test(NAME axiam_cpp_tests COMMAND axiam_cpp_tests)
 set_tests_properties(axiam_cpp_tests PROPERTIES TIMEOUT 120)
+
+# C162-02: the ABI version. A public type the caller holds grew in 1.1.0, so the shared library
+# is libaxiam_cpp.so.2 while the package stays 1.x (CMakeLists.txt, AXIAM_SOVERSION). Only a
+# shared ELF build has a SONAME to read.
+if(BUILD_SHARED_LIBS AND UNIX AND NOT APPLE)
+  find_program(AXIAM_READELF readelf)
+  if(AXIAM_READELF)
+    add_test(NAME abi_soname
+      COMMAND ${CMAKE_COMMAND}
+        -DREADELF=${AXIAM_READELF}
+        -DLIB=$<TARGET_FILE:axiam_cpp>
+        -DEXPECTED=libaxiam_cpp.so.${AXIAM_SOVERSION}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/check_soname.cmake)
+  else()
+    message(WARNING "readelf not found: the abi_soname test is not registered")
+  endif()
+endif()

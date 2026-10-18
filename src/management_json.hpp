@@ -50,6 +50,8 @@ void to_json(nlohmann::json& j, const MfaMethodType& value);
 void from_json(const nlohmann::json& j, MfaMethodType& value);
 void to_json(nlohmann::json& j, const NameIdFormat& value);
 void from_json(const nlohmann::json& j, NameIdFormat& value);
+void to_json(nlohmann::json& j, const NetworkSegmentKind& value);
+void from_json(const nlohmann::json& j, NetworkSegmentKind& value);
 void to_json(nlohmann::json& j, const NotificationEventType& value);
 void from_json(const nlohmann::json& j, NotificationEventType& value);
 void to_json(nlohmann::json& j, const PermissionEffect& value);
@@ -60,6 +62,10 @@ void to_json(nlohmann::json& j, const PgpKeyPurpose& value);
 void from_json(const nlohmann::json& j, PgpKeyPurpose& value);
 void to_json(nlohmann::json& j, const PgpKeyStatus& value);
 void from_json(const nlohmann::json& j, PgpKeyStatus& value);
+void to_json(nlohmann::json& j, const RadiusServiceType& value);
+void from_json(const nlohmann::json& j, RadiusServiceType& value);
+void to_json(nlohmann::json& j, const RadiusTerminationAction& value);
+void from_json(const nlohmann::json& j, RadiusTerminationAction& value);
 void to_json(nlohmann::json& j, const ReactorMode& value);
 void from_json(const nlohmann::json& j, ReactorMode& value);
 void to_json(nlohmann::json& j, const SamlBinding& value);
@@ -140,6 +146,12 @@ void to_json(nlohmann::json& j, const CreateGroupRequest& value);
 void from_json(const nlohmann::json& j, CreateGroupRequest& value);
 void to_json(nlohmann::json& j, const CreateIntermediateCaRequest& value);
 void from_json(const nlohmann::json& j, CreateIntermediateCaRequest& value);
+void to_json(nlohmann::json& j, const NetworkReplyProfileInput& value);
+void from_json(const nlohmann::json& j, NetworkReplyProfileInput& value);
+void to_json(nlohmann::json& j, const CreateNetworkReplyProfileRequest& value);
+void from_json(const nlohmann::json& j, CreateNetworkReplyProfileRequest& value);
+void to_json(nlohmann::json& j, const CreateNetworkSegmentRequest& value);
+void from_json(const nlohmann::json& j, CreateNetworkSegmentRequest& value);
 void to_json(nlohmann::json& j, const CreateNotificationRuleRequest& value);
 void from_json(const nlohmann::json& j, CreateNotificationRuleRequest& value);
 void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value);
@@ -244,6 +256,12 @@ void to_json(nlohmann::json& j, const MigrateCustodyResponse& value);
 void from_json(const nlohmann::json& j, MigrateCustodyResponse& value);
 void to_json(nlohmann::json& j, const MtlsTrustAnchorResponse& value);
 void from_json(const nlohmann::json& j, MtlsTrustAnchorResponse& value);
+void to_json(nlohmann::json& j, const NetworkPolicyResponse& value);
+void from_json(const nlohmann::json& j, NetworkPolicyResponse& value);
+void to_json(nlohmann::json& j, const NetworkReplyProfile& value);
+void from_json(const nlohmann::json& j, NetworkReplyProfile& value);
+void to_json(nlohmann::json& j, const NetworkSegmentResponse& value);
+void from_json(const nlohmann::json& j, NetworkSegmentResponse& value);
 void to_json(nlohmann::json& j, const NotificationPolicy& value);
 void from_json(const nlohmann::json& j, NotificationPolicy& value);
 void to_json(nlohmann::json& j, const NotificationRuleResponse& value);
@@ -284,6 +302,12 @@ void to_json(nlohmann::json& j, const ReactorResponse& value);
 void from_json(const nlohmann::json& j, ReactorResponse& value);
 void to_json(nlohmann::json& j, const ReadyResponse& value);
 void from_json(const nlohmann::json& j, ReadyResponse& value);
+void to_json(nlohmann::json& j, const ReplaceNetworkPolicyRequest& value);
+void from_json(const nlohmann::json& j, ReplaceNetworkPolicyRequest& value);
+void to_json(nlohmann::json& j, const ReplaceNetworkReplyProfileRequest& value);
+void from_json(const nlohmann::json& j, ReplaceNetworkReplyProfileRequest& value);
+void to_json(nlohmann::json& j, const ReplaceNetworkSegmentRequest& value);
+void from_json(const nlohmann::json& j, ReplaceNetworkSegmentRequest& value);
 void to_json(nlohmann::json& j, const ResolvedPermissionGrant& value);
 void from_json(const nlohmann::json& j, ResolvedPermissionGrant& value);
 void to_json(nlohmann::json& j, const Resource& value);
@@ -410,6 +434,27 @@ void from_json(const nlohmann::json& j, WebhookResponse& value);
 // decode them. Each specialization decodes through the constructor and encodes through the
 // to_json above.
 namespace nlohmann {
+template <>
+struct adl_serializer<axiam::management::ReplaceNetworkPolicyRequest> {
+    static axiam::management::ReplaceNetworkPolicyRequest from_json(const json& j);
+    static void to_json(json& j, const axiam::management::ReplaceNetworkPolicyRequest& value) {
+        axiam::management::to_json(j, value);
+    }
+};
+template <>
+struct adl_serializer<axiam::management::ReplaceNetworkReplyProfileRequest> {
+    static axiam::management::ReplaceNetworkReplyProfileRequest from_json(const json& j);
+    static void to_json(json& j, const axiam::management::ReplaceNetworkReplyProfileRequest& value) {
+        axiam::management::to_json(j, value);
+    }
+};
+template <>
+struct adl_serializer<axiam::management::ReplaceNetworkSegmentRequest> {
+    static axiam::management::ReplaceNetworkSegmentRequest from_json(const json& j);
+    static void to_json(json& j, const axiam::management::ReplaceNetworkSegmentRequest& value) {
+        axiam::management::to_json(j, value);
+    }
+};
 template <>
 struct adl_serializer<axiam::management::SamlServiceProviderInput> {
     static axiam::management::SamlServiceProviderInput from_json(const json& j);

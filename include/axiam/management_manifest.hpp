@@ -20,6 +20,13 @@
 /// - **Omission is never deletion.** There is no delete action at all, so an incomplete
 ///   manifest cannot become a destructive one.
 ///
+/// From contract 1.62 a manifest may also declare the `network` namespace (§27.6.2): the
+/// tenant's `Session-Timeout` cap, its segments and their reply profiles. Every write there
+/// is conditional on the `version` the plan read, is never retried, and a `409` is that
+/// action's failure -- `ApplyReport::failed_reason_code` says which. The namespace is
+/// human-only: an `apply` of a manifest with a `network` section needs a human caller, and a
+/// service-account token meets `401` at the first network action.
+///
 /// Entities are addressed by a manifest-local `key`, never by a server-assigned UUID —
 /// that is what lets the same manifest mean the same thing against a fresh tenant and an
 /// existing one, since a UUID does not exist until the first apply.
@@ -27,6 +34,7 @@
 #ifndef AXIAM_MANAGEMENT_MANIFEST_HPP
 #define AXIAM_MANAGEMENT_MANIFEST_HPP
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -54,6 +62,16 @@ enum class ManifestKind {
     /// resource it names — both already ordered ahead of this by the enumerator
     /// values above.
     ServiceAccount,
+    /// The tenant's `Session-Timeout` cap (CONTRACT.md §27.6.2, contract 1.62): a
+    /// singleton, written FIRST of the `network` kinds because a profile's timeout is
+    /// checked against the cap at the write.
+    NetworkPolicy,
+    /// A network segment (§27.6.2), natural key site + kind + name. After the policy and
+    /// before the profiles: a profile is written against a segment that exists.
+    NetworkSegment,
+    /// A segment's reply profile (§27.6.2), natural key its segment. Last, and in the
+    /// order of its segments.
+    NetworkProfile,
 };
 
 /// What a plan intends to do to one declared entity.
@@ -87,6 +105,75 @@ struct ManifestRoleBinding {
     /// client-side at `plan()` time (see the note above); omit the field for an
     /// inheritable binding, which is the default both here and on the wire.
     std::optional<bool> inherit;
+};
+
+/// A member that can be stated as "none" in a manifest (CONTRACT.md §27.6.2 item 4).
+///
+/// Disengaged is SILENT -- the manifest says nothing about the member, so it is never an
+/// assertion and an `Update` carries the value the read had (§27.6 rule 3). Engaged with an
+/// empty inner optional is an assigned `null`: "none", left OUT of the body, which is how a
+/// replacement clears an optional member -- and `null` is never sent. Build the second with
+/// `stated_none<T>()`: a bare `std::nullopt` here is the silent one.
+template <typename T>
+using ManifestNullable = std::optional<std::optional<T>>;
+
+/// A `ManifestNullable<T>` that states "none" (see ManifestNullable).
+template <typename T>
+ManifestNullable<T> stated_none() {
+    return ManifestNullable<T>(std::optional<T>{});
+}
+
+/// The `network.segments[]` spec (CONTRACT.md §27.6.2 item 1), for an entity of kind
+/// `NetworkSegment`.
+///
+/// The natural key is `site` + `kind` + `name`, where `kind` is the **wire** spelling --
+/// `"access"` or `"quarantine"`, the value `create_segment` writes and every segment read
+/// returns. There is no other spelling here and no mapping to one: `zones` is a path segment
+/// of the server's resource tree, not a kind. The three are the key and so are never drift
+/// (§36.3 rule 4); every other member is a field, reconciled by §27.6 rule 3.
+struct ManifestNetworkSegment {
+    std::string site{};  ///< The wire `site_key`; a single-site tenant uses `default`.
+    std::string kind{};  ///< `access` or `quarantine`, exactly as the API spells it.
+    std::string name{};  ///< The segment's name, unique within the site and kind.
+    std::int64_t vlan_id = 0;  ///< The VLAN (1 to 4094). Stated, so compared and sent.
+    /// The placement rank: required of an `access` segment, absent for `quarantine`.
+    /// `stated_none<std::int64_t>()` leaves it out of the body.
+    ManifestNullable<std::int64_t> rank = std::nullopt;
+    /// The envelope: the `Filter-Id` names the segment's profile may choose from.
+    ///
+    /// **Compared as a SET** (§27.6.2 item 3): the same names in another order are
+    /// `Unchanged`. A name listed twice is refused at plan time with no request made. When
+    /// the SDK writes the segment it sends the names **in the order stated here**.
+    std::optional<std::vector<std::string>> filter_ids = std::nullopt;
+    std::optional<bool> enabled = std::nullopt;  ///< Whether the segment is a placement candidate.
+};
+
+/// The `network.profiles[]` spec (CONTRACT.md §27.6.2 item 1), for an entity of kind
+/// `NetworkProfile`. A profile has no name or id of its own: its natural key is its segment.
+///
+/// **Judged on the read** (§27.6.2 item 3). A stated member is compared with the effective
+/// profile the read returns, and `session_timeout_secs` with the effective -- clamped --
+/// value. A value above the tenant cap therefore differs from the read and plans as an
+/// `Update`; `apply` sends the `replace_profile`, the server refuses it (`403`
+/// `authorization_denied`), and that is the action's failure: reported as given, `apply`
+/// stops, nothing is retried or lowered to the cap by the SDK.
+struct ManifestNetworkProfile {
+    std::string segment{};  ///< The `key` of a segment spec of this manifest.
+    std::int64_t session_timeout_secs = 0;  ///< `Session-Timeout`, seconds. Stated, so compared.
+    /// `Termination-Action`. A read always carries one, so there is no "none" to state.
+    std::optional<RadiusTerminationAction> termination_action = std::nullopt;
+    ManifestNullable<std::int64_t> idle_timeout_secs = std::nullopt;  ///< `Idle-Timeout`, seconds.
+    ManifestNullable<std::string> filter_id = std::nullopt;  ///< One of the segment's `filter_ids`.
+    ManifestNullable<RadiusServiceType> service_type = std::nullopt;  ///< `framed_user` only.
+};
+
+/// The `network.policy` spec (CONTRACT.md §27.6.2 item 1), for an entity of kind
+/// `NetworkPolicy`: the tenant's one `Session-Timeout` cap. A singleton, so it has no key
+/// beyond the entity's own, and a manifest carries at most one. It always exists on the
+/// server (the default, version 0, until written), so it is never `Create`: `Unchanged` or
+/// `Update`.
+struct ManifestNetworkPolicy {
+    std::int64_t session_timeout_max_secs = 0;  ///< The cap, 300 to 86 400.
 };
 
 /// One entity a manifest declares must exist.
@@ -124,6 +211,17 @@ struct ManifestEntity {
     /// `apply` — use `roles().unassign_from_group()` / `assign_to_group()` (or the
     /// service-account pair) directly for that.
     std::vector<ManifestRoleBinding> roles{};
+
+    // ---- Contract 1.62, §27.6.2: the `network` namespace. Appended after `roles` for the
+    // reason the 1.51 members were appended after `depends_on`. Exactly the one that
+    // matches `kind` is set; the others are ignored. ----
+
+    /// For a `NetworkSegment`: its spec.
+    std::optional<ManifestNetworkSegment> network_segment = std::nullopt;
+    /// For a `NetworkProfile`: its spec.
+    std::optional<ManifestNetworkProfile> network_profile = std::nullopt;
+    /// For a `NetworkPolicy`: its spec.
+    std::optional<ManifestNetworkPolicy> network_policy = std::nullopt;
 };
 
 /// A declarative description of the state a tenant must be in.
@@ -152,6 +250,18 @@ struct PlannedChange {
     /// `ApplyReport::applied`.
     std::optional<Sensitive<std::string>> service_account_secret;
 
+    // ---- §27.6.2: what `plan` READ for a network entity. `apply` builds the
+    // version-conditional `replace_*` body from these, so the version it sends is the one
+    // the plan read, exactly -- and never a re-read. Disengaged for every other kind, and
+    // for a `Create`. ----
+
+    /// The segment as read (`NetworkSegment` `Update` and `Unchanged`).
+    std::optional<NetworkSegmentResponse> read_segment;
+    /// The profile as read -- the effective one (`NetworkProfile` `Update` and `Unchanged`).
+    std::optional<NetworkReplyProfile> read_profile;
+    /// The policy as read (`NetworkPolicy`).
+    std::optional<NetworkPolicyResponse> read_policy;
+
     /// A one-line rendering, e.g. `create permission:read`.
     std::string describe() const;
 };
@@ -178,6 +288,14 @@ struct ApplyReport {
     std::vector<PlannedChange> applied;    ///< Changes that succeeded, in order.
     std::optional<PlannedChange> failed;   ///< The change that failed, if any.
     std::string failure;                   ///< Why it failed.
+
+    /// The `reason_code` of the `409` that failed the action (CONTRACT.md §36.4, §27.6.2
+    /// item 5) -- `stale_version`, `strands_profile`, `has_children`, `profile_exists`,
+    /// `duplicate_name`, `duplicate_vlan`, `duplicate_rank`, `site_gone`, `other`, or a value
+    /// this SDK has never seen, verbatim. Branch on this, never on `failure`. Disengaged
+    /// when the failure was not a `409`, or the server named no reason. The recovery is to
+    /// run `apply` again, which re-reads.
+    std::optional<std::string> failed_reason_code;
     std::vector<PlannedChange> remaining;  ///< Never attempted because of the failure.
 
     /// CONTRACT.md §27.6.1: a role binding's `Update` has no update endpoint, so it is
@@ -317,6 +435,27 @@ private:
 #define AXIAM_SERVICE_ACCOUNT(...) \
     ::axiam::management::ManifestEntity { \
         .kind = ::axiam::management::ManifestKind::ServiceAccount, __VA_ARGS__ \
+    }
+
+/// A `ManifestEntity` of kind `NetworkPolicy` (contract 1.62, §27.6.2); set
+/// `.network_policy = ManifestNetworkPolicy{...}`.
+#define AXIAM_NETWORK_POLICY(...) \
+    ::axiam::management::ManifestEntity { \
+        .kind = ::axiam::management::ManifestKind::NetworkPolicy, __VA_ARGS__ \
+    }
+
+/// A `ManifestEntity` of kind `NetworkSegment` (contract 1.62, §27.6.2); set
+/// `.network_segment = ManifestNetworkSegment{...}`.
+#define AXIAM_NETWORK_SEGMENT(...) \
+    ::axiam::management::ManifestEntity { \
+        .kind = ::axiam::management::ManifestKind::NetworkSegment, __VA_ARGS__ \
+    }
+
+/// A `ManifestEntity` of kind `NetworkProfile` (contract 1.62, §27.6.2); set
+/// `.network_profile = ManifestNetworkProfile{...}`, its `.segment` naming a segment's key.
+#define AXIAM_NETWORK_PROFILE(...) \
+    ::axiam::management::ManifestEntity { \
+        .kind = ::axiam::management::ManifestKind::NetworkProfile, __VA_ARGS__ \
     }
 
 /// A `Manifest` holding the entity specs given.

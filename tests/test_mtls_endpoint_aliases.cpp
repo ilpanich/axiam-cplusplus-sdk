@@ -273,6 +273,33 @@ AXIAM_TEST("§21.3 rule 2 every aliasable endpoint goes to the alias host") {
     }
 }
 
+AXIAM_TEST("§14.1 rule 2 (1.62) an mTLS client's device_authorize and device_poll both go to the alias host, and send no Authorization header") {
+    // The certificate is presented on the connection (Builder::with_client_cert), so at both
+    // endpoints it is the alias host -- the listener that asks for it -- that is called. A
+    // client that is ALSO configured with a secret sends it in the form body at both, as at
+    // every other token request, and never as `Authorization: Basic` (§12.1 rule 3).
+    Fixture f;
+    auto client = make_client(f, /*mtls=*/true);
+
+    client.device_authorize();
+    client.device_poll(axiam::Sensitive<std::string>("dc"));
+
+    AXIAM_REQUIRE(host_of_last_call(*f.st, "/oauth2/device_authorization") == kMtlsBase);
+    AXIAM_REQUIRE(host_of_last_call(*f.st, "/oauth2/token") == kMtlsBase);
+    std::lock_guard<std::mutex> lock(f.st->mtx);
+    std::size_t seen = 0;
+    for (const auto& r : f.st->requests) {
+        const bool device = r.url.find("/oauth2/device_authorization") != std::string::npos ||
+                            r.url.find("/oauth2/token") != std::string::npos;
+        if (!device) continue;
+        ++seen;
+        AXIAM_REQUIRE(r.headers.find("Authorization") == r.headers.end());
+        AXIAM_REQUIRE(r.body.find(std::string("client_secret=") + kClientSecret) != std::string::npos);
+        AXIAM_REQUIRE(r.body.find("client_id=") != std::string::npos);
+    }
+    AXIAM_REQUIRE(seen == 2);
+}
+
 // ── Consequence 1: absence means "no separate host" ────────────────────────
 
 AXIAM_TEST("§21.3 rule 2 an mTLS client with no aliases keeps the top-level endpoints") {

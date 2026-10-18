@@ -1568,12 +1568,19 @@ DeviceAuthorization Client::device_authorize(std::optional<std::string> scope,
     }
 
     Form form;
-    // ONLY client_id. §14.1 is explicit on both halves: a device that cannot
-    // show a browser also cannot hold a client secret, so an SDK MUST NOT send
-    // one here AND MUST NOT refuse to call this from a client constructed
-    // without one. Note that this deliberately does not route through
-    // add_client_auth(), which would attach a configured secret.
-    form.add("client_id", client_id);
+    // §14.1 rule 2 (contract 1.62): the endpoint authenticates the client by the method it
+    // is REGISTERED for, as /token does. A client configured with a secret sends it, in the
+    // form body (`client_secret`; §12.1 rule 3 -- never `Authorization: Basic`, whichever of
+    // client_secret_post and client_secret_basic it is registered for), exactly as at its
+    // other token requests. A PUBLIC client -- the usual device, which cannot hold a secret
+    // -- sends `client_id` and no credential at all, and is not refused here for having none
+    // (rule 1). A credential is sent only when the caller configured one: this never borrows
+    // a secret from another configuration and never invents one.
+    //
+    // This SDK implements neither `private_key_jwt` client assertions nor DPoP proofs, so
+    // there is no assertion to add; an mTLS client certificate is presented on the
+    // connection itself (Builder::with_client_cert), here and at the poll.
+    add_client_auth(*p_, form, client_id);
     form.add("scope", scope);
 
     HttpRequest req;
@@ -1629,13 +1636,10 @@ OidcTokenSet device_poll_with(Client::Impl& impl, const OidcConfiguration& confi
     Form form;
     form.add("grant_type", kDeviceCodeGrantType);
     form.add("device_code", device_code);
-    form.add("client_id", client_id);
-    // A device client is public by definition (see device_authorize), but a
-    // confidential one driving the same grant must still authenticate — the
-    // secret goes out only when one is configured.
-    if (impl.oidc_client_secret) {
-        form.add("client_secret", detail::reveal(*impl.oidc_client_secret));
-    }
+    // §14.1 rule 3: `client_id` on EVERY poll (the server reads the client before it looks
+    // at the device code), and, by rule 2, the same credential as at device_authorize --
+    // the secret in the form body when one is configured, nothing for a public client.
+    add_client_auth(impl, form, client_id);
 
     // retryable=true, and this is the ONE token-endpoint call §16.2 allows it
     // for: a 5xx or transport failure mid-poll is not terminal, because a server
