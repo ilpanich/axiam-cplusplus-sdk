@@ -148,6 +148,10 @@ struct MiniServer {
                    R"(/oauth2/token","jwks_uri":")" + o +
                    R"(/oauth2/jwks","device_authorization_endpoint":")" + o +
                    R"(/oauth2/device_authorization"})";
+        } else if (path.find("/.well-known/uma2-configuration") != std::string::npos) {
+            const std::string o = "http://127.0.0.1:" + std::to_string(port);
+            body = R"({"issuer":")" + o + R"(","token_endpoint":")" + o +
+                   R"(/oauth2/token","permission_endpoint":")" + o + R"(/uma/permission","resource_registration_endpoint":")" + o + R"(/uma/resource"})";
         } else if (path.find("/oauth2/device_authorization") != std::string::npos) {
             body =
                 R"({"device_code":"dc","user_code":"WDJB-MJHT","verification_uri":"https://x/d",)"
@@ -317,6 +321,15 @@ AXIAM_TEST("§14.6 (1.63): no session cookie and no X-CSRF-Token on device autho
     c.device_authorize();
     c.device_poll(axiam::Sensitive<std::string>("dc"));
     c.oidc_refresh(axiam::Sensitive<std::string>("rt"));
+    // The UMA ticket grant is a POST /oauth2/token as well (C163-04).
+    UmaExchangeTicketParams uma;
+    uma.ticket = axiam::Sensitive<std::string>("ticket");
+    uma.claim_token = axiam::Sensitive<std::string>("claim");
+    uma.credentials.client_id = "rs";
+    uma.credentials.client_secret = axiam::Sensitive<std::string>("secret");
+    c.uma_exchange_ticket(uma);
+    // Control (C163-08): a non-/oauth2 call after login still carries the session.
+    c.check_access("read", "res-1");
 
     server.shutdown();
 
@@ -327,9 +340,13 @@ AXIAM_TEST("§14.6 (1.63): no session cookie and no X-CSRF-Token on device autho
         AXIAM_CHECK_FALSE(r.had_cookie);
         AXIAM_CHECK(r.csrf.empty());
     }
-    AXIAM_CHECK(oauth2 == 3);
-    // Control: the same jar still serves an ordinary request.
+    AXIAM_CHECK(oauth2 == 4);
+    // Control: the same jar still serves an ordinary request, with its session and CSRF token.
     AXIAM_CHECK(server.seen[0].path.find("/auth/login") != std::string::npos);
+    const auto& last = server.seen.back();
+    AXIAM_CHECK(last.path.find("/oauth2/") == std::string::npos);
+    AXIAM_CHECK(last.had_cookie);
+    AXIAM_CHECK(last.csrf == "csrf-int");
 }
 
 // Non-secret PEM stubs (see note in test_builder.cpp). The key marker is

@@ -19,12 +19,12 @@ gains a member (below); nothing is removed.
 
 - **No session cookie and no `X-CSRF-Token` on any `/oauth2/*` request** (contract 1.63 (a), §6.1
   rule 11, §12.1 rule 3). The token endpoint (exchange, refresh, device poll, CIBA poll), `introspect`,
-  `revoke`, `device_authorize`, `par`, `ciba_initiate`, the JWKS fetch and the revocation feed are now
+  `revoke`, `device_authorize`, `par`, `ciba_initiate`, the UMA ticket exchange, the JWKS fetch and the revocation feed are now
   `sessionless`: they neither read nor write the cookie jar. Before this, a client that held a login
   session replayed its `axiam_*` cookie to them. Test: `tests/test_integration_curl.cpp` (real libcurl
   transport and a jar holding a session: a device authorization, a poll and a token request, none carrying
   the cookie or the header). The cookie-less requests ride a small pool of cookie-less handles, so they keep a
-  hot connection of their own; `tests/test_transport_reuse.cpp` no longer routes its verb check through the JWKS.
+  hot connection of their own, and `CurlTransport` treats any request under `/oauth2/` as sessionless whether or not the call site flagged it; `tests/test_transport_reuse.cpp` no longer routes its verb check through the JWKS.
 - **`plan` refuses an unknown open-enum value on an unstated member** (C162-07, §27.6.2 item 4 as amended
   in 1.62). A network profile `Update` used to carry a `termination_action` or `service_type` it read as
   `Unknown` into the `PUT`, where it failed at serialization; `plan` now raises `ValidationError` naming the
@@ -49,7 +49,7 @@ gains a member (below); nothing is removed.
 
 - `DeviceAuthorizationRequest.client_id` (now nullable in the spec) is not modelled by this SDK, which builds
   that form itself; nothing changes. No DPoP proofs are generated, so §21.7.4's key lifetime has nothing to
-  bind here. This SDK ships no AMQP producer, so 1.63 (c) does not apply.
+  bind here. C++ ships no AMQP, so 1.63 (c) does not apply. `axiam::kVersion` is "1.2.0", pinned to `CMakeLists.txt` by `tests/test_version_policy.cpp`.
 
 ## [1.1.0] - 2026-10-16
 

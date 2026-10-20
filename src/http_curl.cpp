@@ -511,10 +511,27 @@ void CurlTransport::merge_into_shared_jar(const std::string& request_url,
     }
 }
 
+/// Whether `url`'s path is under `/oauth2/` (§6.1 rule 11): the backstop for a call site that
+/// builds its own request and forgets `sessionless`.
+static bool is_oauth2_url(const std::string& url) {
+    std::size_t start = url.find("://");
+    start = (start == std::string::npos) ? 0 : start + 3;
+    const std::size_t slash = url.find('/', start);
+    return slash != std::string::npos && url.compare(slash, 8, "/oauth2/") == 0;
+}
+
 HttpResponse CurlTransport::perform(const HttpRequest& req) {
     // §24.1 (contract 1.45): a request that must not replay the shared jar's
     // cookies is routed off the pool entirely — see perform_isolated().
-    if (req.no_stored_cookies || req.sessionless) return perform_isolated(req);
+    // §6.1 rule 11 (contract 1.63): so is every /oauth2/* request, flagged or not.
+    if (req.no_stored_cookies || req.sessionless || is_oauth2_url(req.url)) {
+        if (!req.sessionless && is_oauth2_url(req.url)) {
+            HttpRequest flagged = req;
+            flagged.sessionless = true;
+            return perform_isolated(flagged);
+        }
+        return perform_isolated(req);
+    }
 
     HandleLease lease{impl_.get(), impl_->acquire()};
     CURL* h = lease.h;
