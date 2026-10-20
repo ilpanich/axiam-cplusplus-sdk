@@ -87,6 +87,15 @@ struct CurlTransport::Impl {
     std::vector<CURL*> all;       // every handle ever created, for cleanup
     unsigned in_use = 0;
 
+    // Handles with NO cookie engine and no share object, for the requests that must neither
+    // read nor write the jar (`no_stored_cookies`, `sessionless`: §24.1, §28.12.2, §6.1 rule 11).
+    // Pooled like the others so such a request keeps a hot connection, but outside the
+    // `max_concurrent_requests` cap: they are the exception, and bounding them by it could
+    // starve a pooled request behind a handle that is merely idle.
+    std::mutex plain_mtx;
+    std::vector<CURL*> plain_idle;
+    std::vector<CURL*> plain_all;
+
     explicit Impl(TlsConfig c) : cfg(std::move(c)) {
         ensure_curl_global_init();
         if (cfg.max_concurrent_requests == 0) cfg.max_concurrent_requests = 1;
@@ -105,6 +114,7 @@ struct CurlTransport::Impl {
         // Easy handles first: an easy handle still referencing a freed share
         // is a use-after-free inside libcurl.
         for (CURL* h : all) curl_easy_cleanup(h);
+        for (CURL* h : plain_all) curl_easy_cleanup(h);
         if (share != nullptr) curl_share_cleanup(share);
     }
 
@@ -138,6 +148,26 @@ struct CurlTransport::Impl {
             }
             pool_cv.wait(lock);
         }
+    }
+
+    CURL* acquire_plain() {
+        std::lock_guard<std::mutex> lock(plain_mtx);
+        if (!plain_idle.empty()) {
+            CURL* h = plain_idle.back();
+            plain_idle.pop_back();
+            return h;
+        }
+        CURL* h = curl_easy_init();
+        if (h == nullptr) return nullptr;
+        apply_connection_reuse_options(h);  // connection-scoped only; no cookie/share option here.
+        plain_all.push_back(h);
+        return h;
+    }
+
+    void release_plain(CURL* h) {
+        if (h == nullptr) return;
+        std::lock_guard<std::mutex> lock(plain_mtx);
+        plain_idle.push_back(h);
     }
 
     void release(CURL* h) {
@@ -496,8 +526,8 @@ HttpResponse CurlTransport::perform(const HttpRequest& req) {
     return transfer(h, req);
 }
 
-/// The §24.1 path for `webauthn_setup_register_start` / `_finish`: a fresh,
-/// unshared, unpooled handle with NO cookie engine at all, so it can neither
+/// The §24.1 path for `webauthn_setup_register_start` / `_finish`: a
+/// handle from the cookie-less pool (no share object, NO cookie engine at all), so it can neither
 /// read the shared jar (the property §24.8's test asserts) nor quietly gain
 /// one of its own that would need disabling again before the handle could
 /// safely return to the pool. TLS policy (§6/§6.1) is unaffected — transfer()
@@ -508,16 +538,15 @@ HttpResponse CurlTransport::perform(const HttpRequest& req) {
 /// pool's jar explicitly, rather than letting this handle's own (absent)
 /// engine capture it implicitly.
 HttpResponse CurlTransport::perform_isolated(const HttpRequest& req) {
-    CURL* h = curl_easy_init();
+    CURL* h = impl_->acquire_plain();
     if (h == nullptr) {
         HttpResponse resp;
         resp.transport_error = "could not allocate a libcurl handle";
         return resp;
     }
-    Impl::apply_connection_reuse_options(h);  // connection-scoped only; no cookie/share option here.
 
     HttpResponse resp = transfer(h, req);
-    curl_easy_cleanup(h);
+    impl_->release_plain(h);
 
     // A sessionless request (§28.12.2 rule 3, §32.7) adopts nothing either.
     if (!req.sessionless && resp.transport_error.empty() && !resp.set_cookies.empty()) {

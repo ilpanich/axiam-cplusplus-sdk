@@ -141,6 +141,19 @@ struct MiniServer {
         std::string extra_headers;
         if (path.find("/oauth2/jwks") != std::string::npos) {
             body = R"({"keys":[]})";
+        } else if (path.find("/.well-known/openid-configuration") != std::string::npos) {
+            const std::string o = "http://127.0.0.1:" + std::to_string(port);
+            body = R"({"issuer":")" + o + R"(","authorization_endpoint":")" + o +
+                   R"(/oauth2/authorize","token_endpoint":")" + o +
+                   R"(/oauth2/token","jwks_uri":")" + o +
+                   R"(/oauth2/jwks","device_authorization_endpoint":")" + o +
+                   R"(/oauth2/device_authorization"})";
+        } else if (path.find("/oauth2/device_authorization") != std::string::npos) {
+            body =
+                R"({"device_code":"dc","user_code":"WDJB-MJHT","verification_uri":"https://x/d",)"
+                R"("expires_in":600,"interval":1})";
+        } else if (path.find("/oauth2/token") != std::string::npos) {
+            body = R"({"access_token":"at","token_type":"Bearer","expires_in":900})";
         } else if (path.find("/auth/login") != std::string::npos) {
             body =
                 R"({"session_id":"s","expires_in":900,)"
@@ -281,6 +294,42 @@ AXIAM_TEST("libcurl transport: setup/register/* never replays the jar, and finis
     // login's — proving the adoption happened on FINISH's response and not
     // merely left over from the earlier login.
     AXIAM_CHECK(check_req.csrf == "csrf-post-setup");
+}
+
+// CONTRACT.md §14.6 (contract 1.63), §6.1 rule 11, §12.1 rule 3: a jar that HOLDS session
+// cookies, then a device authorization, a device poll and a token request -- neither the cookie
+// nor X-CSRF-Token is sent on any of them. Against the REAL libcurl transport, whose jar holds
+// the session cookie and whose client has captured a CSRF token by the time they run.
+AXIAM_TEST("§14.6 (1.63): no session cookie and no X-CSRF-Token on device authorization, device poll or token request") {
+    MiniServer server;
+    AXIAM_REQUIRE(server.start());
+
+    Client c = Client::builder()
+                   .base_url("http://127.0.0.1:" + std::to_string(server.port))
+                   .tenant_slug("acme")
+                   .tenant_id("22222222-2222-2222-2222-222222222222")
+                   .oidc_client_id("example-rp")
+                   .build();
+
+    AXIAM_REQUIRE(c.login("a", "b").user.has_value());
+    AXIAM_REQUIRE(c.csrf_token().has_value());  // the header would be sent on a /api/v1 write
+
+    c.device_authorize();
+    c.device_poll(axiam::Sensitive<std::string>("dc"));
+    c.oidc_refresh(axiam::Sensitive<std::string>("rt"));
+
+    server.shutdown();
+
+    std::size_t oauth2 = 0;
+    for (const auto& r : server.seen) {
+        if (r.path.find("/oauth2/") == std::string::npos) continue;
+        ++oauth2;
+        AXIAM_CHECK_FALSE(r.had_cookie);
+        AXIAM_CHECK(r.csrf.empty());
+    }
+    AXIAM_CHECK(oauth2 == 3);
+    // Control: the same jar still serves an ordinary request.
+    AXIAM_CHECK(server.seen[0].path.find("/auth/login") != std::string::npos);
 }
 
 // Non-secret PEM stubs (see note in test_builder.cpp). The key marker is

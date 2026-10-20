@@ -80,6 +80,7 @@ PageRequest PageRequest::next() const {
     // Dropping it here would return the matches followed by the unfiltered tail, which
     // reads as a server bug from the caller's side.
     out.search = search;
+    out.site = site;
     return out;
 }
 

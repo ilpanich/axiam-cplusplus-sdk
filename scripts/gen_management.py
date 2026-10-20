@@ -1853,6 +1853,15 @@ def emit_api_header() -> str:
     out.append("    std::string search;")
     out.append("")
     out.extend(doc(
+        "The `site` filter of `NetworkApi::list_segments`, or unset for none (§36.8 test "
+        "4).\n\n"
+        "Like `search` it is part of WHICH PAGE this is, so `next()` carries it and a "
+        "caller paging `list_segments` does not repeat it by hand. An explicit `site` "
+        "argument to `list_segments` wins and is what the returned `Page::request` then "
+        "carries. Ignored by every other `list`.", "    "))
+    out.append("    std::optional<std::string> site;")
+    out.append("")
+    out.extend(doc(
         "The page after this one -- same size and same term, advanced by exactly "
         "`limit`.\n\n"
         "By the requested limit, not by how many items came back: §27.4 rule 4 stops "
@@ -2138,9 +2147,19 @@ def emit_op_body(namespace: str, opname: str, op: dict[str, Any]) -> list[str]:
     # query values
     queries = [p for p in params if p["kind"] == "query"]
     if op["paginated"]:
-        out.append("    auto query = Transport::paging(page);")
+        # A `site` query parameter is part of WHICH PAGE this is (contract 1.62 §36.8 test 4):
+        # an explicit argument wins, otherwise the page request's own `site` is used, and the
+        # request the Page records carries it so `next_request()` keeps it.
+        has_site = any(p["wire"] == "site" for p in queries)
+        if has_site:
+            out.append("    PageRequest effective = page;")
+            out.append("    if (site) effective.site = site;")
+        out.append(f"    auto query = Transport::paging({'effective' if has_site else 'page'});")
         for p in queries:
-            out.append(f'    query.push_back({{"{p["wire"]}", {query_expr(p)}}});')
+            if p["wire"] == "site":
+                out.append('    query.push_back({"site", effective.site});')
+            else:
+                out.append(f'    query.push_back({{"{p["wire"]}", {query_expr(p)}}});')
     elif queries:
         out.append("    const std::vector<QueryValue> query{"
                    + ", ".join(f'{{"{p["wire"]}", {query_expr(p)}}}' for p in queries) + "};")
@@ -2168,7 +2187,8 @@ def emit_op_body(namespace: str, opname: str, op: dict[str, Any]) -> list[str]:
     out.append("")
     model = model_type(schema.lstrip("[]"))
     if kind == "page":
-        out.append(f"    return Transport::to_page<{model}>(response, page, \"{canonical}\");")
+        page_ref = "effective" if any(p["wire"] == "site" for p in queries) and op["paginated"] else "page"
+        out.append(f"    return Transport::to_page<{model}>(response, {page_ref}, \"{canonical}\");")
     elif kind == "array":
         out.append(f"    return Transport::decode<std::vector<{model}>>(response, \"{canonical}\");")
     else:

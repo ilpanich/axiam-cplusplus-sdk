@@ -661,3 +661,65 @@ AXIAM_TEST("§27.7 / §27.6.2: the designated-initializer macros build the netwo
 }
 
 }  // namespace
+
+// ---- C162-07 / §27.6.2 item 4 (as amended in 1.62) -----------------------------------------
+
+AXIAM_TEST("§27.6.2 item 4 (C162-07): plan refuses an Update that would carry an open-enum value read as unknown on an unstated member -- no write is sent") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, page({segment_json(kSegA, "staff")})},
+        {200, page({profile_json(kSegA, {{"termination_action", "future"}})})},
+    });
+    // States another member (idle_timeout_secs drifts) but not termination_action.
+    Manifest manifest{{segment_entity("seg", "staff"), profile_entity("prof", "seg")}};
+    manifest.entities[0].network_segment->vlan_id = 110;
+    manifest.entities[1].network_profile->idle_timeout_secs = 900;
+
+    bool refused = false;
+    try {
+        fixture.client.management().manifest().plan(manifest);
+    } catch (const ValidationError& e) {
+        refused = true;
+        AXIAM_CHECK(std::string(e.what()).find("termination_action") != std::string::npos);
+    }
+    AXIAM_CHECK(refused);
+    for (const auto& w : wire_of(fixture)) AXIAM_CHECK(w.method == "GET");
+}
+
+AXIAM_TEST("§27.6.2 item 4 (C162-07): stating the member replaces the unknown value, so plan proceeds") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, page({segment_json(kSegA, "staff")})},
+        {200, page({profile_json(kSegA, {{"termination_action", "future"}})})},
+    });
+    Manifest manifest{{segment_entity("seg", "staff"), profile_entity("prof", "seg")}};
+    manifest.entities[1].network_profile->termination_action = RadiusTerminationAction::RadiusRequest;
+
+    const auto plan = fixture.client.management().manifest().plan(manifest);
+    AXIAM_REQUIRE(plan.changes.size() == 2);
+    AXIAM_CHECK(plan.changes[1].action == ChangeAction::Update);
+}
+
+AXIAM_TEST("§36.8 test 4 (C162-16): PageRequest::next() carries site, and list_segments sends it on every page") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, page({segment_json(kSegA, "staff")})},
+        {200, page({})},
+    });
+    auto net = fixture.client.management().network();
+    PageRequest first;
+    first.limit = 1;
+    const auto p1 = net.list_segments(first, std::string("lab"));
+    AXIAM_CHECK(p1.request.site == std::optional<std::string>("lab"));
+    const auto next = p1.next_request();
+    AXIAM_CHECK(next.site == std::optional<std::string>("lab"));
+    net.list_segments(next);  // no site argument: the page request's own is used
+
+    std::vector<std::string> urls;
+    {
+        std::lock_guard<std::mutex> lock(fixture.state->mtx);
+        for (const auto& r : fixture.state->requests) {
+            if (r.url.find("/network/segments") != std::string::npos) urls.push_back(r.url);
+        }
+    }
+    AXIAM_REQUIRE(urls.size() == 2);
+    for (const auto& u : urls) AXIAM_CHECK(u.find("site=lab") != std::string::npos);
+    AXIAM_CHECK(urls[1].find("offset=1") != std::string::npos);
+}

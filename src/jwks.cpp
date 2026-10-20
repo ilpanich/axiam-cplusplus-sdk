@@ -134,6 +134,7 @@ void JwksVerifier::ensure_keys_locked() {
     req.method = "GET";
     req.url = base_url_ + "/oauth2/jwks";
     req.headers["Accept"] = "application/json";
+    req.sessionless = true;  // §6.1 rule 11: no session cookie on /oauth2/*
     const HttpResponse resp = transport_(req);
     if (!resp.transport_error.empty() || resp.status != 200) {
         return;  // keep any previously cached keys

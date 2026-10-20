@@ -6,6 +6,51 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-20
+
+Contract 1.63 (§34.7) and the two follow-ups of the 1.62 conformance review (#76). `CONTRACT.md`,
+`openapi.json` and `management-registry.json` are re-vendored byte for byte from ilpanich/axiam
+`a6cd10eba` (branch `claude/release-1.1.1`; this SDK vendors no `proto/`; `opaque-test-vectors.json`
+is unchanged); `scripts/gen_management.py --check` is current, with no new operation (**202 across 29**).
+The README states conformance at contract 1.63. This is a minor release because a public value type
+gains a member (below); nothing is removed.
+
+### Fixed
+
+- **No session cookie and no `X-CSRF-Token` on any `/oauth2/*` request** (contract 1.63 (a), §6.1
+  rule 11, §12.1 rule 3). The token endpoint (exchange, refresh, device poll, CIBA poll), `introspect`,
+  `revoke`, `device_authorize`, `par`, `ciba_initiate`, the JWKS fetch and the revocation feed are now
+  `sessionless`: they neither read nor write the cookie jar. Before this, a client that held a login
+  session replayed its `axiam_*` cookie to them. Test: `tests/test_integration_curl.cpp` (real libcurl
+  transport and a jar holding a session: a device authorization, a poll and a token request, none carrying
+  the cookie or the header). The cookie-less requests ride a small pool of cookie-less handles, so they keep a
+  hot connection of their own; `tests/test_transport_reuse.cpp` no longer routes its verb check through the JWKS.
+- **`plan` refuses an unknown open-enum value on an unstated member** (C162-07, §27.6.2 item 4 as amended
+  in 1.62). A network profile `Update` used to carry a `termination_action` or `service_type` it read as
+  `Unknown` into the `PUT`, where it failed at serialization; `plan` now raises `ValidationError` naming the
+  member, after the reads and before any write, unless the manifest states that member. Tests:
+  `tests/test_manifest_network.cpp` (a profile read with `termination_action: "future"`, another member
+  stated, the refusal and no `PUT`; and the stated member proceeding). The open enum keeps no raw text, so the
+  message names the member, not the value.
+
+### Added
+
+- **`PageRequest::site`** (C162-16, §36.8 test 4). `next()` carries it, so a walk over `list_segments` keeps its
+  `site` filter; the call's `site` argument still wins and is recorded in `Page::request`. Test:
+  `tests/test_manifest_network.cpp`.
+
+### Binary compatibility
+
+- **The shared library's ABI version is now 3 (`libaxiam_cpp.so.3`).** `PageRequest`, which `Page<T>` embeds
+  and the library fills, gained a member at the end. It is not source-breaking: designated and positional
+  aggregate initialisers that already compiled still do. Rebuild against 1.2.0.
+
+### Notes
+
+- `DeviceAuthorizationRequest.client_id` (now nullable in the spec) is not modelled by this SDK, which builds
+  that form itself; nothing changes. No DPoP proofs are generated, so §21.7.4's key lifetime has nothing to
+  bind here. This SDK ships no AMQP producer, so 1.63 (c) does not apply.
+
 ## [1.1.0] - 2026-10-16
 
 Contract 1.62 (§34.6) on top of contract 1.61 (§34.5, the 1.0.1 fields). Release 1.0.1 was

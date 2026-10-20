@@ -127,7 +127,7 @@ struct NetworkRead {
 template <typename T, typename List>
 std::vector<T> walk(List&& list) {
     std::vector<T> out;
-    PageRequest request{0, kScanLimit, {}};
+    PageRequest request{0, kScanLimit, {}, {}};
     for (;;) {
         auto page = list(request);
         if (page.empty()) break;
@@ -244,6 +244,26 @@ NetworkReplyProfileInput profile_replace_input(const ManifestNetworkProfile& spe
 }
 
 
+// §27.6.2 item 4 (as amended in 1.62): an `Update` carries every unstated member from the read,
+// and an open-enum value this SDK read as unknown cannot be carried -- it is no value the SDK
+// can write. `plan` therefore refuses, before any write, naming the member, unless the manifest
+// states that member (the stated value then replaces it). The read's raw text is not kept by
+// the open enum, so the message names the member and says the value is unknown to this SDK.
+void refuse_unknown_carried(const ManifestNetworkProfile& spec, const NetworkReplyProfile& read) {
+    if (!spec.termination_action && read.termination_action == RadiusTerminationAction::Unknown) {
+        throw ValidationError(
+            "network profile '" + spec.segment + "': termination_action holds a value this SDK does "
+            "not know and the manifest does not state it, so an Update cannot carry it (CONTRACT.md "
+            "§27.6.2 item 4); state termination_action in the manifest");
+    }
+    if (!spec.service_type && read.service_type && *read.service_type == RadiusServiceType::Unknown) {
+        throw ValidationError(
+            "network profile '" + spec.segment + "': service_type holds a value this SDK does not "
+            "know and the manifest does not state it, so an Update cannot carry it (CONTRACT.md "
+            "§27.6.2 item 4); state service_type in the manifest");
+    }
+}
+
 // The `plan` of one network entity (§27.6.2 item 3). Reads only what the manifest has an
 // entity for, once, with `GET`s; the tenant's policy always exists, so it is never `Create`.
 PlannedChange plan_network_entity(const ManifestEntity& e, const Manifest& manifest,
@@ -296,6 +316,7 @@ PlannedChange plan_network_entity(const ManifestEntity& e, const Manifest& manif
                 change.read_profile = *have;
                 change.action = profile_drifted(spec, *have) ? ChangeAction::Update
                                                              : ChangeAction::Unchanged;
+                if (change.action == ChangeAction::Update) refuse_unknown_carried(spec, *have);
             }
             break;
         }
@@ -568,7 +589,7 @@ ExistingSet read_existing(const ManagementApi& api, ManifestKind kind) {
     // No `search`: a manifest scan reads the tenant's current state for one kind in
     // full, and a filtered read would make the plan's "does this exist?" answer depend
     // on a term nobody asked for.
-    const PageRequest page{0, kScanLimit, {}};
+    const PageRequest page{0, kScanLimit, {}, {}};
     ExistingSet out;
 
     switch (kind) {

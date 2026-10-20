@@ -869,6 +869,7 @@ std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
     // so no Authorization header either.
     req.headers["Content-Type"] = "application/x-www-form-urlencoded";
     req.body = form.str();
+    req.sessionless = true;  // §6.1 rule 11 / §12.1 rule 3: no session cookie, no X-CSRF-Token on /oauth2/*
 
     const int budget = (retryable && impl.retry_enabled) ? detail::kRetryMaxAttempts : 1;
     req.replayable = budget > 1;  // §34.2 P11: a request this SDK sends twice may keep the pool
@@ -1125,6 +1126,7 @@ std::string token_admin_call(Client::Impl& impl, const OidcConfiguration& config
     req.headers["Accept"] = "application/json";
     req.headers["Content-Type"] = "application/x-www-form-urlencoded";
     req.body = form.str();
+    req.sessionless = true;  // §6.1 rule 11 / §12.1 rule 3: no session cookie, no X-CSRF-Token on /oauth2/*
 
     const int budget = (retryable && impl.retry_enabled) ? detail::kRetryMaxAttempts : 1;
     req.replayable = budget > 1;  // §34.2 P11: a request this SDK sends twice may keep the pool
@@ -1590,6 +1592,7 @@ DeviceAuthorization Client::device_authorize(std::optional<std::string> scope,
     req.headers["Accept"] = "application/json";
     req.headers["Content-Type"] = "application/x-www-form-urlencoded";
     req.body = form.str();
+    req.sessionless = true;  // §6.1 rule 11 / §12.1 rule 3: no session cookie, no X-CSRF-Token on /oauth2/*
 
     // §16.2 names `device_authorize` ineligible: it mints a device code, and a
     // silent retry would strand a first one the user might already be typing.
@@ -1950,6 +1953,7 @@ PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
     req.headers["Accept"] = "application/json";
     req.headers["Content-Type"] = "application/x-www-form-urlencoded";
     req.body = form.str();
+    req.sessionless = true;  // §6.1 rule 11 / §12.1 rule 3: no session cookie, no X-CSRF-Token on /oauth2/*
 
     // Exactly one attempt (§26.2 rule 4). A POST that creates server state falls
     // outside §16.2's read-only eligibility exactly as oidc_exchange does, and
@@ -2327,6 +2331,7 @@ CibaPollOutcome ciba_poll_once(Client::Impl& impl, const OidcConfiguration& conf
     req.headers["Accept"] = "application/json";
     req.headers["Content-Type"] = "application/x-www-form-urlencoded";
     req.body = form.str();
+    req.sessionless = true;  // §6.1 rule 11 / §12.1 rule 3: no session cookie, no X-CSRF-Token on /oauth2/*
 
     CibaPollOutcome out;
     const int budget = impl.retry_enabled ? detail::kRetryMaxAttempts : 1;
@@ -2432,6 +2437,7 @@ CibaInitiateResponse Client::ciba_initiate(const CibaInitiateParams& params) {
     req.headers["Accept"] = "application/json";
     req.headers["Content-Type"] = "application/x-www-form-urlencoded";
     req.body = form.str();
+    req.sessionless = true;  // §6.1 rule 11 / §12.1 rule 3: no session cookie, no X-CSRF-Token on /oauth2/*
 
     // §33.7 rule 1: NEVER retried — not on a transport error, a 5xx or a 429.
     // Every accepted call stores a request and may notify a person.
