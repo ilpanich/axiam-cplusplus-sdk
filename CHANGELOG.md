@@ -10,7 +10,7 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 Contract 1.63 (§34.7) and the two follow-ups of the 1.62 conformance review (#76). `CONTRACT.md`,
 `openapi.json` and `management-registry.json` are re-vendored byte for byte from ilpanich/axiam
-`a6cd10eba` (branch `claude/release-1.1.1`; this SDK vendors no `proto/`; `opaque-test-vectors.json`
+`d919ba0cc` (branch `claude/release-1.1.1`; this SDK vendors no `proto/`; `opaque-test-vectors.json`
 is unchanged); `scripts/gen_management.py --check` is current, with no new operation (**202 across 29**).
 The README states conformance at contract 1.63. This is a minor release because a public value type
 gains a member (below); nothing is removed.
