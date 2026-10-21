@@ -6,7 +6,7 @@ import os
 
 class AxiamCppSdkConan(ConanFile):
     name = "axiam-cpp-sdk"
-    version = "1.2.0"
+    version = "1.1.1"
     license = "Apache-2.0"
     url = "https://github.com/ilpanich/axiam-cplusplus-sdk"
     homepage = "https://github.com/ilpanich/axiam-cplusplus-sdk"

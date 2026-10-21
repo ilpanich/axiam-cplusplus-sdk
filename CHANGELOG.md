@@ -6,6 +6,22 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-21
+
+### Added
+
+- Contract 1.63 -- sessionless /oauth2/*, plan refuses an unknown carried open-enum, site across list_segments pages (1.2.0)
+
+### Changed
+
+- re-vendor contract 1.63 and spec 1.1.1 from AXIAM d919ba0cc
+
+- re-vendor contract 1.63 from AXIAM a6cd10eba
+
+### Fixed
+
+- UMA ticket grant is sessionless; any /oauth2/ request is, in CurlTransport (C163-04); kVersion 1.2.0 (C163-15)
+
 ## [1.2.0] - 2026-10-20
 
 Contract 1.63 (§34.7) and the two follow-ups of the 1.62 conformance review (#76). `CONTRACT.md`,

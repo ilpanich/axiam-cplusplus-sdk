@@ -108,7 +108,7 @@ This one is.
 - Public headers under `include/axiam/`; umbrella header `#include <axiam/axiam.hpp>`.
 - Dependencies: **libcurl** (HTTP + strict TLS + mTLS), **OpenSSL** (Ed25519 JWKS
   verification), vendored single-header **nlohmann/json** (`third_party/nlohmann/json.hpp`).
-- Version: `1.2.0`.
+- Version: `1.1.1`.
 
 ---
 
@@ -162,7 +162,7 @@ build when `CMakeLists.txt`, the header constants and the CI matrix stop agreein
 include(FetchContent)
 FetchContent_Declare(axiam_cpp_sdk
   GIT_REPOSITORY https://github.com/ilpanich/axiam-cplusplus-sdk.git
-  GIT_TAG        v1.2.0)
+  GIT_TAG        v1.1.1)
 FetchContent_MakeAvailable(axiam_cpp_sdk)
 
 target_link_libraries(my_app PRIVATE axiam::axiam_cpp)
@@ -187,7 +187,7 @@ vcpkg install axiam-cpp-sdk --overlay-ports=./ports
 ### Conan
 
 ```bash
-conan create . --version=1.2.0
+conan create . --version=1.1.1
 ```
 
 The [`conanfile.py`](conanfile.py) requires `libcurl`, `openssl`, and `nlohmann_json`.
