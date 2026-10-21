@@ -52,7 +52,7 @@
 namespace axiam {
 
 /// SDK semantic version string (matches CMake project version).
-inline constexpr const char* kVersion = "1.1.0";
+inline constexpr const char* kVersion = "1.2.0";
 
 /// The minimum C++ standard this SDK is compiled against, as `__cplusplus` reports it.
 ///

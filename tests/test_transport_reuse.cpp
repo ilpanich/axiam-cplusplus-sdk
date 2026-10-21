@@ -202,7 +202,15 @@ AXIAM_TEST("I11: a GET after a POST keeps the same connection and the right verb
                    .build();
 
     c.check_access("read", "res-1");   // POST
-    c.jwks().refresh_keys();           // GET /oauth2/jwks
+    // GET /.well-known/openid-configuration. Not /oauth2/jwks: a /oauth2/* request is
+    // sessionless (CONTRACT.md §6.1 rule 11, contract 1.63) and rides the cookie-less handle
+    // pool, a second connection by design, which this one-connection test cannot observe
+    // (test_transport_fresh_write.cpp covers the JWKS GETs' own reuse).
+    try {
+        c.oidc_discover();
+    } catch (const AxiamError&) {
+        // The stub's body is not a discovery document; only the verb and the connection matter.
+    }
     c.check_access("read", "res-2");   // POST again
 
     server.shutdown();

@@ -52,6 +52,14 @@ struct PageRequest {
     /// different query the caller has no way to see.
     std::string search;
 
+    /// The `site` filter of `NetworkApi::list_segments`, or unset for none (§36.8 test 4).
+    ///
+    /// Like `search` it is part of WHICH PAGE this is, so `next()` carries it and a caller
+    /// paging `list_segments` does not repeat it by hand. An explicit `site` argument to
+    /// `list_segments` wins and is what the returned `Page::request` then carries. Ignored by
+    /// every other `list`.
+    std::optional<std::string> site;
+
     /// The page after this one -- same size and same term, advanced by exactly `limit`.
     ///
     /// By the requested limit, not by how many items came back: §27.4 rule 4 stops auto-paging
@@ -2233,13 +2241,13 @@ private:
     CallScope scope_;
 };
 
-/// A tenant's network segments and the RADIUS reply profile each owns (RADIUS D4): a segment is
-/// a node of the reserved /network subtree of the resource tree (kind, VLAN, Filter-Id
-/// envelope, placement rank), and its profile is the typed `axiam-radius-reply/1` record a
-/// decision renders. Every write is conditional on the `version` the caller read and passes the
-/// server's write gate. The tenant's Session-Timeout cap is one more row of it (get_policy,
-/// replace_policy): lowering it is always allowed, raising it is allowed and audited. The
-/// decision route FreeRADIUS calls is not in this registry.
+/// A tenant's network segments and the RADIUS reply profile each owns (RADIUS Live profile): a
+/// segment is a node of the reserved /network subtree of the resource tree (kind, VLAN,
+/// Filter-Id envelope, placement rank), and its profile is the typed `axiam-radius-reply/1`
+/// record a decision renders. Every write is conditional on the `version` the caller read and
+/// passes the server's write gate. The tenant's Session-Timeout cap is one more row of it
+/// (get_policy, replace_policy): lowering it is always allowed, raising it is allowed and
+/// audited. The decision route FreeRADIUS calls is not in this registry.
 ///
 /// The `network` namespace handle (§27.2), reached as `client.management().network()`. §27.3's
 /// C++ row is `client.service_accounts().rotate_secret(id)` -- a method returning a handle,
@@ -2904,13 +2912,14 @@ public:
     /// anything downstream.
     ScimTargetsApi scim_targets() const;
 
-    /// A tenant's network segments and the RADIUS reply profile each owns (RADIUS D4): a
-    /// segment is a node of the reserved /network subtree of the resource tree (kind, VLAN,
-    /// Filter-Id envelope, placement rank), and its profile is the typed `axiam-radius-reply/1`
-    /// record a decision renders. Every write is conditional on the `version` the caller read
-    /// and passes the server's write gate. The tenant's Session-Timeout cap is one more row of
-    /// it (get_policy, replace_policy): lowering it is always allowed, raising it is allowed
-    /// and audited. The decision route FreeRADIUS calls is not in this registry.
+    /// A tenant's network segments and the RADIUS reply profile each owns (RADIUS Live
+    /// profile): a segment is a node of the reserved /network subtree of the resource tree
+    /// (kind, VLAN, Filter-Id envelope, placement rank), and its profile is the typed
+    /// `axiam-radius-reply/1` record a decision renders. Every write is conditional on the
+    /// `version` the caller read and passes the server's write gate. The tenant's
+    /// Session-Timeout cap is one more row of it (get_policy, replace_policy): lowering it is
+    /// always allowed, raising it is allowed and audited. The decision route FreeRADIUS calls
+    /// is not in this registry.
     NetworkApi network() const;
 
     /// Effective settings, and the organization/tenant layers they resolve from.

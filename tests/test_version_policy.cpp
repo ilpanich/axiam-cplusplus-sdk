@@ -113,3 +113,9 @@ AXIAM_TEST("version policy: CI builds both the floor and the newest standard") {
     AXIAM_CHECK(workflow.find("std: 17") != std::string::npos);
     AXIAM_CHECK(workflow.find("std: 23") != std::string::npos);
 }
+
+AXIAM_TEST("version policy: kVersion is the version CMakeLists.txt declares") {
+    const std::string cmake = read_repo_file("CMakeLists.txt");
+    AXIAM_CHECK(cmake.find(std::string("project(axiam_cpp_sdk VERSION ") + axiam::kVersion + " ") !=
+                std::string::npos);
+}

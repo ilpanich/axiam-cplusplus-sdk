@@ -1502,6 +1502,7 @@ RequestingPartyToken Client::uma_exchange_ticket(const UmaExchangeTicketParams& 
     req.headers["Accept"] = "application/json";
     req.headers["Content-Type"] = "application/x-www-form-urlencoded";
     req.body = form;
+    req.sessionless = true;  // §6.1 rule 11 / §12.1 rule 3: no session cookie, no X-CSRF-Token on /oauth2/*
 
     HttpResponse resp = p_->send_raw(req);
     if (resp.status < 200 || resp.status >= 300) {

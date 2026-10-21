@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34 and §36 at contract 1.62, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34 and §36 at contract 1.63, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
 Manifest pruning: not offered in any namespace (§27.10) — a manifest's `apply` never deletes, so a
 resource omitted from it is left alone, `network` included.
@@ -28,6 +28,11 @@ strings (P12.2), the RFC 7592 update sends only what the read carried (P12.4), t
 replacement inputs cannot be built without their required members, `Sensitive<T>::expose()`
 is the public accessor (§7 rule 3), and management reads follow §16 (`408`, `429`,
 `Retry-After`).
+
+Contract 1.63 (§34.7) is the **1.2.0** release: no `axiam_*` session cookie and no `X-CSRF-Token` on any
+`/oauth2/*` request (§6.1 rule 11, §12.1 rule 3), a manifest `plan` that refuses to carry an unknown open-enum
+value (§27.6.2 item 4), and `site` carried across `list_segments` pages. This SDK generates no DPoP proofs, so
+§21.7.4's key-lifetime sentence has nothing to bind here.
 
 Contract 1.62 (§34.6) is the **1.1.0** release; release 1.0.1 was never tagged, so the 1.61 fields below ship in it too.
 In this SDK: the **`network` namespace** (§36) — `client.network()`, twelve operations over segments,
@@ -75,13 +80,13 @@ token exchange is this client's own `client_credentials` token (§15.2 rule 9). 
 
 From 1.0.0 the SDK is stable and follows [Semantic Versioning](https://semver.org/): a
 breaking change to the public API waits for the next major version. A contract record may add a
-member or widen a type with a minor bump (1.1.0 is one: contract 1.61 and 1.62); a removal waits
+member or widen a type with a minor bump (1.1.0 is one: contract 1.61 and 1.62; 1.2.0 another); a removal waits
 for 2.0.0.
 
 The shared library's `SOVERSION` is its ABI version and moves independently of that SemVer: a
 public type that grows (as `ApplyReport`, `PlannedChange`, `ManifestEntity` and `ConflictError`
-did in 1.1.0) bumps it, so 1.1.0 installs `libaxiam_cpp.so.2` and a binary built against 1.0.x
-must be rebuilt rather than loaded against it.
+did in 1.1.0, and `PageRequest` in 1.2.0) bumps it, so 1.2.0 installs `libaxiam_cpp.so.3` and a binary
+built against 1.1.x must be rebuilt rather than loaded against it.
 
 Sections are named individually rather than folded into ranges: widening a
 range silently turns a statement that was true when written into a different
@@ -103,7 +108,7 @@ This one is.
 - Public headers under `include/axiam/`; umbrella header `#include <axiam/axiam.hpp>`.
 - Dependencies: **libcurl** (HTTP + strict TLS + mTLS), **OpenSSL** (Ed25519 JWKS
   verification), vendored single-header **nlohmann/json** (`third_party/nlohmann/json.hpp`).
-- Version: `1.1.0`.
+- Version: `1.2.0`.
 
 ---
 
@@ -157,7 +162,7 @@ build when `CMakeLists.txt`, the header constants and the CI matrix stop agreein
 include(FetchContent)
 FetchContent_Declare(axiam_cpp_sdk
   GIT_REPOSITORY https://github.com/ilpanich/axiam-cplusplus-sdk.git
-  GIT_TAG        v1.1.0)
+  GIT_TAG        v1.2.0)
 FetchContent_MakeAvailable(axiam_cpp_sdk)
 
 target_link_libraries(my_app PRIVATE axiam::axiam_cpp)
@@ -182,7 +187,7 @@ vcpkg install axiam-cpp-sdk --overlay-ports=./ports
 ### Conan
 
 ```bash
-conan create . --version=1.1.0
+conan create . --version=1.2.0
 ```
 
 The [`conanfile.py`](conanfile.py) requires `libcurl`, `openssl`, and `nlohmann_json`.
@@ -2089,8 +2094,9 @@ net.delete_segment(created.id, created.version);             // ?version= is req
 - **The three `Replace*` bodies cannot be built without their required members** (constructor
   arguments, no default constructor); an unset `rank`, `idle_timeout_secs`, `filter_id` or
   `service_type` is absent from the body, never `null`, and a profile has no VLAN member.
-- **Pass `site` again** when you page `list_segments`: `PageRequest::next()` carries `search`, and
-  `site` is an argument of the call.
+- **`site` travels with the page** (§36.8 test 4): `PageRequest::site` is carried by `next()` like `search`,
+  so `list_segments(page.next_request())` keeps the filter. A `site` argument to the call wins and is what
+  the returned `Page::request` records.
 
 **In a manifest (§27.6.2).** `network` is a manifest namespace: the tenant's cap, its segments and their
 profiles, reconciled like every other kind.

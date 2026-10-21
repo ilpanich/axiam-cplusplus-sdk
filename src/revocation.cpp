@@ -116,6 +116,7 @@ std::optional<std::unordered_set<std::string>> RevocationFeed::fetch_once() {
     HttpRequest request;
     request.method = "GET";
     request.url = feed_url_;
+    request.sessionless = true;  // §6.1 rule 11: no session cookie on /oauth2/*
 
     HttpResponse response;
     try {

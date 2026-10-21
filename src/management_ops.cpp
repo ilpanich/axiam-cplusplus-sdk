@@ -1940,13 +1940,15 @@ NetworkApi NetworkApi::for_tenant(std::string tenant) const {
 
 Page<NetworkSegmentResponse> NetworkApi::list_segments(const PageRequest& page, const std::optional<std::string>& site) {
     const std::vector<PathValue> values{};
-    auto query = Transport::paging(page);
-    query.push_back({"site", site});
+    PageRequest effective = page;
+    if (site) effective.site = site;
+    auto query = Transport::paging(effective);
+    query.push_back({"site", effective.site});
     const std::optional<nlohmann::json> payload = std::nullopt;
     const auto response = transport_->send("network.list_segments", "GET", "/api/v1/network/segments",
                                             values, query, payload);
 
-    return Transport::to_page<NetworkSegmentResponse>(response, page, "network.list_segments");
+    return Transport::to_page<NetworkSegmentResponse>(response, effective, "network.list_segments");
 }
 
 NetworkSegmentResponse NetworkApi::create_segment(const CreateNetworkSegmentRequest& body) {
