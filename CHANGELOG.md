@@ -8,28 +8,12 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [1.1.1] - 2026-10-21
 
-### Added
-
-- Contract 1.63 -- sessionless /oauth2/*, plan refuses an unknown carried open-enum, site across list_segments pages (1.2.0)
-
-### Changed
-
-- re-vendor contract 1.63 and spec 1.1.1 from AXIAM d919ba0cc
-
-- re-vendor contract 1.63 from AXIAM a6cd10eba
-
-### Fixed
-
-- UMA ticket grant is sessionless; any /oauth2/ request is, in CurlTransport (C163-04); kVersion 1.2.0 (C163-15)
-
-## [1.2.0] - 2026-10-20
-
 Contract 1.63 (§34.7) and the two follow-ups of the 1.62 conformance review (#76). `CONTRACT.md`,
 `openapi.json` and `management-registry.json` are re-vendored byte for byte from ilpanich/axiam
 `d919ba0cc` (branch `claude/release-1.1.1`; this SDK vendors no `proto/`; `opaque-test-vectors.json`
 is unchanged); `scripts/gen_management.py --check` is current, with no new operation (**202 across 29**).
-The README states conformance at contract 1.63. This is a minor release because a public value type
-gains a member (below); nothing is removed.
+The README states conformance at contract 1.63. Cut as 1.1.1 in lockstep with the AXIAM 1.1.1 platform
+release; a public value type gains a member (below), covered by the ABI bump, and nothing is removed.
 
 ### Fixed
 
@@ -59,13 +43,13 @@ gains a member (below); nothing is removed.
 
 - **The shared library's ABI version is now 3 (`libaxiam_cpp.so.3`).** `PageRequest`, which `Page<T>` embeds
   and the library fills, gained a member at the end. It is not source-breaking: designated and positional
-  aggregate initialisers that already compiled still do. Rebuild against 1.2.0.
+  aggregate initialisers that already compiled still do. Rebuild against 1.1.1.
 
 ### Notes
 
 - `DeviceAuthorizationRequest.client_id` (now nullable in the spec) is not modelled by this SDK, which builds
   that form itself; nothing changes. No DPoP proofs are generated, so §21.7.4's key lifetime has nothing to
-  bind here. C++ ships no AMQP, so 1.63 (c) does not apply. `axiam::kVersion` is "1.2.0", pinned to `CMakeLists.txt` by `tests/test_version_policy.cpp`.
+  bind here. C++ ships no AMQP, so 1.63 (c) does not apply. `axiam::kVersion` is "1.1.1", pinned to `CMakeLists.txt` by `tests/test_version_policy.cpp`.
 
 ## [1.1.0] - 2026-10-16
 

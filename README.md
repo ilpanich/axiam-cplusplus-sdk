@@ -29,7 +29,7 @@ replacement inputs cannot be built without their required members, `Sensitive<T>
 is the public accessor (§7 rule 3), and management reads follow §16 (`408`, `429`,
 `Retry-After`).
 
-Contract 1.63 (§34.7) is the **1.2.0** release: no `axiam_*` session cookie and no `X-CSRF-Token` on any
+Contract 1.63 (§34.7) is the **1.1.1** release: no `axiam_*` session cookie and no `X-CSRF-Token` on any
 `/oauth2/*` request (§6.1 rule 11, §12.1 rule 3), a manifest `plan` that refuses to carry an unknown open-enum
 value (§27.6.2 item 4), and `site` carried across `list_segments` pages. This SDK generates no DPoP proofs, so
 §21.7.4's key-lifetime sentence has nothing to bind here.
@@ -80,12 +80,12 @@ token exchange is this client's own `client_credentials` token (§15.2 rule 9). 
 
 From 1.0.0 the SDK is stable and follows [Semantic Versioning](https://semver.org/): a
 breaking change to the public API waits for the next major version. A contract record may add a
-member or widen a type with a minor bump (1.1.0 is one: contract 1.61 and 1.62; 1.2.0 another); a removal waits
-for 2.0.0.
+member or widen a type with a minor bump (1.1.0 is one: contract 1.61 and 1.62); 1.1.1, cut in lockstep with
+the AXIAM 1.1.1 platform release, also adds one, and the ABI bump below covers it. A removal waits for 2.0.0.
 
 The shared library's `SOVERSION` is its ABI version and moves independently of that SemVer: a
 public type that grows (as `ApplyReport`, `PlannedChange`, `ManifestEntity` and `ConflictError`
-did in 1.1.0, and `PageRequest` in 1.2.0) bumps it, so 1.2.0 installs `libaxiam_cpp.so.3` and a binary
+did in 1.1.0, and `PageRequest` in 1.1.1) bumps it, so 1.1.1 installs `libaxiam_cpp.so.3` and a binary
 built against 1.1.x must be rebuilt rather than loaded against it.
 
 Sections are named individually rather than folded into ranges: widening a
