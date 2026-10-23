@@ -457,7 +457,7 @@ std::int64_t now_seconds() {
         if (const auto hint = resp.headers.find("Retry-After"); hint != resp.headers.end()) {
             retry_after = detail::retry_after_from_header(hint->second);
         }
-        throw OAuthProtocolError(message, code, std::move(description), retry_after);
+        throw OAuthProtocolError(message, code, std::move(description), retry_after, resp.status);
     }
     if (resp.status == 401) throw AuthError(context);
     if (resp.status == 403 || resp.status == 409) throw AuthzError(context);
@@ -884,16 +884,11 @@ std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
         const std::optional<long> status =
             resp.transport_error.empty() ? std::optional<long>(resp.status) : std::nullopt;
         if (!detail::retry_should_retry(status)) break;
-        // §14.2 rule 9 (contract 1.64): a `429` that names its error is the protocol
-        // answer, not a transient failure -- the polling loop waits it out against the
-        // grant's deadline, so it is raised here and not retried inside the poll.
-        if (*status == 429) {
-            const json body = parse_or_object(resp.body);
-            if (body.contains("error") && body["error"].is_string() &&
-                !body["error"].get<std::string>().empty()) {
-                break;
-            }
-        }
+        // §14.2 rule 9 (contract 1.64): on the poll, the STATUS decides -- any `429` is the
+        // rate-limit answer, whatever its body names (a `slow_down` from a server before 1.1.2
+        // or an intermediary included). The polling loop waits it out against the grant's
+        // deadline, so it is raised below and not retried inside the poll.
+        if (retryable && *status == 429) break;
         const auto hint = resp.headers.find("Retry-After");
         impl.sleeper(detail::retry_delay(
             attempt,
@@ -905,7 +900,29 @@ std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
     if (!resp.transport_error.empty()) {
         throw NetworkError(context + ": " + resp.transport_error, resp.transport_error);
     }
-    if (resp.status < 200 || resp.status >= 300) raise_grant_error(resp, context);
+    if (resp.status < 200 || resp.status >= 300) {
+        if (retryable) {
+            // §14.2 rule 6 (contract 1.64, amended): a `5xx` on the device poll is a transport
+            // failure WHATEVER its body -- the status is read before the `error` member, as
+            // §34.2 P8 says for `ciba_poll`. AXIAM answers a datastore fault
+            // `500 {"error":"server_error"}`, which must not end the flow.
+            if (resp.status >= 500) {
+                throw NetworkError(context + " (HTTP " + std::to_string(resp.status) + ")",
+                                   "http_" + std::to_string(resp.status));
+            }
+            // Rule 9: a `429` is `rate_limit_exceeded` whatever the body says, so the loop
+            // waits it out and never reads it as the `400` polling signal.
+            if (resp.status == 429) {
+                std::optional<std::chrono::milliseconds> retry_after;
+                if (const auto hint = resp.headers.find("Retry-After"); hint != resp.headers.end()) {
+                    retry_after = detail::retry_after_from_header(hint->second);
+                }
+                throw OAuthProtocolError("rate_limit_exceeded (" + context + ")",
+                                         "rate_limit_exceeded", std::nullopt, retry_after, 429);
+            }
+        }
+        raise_grant_error(resp, context);
+    }
     return resp.body;
 }
 
@@ -1726,8 +1743,7 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
             return device_poll_with(*p_, config, device_code, client_id, tenant);
         } catch (const OAuthProtocolError& e) {
             const std::string& code = e.error_code();
-            if (code == "authorization_pending") continue;
-            if (code == "rate_limit_exceeded") {
+            if (code == "rate_limit_exceeded" || e.http_status() == 429L) {
                 // Rule 9: not terminal, and not the polling signal -- the interval is
                 // unchanged; the wait is Retry-After when it is longer than the interval.
                 if (e.retry_after()) {
@@ -1735,6 +1751,7 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
                 }
                 continue;
             }
+            if (code == "authorization_pending") continue;
             if (code == "slow_down") {
                 // Rule 1: permanent, cumulative, never reset. An SDK that backed
                 // off for one round and returned to the original rate would be

@@ -854,6 +854,12 @@ public:
     /// `invalid_grant` (stop) — §14.2 rule 3 keeps the first two of those
     /// terminal codes DISTINCT, because "a human said no" and "nobody answered"
     /// are the only thing a device can act on.
+    ///
+    /// A `429` is an OAuthProtocolError with `error() == "rate_limit_exceeded"` and the
+    /// response's `Retry-After` on `retry_after()`, whatever its body names (§14.2 rule 9,
+    /// contract 1.64); it is not retried within the call and is not terminal: wait at least
+    /// `Retry-After` (or one interval) without raising the interval -- device_login() does. A
+    /// `5xx` is a NetworkError whatever its body (rule 6).
     OidcTokenSet device_poll(const Sensitive<std::string>& device_code,
                              std::optional<std::string> tenant_id = std::nullopt);
 
@@ -868,7 +874,11 @@ public:
     /// even if the server has not yet said `expired_token`, because the deadline
     /// is authoritative and the extra requests are pure load.
     ///
-    /// A `5xx` or transport failure mid-poll is NOT terminal (§14.2 rule 6): it
+    /// A `429` is waited out (§14.2 rule 9, contract 1.64), whatever its body names: the loop
+    /// waits `Retry-After` (a minimum, capped at `expires_in`), counts it as one interval and
+    /// does NOT raise the interval -- only the `400 slow_down` does.
+    ///
+    /// A `5xx` (whatever its body) or transport failure mid-poll is NOT terminal (§14.2 rule 6): it
     /// has already been through the §16 bounded retry inside the poll, whose
     /// budget is per attempt and separate from this loop, and a server restart
     /// mid-flow must not lose a grant the user already approved.
