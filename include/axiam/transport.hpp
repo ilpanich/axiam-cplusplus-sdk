@@ -113,6 +113,10 @@ struct TlsConfig {
     /// libcurl's `CURLSH`), so the session is one session no matter which
     /// handle serves a given request. Connections are NOT shared: each handle
     /// keeps its own hot connection, which is the point.
+    ///
+    /// The requests that must not touch the cookie jar (every `/oauth2/*` call) ride a second,
+    /// cookie-less pool bounded by the same number, so a client holds at most this many of each
+    /// kind -- never more than this many `/oauth2/*` requests in flight (C163-20).
     unsigned max_concurrent_requests = 16;
 
     bool has_client_cert() const {

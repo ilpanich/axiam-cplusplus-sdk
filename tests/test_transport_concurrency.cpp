@@ -28,6 +28,7 @@
 
 #include "assert.hpp"
 #include "axiam/client.hpp"
+#include "axiam/http_curl.hpp"
 
 using namespace axiam;
 
@@ -276,4 +277,48 @@ AXIAM_TEST("libcurl transport bounds itself at max_concurrent_requests") {
     AXIAM_CHECK(ok.load() == kThreads);
     AXIAM_CHECK(overlap >= 1);
     AXIAM_CHECK(overlap <= 2);
+}
+
+// C163-20: the cookie-less handle pool (the /oauth2/* requests, which neither read nor write the
+// jar) was outside `max_concurrent_requests`. n+1 concurrent /oauth2/* requests against a pool
+// capped at n must hold n handles, not n+1: the server never sees more than n in flight, nor more
+// than n connections, and the (n+1)th request waits for a handle and still completes.
+AXIAM_TEST("libcurl transport bounds the cookie-less /oauth2/* handle pool at max_concurrent_requests") {
+    ConcurrentMiniServer server;
+    server.hold = std::chrono::milliseconds(150);
+    AXIAM_REQUIRE(server.start());
+
+    constexpr unsigned kCap = 2;
+    TlsConfig cfg;
+    cfg.max_concurrent_requests = kCap;
+    Transport transport = CurlTransport::make_transport(cfg);
+
+    constexpr int kThreads = kCap + 1;
+    std::vector<std::thread> callers;
+    std::atomic<int> ok{0};
+    callers.reserve(kThreads);
+    for (int i = 0; i < kThreads; ++i) {
+        callers.emplace_back([&] {
+            HttpRequest req;
+            req.method = "POST";
+            req.url = "http://127.0.0.1:" + std::to_string(server.port) + "/oauth2/token";
+            req.headers["Content-Type"] = "application/x-www-form-urlencoded";
+            req.body = "grant_type=refresh_token";
+            req.sessionless = true;
+            const HttpResponse resp = transport(req);
+            if (resp.transport_error.empty() && resp.status == 200) ok.fetch_add(1);
+        });
+    }
+    for (auto& t : callers) t.join();
+
+    const int overlap = server.max_in_flight.load();
+    const int total = server.total.load();
+    server.shutdown();
+
+    AXIAM_CHECK(ok.load() == kThreads);
+    AXIAM_CHECK(total == kThreads);
+    // n handles were genuinely used at once (the pool is not serialized)...
+    AXIAM_CHECK(overlap == static_cast<int>(kCap));
+    // ...and the (n+1)th did not get a handle of its own.
+    AXIAM_CHECK(overlap <= static_cast<int>(kCap));
 }
