@@ -244,23 +244,26 @@ NetworkReplyProfileInput profile_replace_input(const ManifestNetworkProfile& spe
 }
 
 
-// §27.6.2 item 4 (as amended in 1.62): an `Update` carries every unstated member from the read,
-// and an open-enum value this SDK read as unknown cannot be carried -- it is no value the SDK
-// can write. `plan` therefore refuses, before any write, naming the member, unless the manifest
-// states that member (the stated value then replaces it). The read's raw text is not kept by
-// the open enum, so the message names the member and says the value is unknown to this SDK.
+// §27.6.2 item 4 (as amended in 1.62 and relaxed in 1.64): an `Update` carries every unstated
+// member from the read, and an open-enum value this SDK read as unknown cannot be carried -- it
+// is no value the SDK can write. `plan` therefore refuses, before any write, naming the member
+// and quoting the value (kept as `*_wire` beside the open enum; "unknown" if a decoder did not
+// fill it), unless the manifest states that member (the stated value then replaces it). The
+// refusal is a local one of a value the caller's manifest cannot be sent as, hence
+// `std::invalid_argument`, as for every other P12.2 refusal (C163-07).
 void refuse_unknown_carried(const ManifestNetworkProfile& spec, const NetworkReplyProfile& read) {
+    const auto refuse = [&](const char* member, const std::optional<std::string>& wire) {
+        const std::string shown = wire ? "\"" + *wire + "\"" : std::string("unknown");
+        throw std::invalid_argument(
+            "network profile '" + spec.segment + "': " + member + " holds the value " + shown +
+            ", which this SDK does not know, and the manifest does not state it, so an Update "
+            "cannot carry it (CONTRACT.md §27.6.2 item 4); state " + member + " in the manifest");
+    };
     if (!spec.termination_action && read.termination_action == RadiusTerminationAction::Unknown) {
-        throw ValidationError(
-            "network profile '" + spec.segment + "': termination_action holds a value this SDK does "
-            "not know and the manifest does not state it, so an Update cannot carry it (CONTRACT.md "
-            "§27.6.2 item 4); state termination_action in the manifest");
+        refuse("termination_action", read.termination_action_wire);
     }
     if (!spec.service_type && read.service_type && *read.service_type == RadiusServiceType::Unknown) {
-        throw ValidationError(
-            "network profile '" + spec.segment + "': service_type holds a value this SDK does not "
-            "know and the manifest does not state it, so an Update cannot carry it (CONTRACT.md "
-            "§27.6.2 item 4); state service_type in the manifest");
+        refuse("service_type", read.service_type_wire);
     }
 }
 

@@ -677,11 +677,95 @@ AXIAM_TEST("§27.6.2 item 4 (C162-07): plan refuses an Update that would carry a
     bool refused = false;
     try {
         fixture.client.management().manifest().plan(manifest);
-    } catch (const ValidationError& e) {
+    } catch (const std::invalid_argument& e) {  // C163-07: a local refusal, not the server's 400/422 class
         refused = true;
-        AXIAM_CHECK(std::string(e.what()).find("termination_action") != std::string::npos);
+        const std::string what = e.what();
+        AXIAM_CHECK(what.find("termination_action") != std::string::npos);
+        AXIAM_CHECK(what.find("\"future\"") != std::string::npos);  // C163-10: the value, quoted
     }
     AXIAM_CHECK(refused);
+    for (const auto& w : wire_of(fixture)) AXIAM_CHECK(w.method == "GET");
+}
+
+AXIAM_TEST("§27.6.2 item 4 (C163-09/10): the same refusal for service_type, naming the member and quoting the value; no write is sent") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, page({segment_json(kSegA, "staff")})},
+        {200, page({profile_json(kSegA, {{"service_type", "future_type"}})})},
+    });
+    Manifest manifest{{segment_entity("seg", "staff"), profile_entity("prof", "seg")}};
+    manifest.entities[1].network_profile->idle_timeout_secs = 900;
+
+    bool refused = false;
+    try {
+        fixture.client.management().manifest().plan(manifest);
+    } catch (const std::invalid_argument& e) {
+        refused = true;
+        const std::string what = e.what();
+        AXIAM_CHECK(what.find("service_type") != std::string::npos);
+        AXIAM_CHECK(what.find("\"future_type\"") != std::string::npos);
+    }
+    AXIAM_CHECK(refused);
+    for (const auto& w : wire_of(fixture)) AXIAM_CHECK(w.method == "GET");
+}
+
+AXIAM_TEST("§27.6.2 item 4 (C163-10): a profile read keeps the wire text of its open-enum members beside the enum") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, page({segment_json(kSegA, "staff")})},
+        {200, page({profile_json(kSegA, {{"termination_action", "future"}, {"service_type", "future_type"}})})},
+    });
+    Manifest manifest{{segment_entity("seg", "staff"), profile_entity("prof", "seg")}};
+    const auto plan = fixture.client.management().manifest().plan(manifest);
+    AXIAM_REQUIRE(plan.changes.size() == 2 && plan.changes[1].read_profile);
+    const auto& read = *plan.changes[1].read_profile;
+    AXIAM_CHECK(read.termination_action == RadiusTerminationAction::Unknown);
+    AXIAM_CHECK(read.termination_action_wire == std::optional<std::string>("future"));
+    AXIAM_CHECK(read.service_type_wire == std::optional<std::string>("future_type"));
+}
+
+AXIAM_TEST("§27.6.2 item 4 (C163-10): a known value keeps its wire text; an absent service_type has none") {
+    auto absent = profile_json(kSegA);
+    absent.erase("service_type");
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, page({segment_json(kSegA, "staff")})},
+        {200, page({absent})},
+    });
+    Manifest manifest{{segment_entity("seg", "staff"), profile_entity("prof", "seg")}};
+    const auto plan = fixture.client.management().manifest().plan(manifest);
+    AXIAM_REQUIRE(plan.changes.size() == 2 && plan.changes[1].read_profile);
+    AXIAM_CHECK(plan.changes[1].read_profile->termination_action_wire ==
+                std::optional<std::string>("radius_request"));
+    AXIAM_CHECK(!plan.changes[1].read_profile->service_type_wire);
+}
+
+AXIAM_TEST("§27.6.2 item 4 (C163-09): applying with the member stated sends the STATED value in the replace_profile body, never the unknown one") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, page({segment_json(kSegA, "staff")})},
+        {200, page({profile_json(kSegA, {{"termination_action", "future"}})})},
+        {200, profile_json(kSegA, {{"version", 5}}).dump()},  // PUT
+    });
+    Manifest manifest{{segment_entity("seg", "staff"), profile_entity("prof", "seg")}};
+    manifest.entities[1].network_profile->termination_action = RadiusTerminationAction::RadiusRequest;
+
+    const auto report = fixture.client.management().manifest().apply(manifest);
+    AXIAM_CHECK(report.complete());
+    const auto wire = wire_of(fixture);
+    AXIAM_REQUIRE(wire.size() == 3);
+    AXIAM_CHECK(wire[2].method == "PUT");
+    const auto& body = wire[2].body;
+    AXIAM_CHECK(body.dump().find("future") == std::string::npos);
+    const auto& profile = body.contains("profile") ? body.at("profile") : body;
+    AXIAM_CHECK(profile.at("termination_action") == "radius_request");
+}
+
+AXIAM_TEST("§27.6.2 item 4 (C163-09): an unknown value on an unstated member with nothing else drifted is NoChange -- plan does not refuse and nothing is written") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, page({segment_json(kSegA, "staff")})},
+        {200, page({profile_json(kSegA, {{"termination_action", "future"}})})},
+    });
+    Manifest manifest{{segment_entity("seg", "staff"), profile_entity("prof", "seg")}};
+    const auto plan = fixture.client.management().manifest().plan(manifest);
+    AXIAM_REQUIRE(plan.changes.size() == 2);
+    AXIAM_CHECK(plan.changes[1].action == ChangeAction::Unchanged);
     for (const auto& w : wire_of(fixture)) AXIAM_CHECK(w.method == "GET");
 }
 
