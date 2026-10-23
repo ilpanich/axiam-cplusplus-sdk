@@ -572,6 +572,36 @@ AXIAM_TEST("§34.2 P10 (C164-36): a 503 + Retry-After past expires_in is not ret
     AXIAM_CHECK(*fc.t - start < std::chrono::seconds(30));  // the clock never reached the deadline
 }
 
+AXIAM_TEST("§33.7 rule 4 (C164-54): an OS oversleep of the interval wait does not carry the poll past the deadline -- nothing is sent") {
+    Rig rig;
+    rig.token_script = {{200, rig.tokens()}};
+    auto client = rig.client();
+    FakeClock fc;
+    CibaAwaitOptions o;
+    o.clock = fc.clock();
+    // The caller's clock sleeps 2 s too long: the 5 s interval of a 6 s request ends at 7 s.
+    auto now = fc.t;
+    o.clock->sleep = [now](std::chrono::seconds d) { *now += d + std::chrono::seconds(2); };
+    AXIAM_CHECK(oauth_code([&] { client.ciba_await(fc.initiated(6, 5), o); }) == "expired_token");
+    AXIAM_CHECK(rig.token_calls == 0);
+}
+
+AXIAM_TEST("§34.2 P10 (C164-54): an OS oversleep of the section 16 wait inside a poll does not carry the retry past the deadline") {
+    Rig rig;
+    rig.token_script = {{500, ""}, {200, rig.tokens()}};
+    auto client = rig.client();
+    FakeClock fc;
+    auto now = fc.t;
+    // The in-poll wait (the client's sleeper) takes 6 s too long on a 10 s request.
+    client._set_retry_test_seams([] { return 0.5; }, [now](std::chrono::milliseconds d) {
+        *now += d + std::chrono::seconds(6);
+    });
+    CibaAwaitOptions o;
+    o.clock = fc.clock();
+    AXIAM_CHECK(oauth_code([&] { client.ciba_await(fc.initiated(10, 5), o); }) == "expired_token");
+    AXIAM_CHECK(rig.token_calls == 1);
+}
+
 AXIAM_TEST("§34.2 P10 (C164-48): a retry landing ON the deadline is refused, one landing before it is served -- the boundary is exact") {
     // The first poll goes out at t = 5 s (the interval). A 500 + `Retry-After: 1` makes the
     // section 16 wait exactly 1 s (the test's jitter is 0, so the backoff is 0 and the hint is the

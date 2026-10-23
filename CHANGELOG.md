@@ -40,6 +40,14 @@ poll never waits past the grant's deadline); none changes a signature, so none t
   when the wait would reach the deadline, nothing more is sent and the typed `expired_token` is raised at
   once; a bare `device_poll` / `ciba_poll` keeps the §16 behaviour. Tests: `tests/test_oidc_grants.cpp`,
   `tests/test_ciba.cpp` (on a virtual clock; both fail against the previous code).
+- **A device grant no longer ends up to a second early** (C164-48). The deadline is kept in milliseconds on a
+  monotonic clock, not whole seconds, so a last-second retry that lands inside the grant is served and one that
+  lands on it is refused.
+- **A sleep that overshoots cannot carry a request past the deadline** (C164-54, §14.2 rule 4, §33.7 rule 4,
+  §34.2 P10). Every deadline check ran before the sleep, so an OS oversleep could send a request a few
+  milliseconds late; the clock is now read again after each sleep (the interval waits and the §16 waits inside a
+  poll, device and CIBA) and the typed `expired_token` is raised without sending. A hostile `expires_in` is
+  clamped (about 31 years) so converting it to milliseconds or nanoseconds cannot overflow.
 - **The cookie-less handle pool is bounded by `max_concurrent_requests`** (C163-20). Before this a burst of
   `/oauth2/*` calls opened an unbounded number of connections; now `n + 1` concurrent calls against a cap
   of `n` hold `n` handles. Test: `tests/test_transport_concurrency.cpp`.
@@ -82,11 +90,11 @@ end; not source-breaking. Rebuild against 1.1.2.
 
 ### Tests
 
-- C164-48: the device grant's deadline is now kept in milliseconds on a monotonic clock, not whole seconds, so
-  a grant no longer ends up to a second early by a rounding (a retry in the last second is served when it
-  lands inside the grant, refused when it lands on it); the CIBA and device deadline boundaries are pinned
-  (`>=` vs `>` mutants fail), and `CibaAwaitOptions::clock` documents that it governs the interval waits and
-  the deadline while the §16 wait inside a poll sleeps on the client's own sleeper.
+- C164-48: the CIBA and device deadline boundaries are pinned (`>=` vs `>` mutants fail), and
+  `CibaAwaitOptions::clock` documents that it governs the interval waits and the deadline while the §16 wait
+  inside a poll sleeps on the client's own sleeper. C164-54: four oversleep tests (an OS sleep that overshoots
+  the interval wait, or the §16 wait inside a poll, for the device grant and for CIBA); removing any one of the
+  four re-checks fails its test.
 - C164-38: the W7.1c in-poll retry test now covers a transport failure (twice then `200`: three requests;
   three failures: three requests and the `NetworkError`; retry off: one) and `device_login` taking its next
   interval after the cap is exhausted (4 calls). C164-41: `README.md` no longer says "the one behaviour note".

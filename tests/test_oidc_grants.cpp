@@ -659,6 +659,58 @@ AXIAM_TEST("§14.2 rule 4 (C164-36): a 503 + Retry-After past expires_in is not 
     AXIAM_REQUIRE(g.replies->token_calls == 3);
 }
 
+namespace {
+/// A virtual clock whose sleeper OVERSLEEPS: every sleep shorter than one second (the section 16
+/// waits) advances the clock by `extra_ms` more than asked, as a loaded OS scheduler would; the
+/// interval sleeps are exact unless `all` (C164-54).
+std::shared_ptr<std::int64_t> use_oversleeping_clock(Fixture& f, axiam::Client& client,
+                                                     std::int64_t extra_ms, bool all) {
+    auto t = std::make_shared<std::int64_t>(1'000'000);
+    auto sleeps = f.sleeps;
+    client._set_clock_test_seam([t] { return *t; });
+    client._set_retry_test_seams([] { return 0.5; },
+                                 [t, sleeps, extra_ms, all](std::chrono::milliseconds d) {
+                                     sleeps->push_back(d);
+                                     *t += d.count() + ((all || d.count() < 1000) ? extra_ms : 0);
+                                 });
+    return t;
+}
+}  // namespace
+
+AXIAM_TEST("§14.2 rule 4 (C164-54): an OS oversleep of the interval wait does not carry the poll past the deadline -- nothing is sent") {
+    // Interval 5 s of a 6 s grant, but the sleeper takes 2 s too long (7 s): the pre-sleep check
+    // passed (5 < 6), the post-sleep one must refuse.
+    Fixture f;
+    f.replies->device_body = device_body(R"(,"interval":5)", 6);
+    f.replies->token_script = {{200, kSuccessTokens}};
+    auto client = make_client(f);
+    use_oversleeping_clock(f, client, 2000, /*all=*/true);
+    try {
+        client.device_login(nullptr);
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OAuthProtocolError& e) {
+        AXIAM_REQUIRE(e.error_code() == "expired_token");
+    }
+    AXIAM_REQUIRE(f.replies->token_calls == 0);
+}
+
+AXIAM_TEST("§14.2 rule 4 (C164-54): an OS oversleep of the section 16 wait inside a poll does not carry the retry past the deadline") {
+    // Poll at 5 s of a 10 s grant answered 500; the 100 ms backoff passes the pre-sleep check
+    // (5.1 < 10), but the sleeper takes 6 s too long: the retry must not be sent.
+    Fixture f;
+    f.replies->device_body = device_body(R"(,"interval":5)", 10);
+    f.replies->token_script = {{500, R"({"error":"server_error"})"}, {200, kSuccessTokens}};
+    auto client = make_client(f);
+    use_oversleeping_clock(f, client, 6000, /*all=*/false);
+    try {
+        client.device_login(nullptr);
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OAuthProtocolError& e) {
+        AXIAM_REQUIRE(e.error_code() == "expired_token");
+    }
+    AXIAM_REQUIRE(f.replies->token_calls == 1);
+}
+
 AXIAM_TEST("§14.2 rule 4 (C164-36/48): the deadline is exact to the millisecond -- a retry landing ON it is refused, one landing before it is served") {
     // Poll at t = 5 s of a 6 s grant, answered 500 + Retry-After 1: the retry would land exactly
     // on the deadline (6000 ms >= 6000 ms), so nothing more is sent. A `>` instead of `>=` would

@@ -911,6 +911,13 @@ std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
                 "expired_token", std::nullopt);
         }
         impl.sleeper(delay);
+        // C164-54: the check above runs BEFORE the sleep, and an OS oversleep can carry the clock
+        // past the deadline; look again before the request is built and send nothing if it has.
+        if (deadline && impl.now_ms_fn() >= *deadline) {
+            throw OAuthProtocolError(
+                "expired_token: the device grant expired before the user approved it",
+                "expired_token", std::nullopt);
+        }
     }
 
     if (!resp.transport_error.empty()) {
@@ -1733,7 +1740,9 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
     const std::string device_code = detail::reveal(authorization.device_code);
 
     std::int64_t interval = authorization.interval;
-    const auto deadline = p_->now_ms_fn() + authorization.expires_in * 1000;  // milliseconds
+    // milliseconds; a hostile `expires_in` is clamped (about 31 years) so the product cannot overflow
+    const auto deadline =
+        p_->now_ms_fn() + std::min<std::int64_t>(authorization.expires_in, 1'000'000'000) * 1000;
     // §14.2 rule 9 (contract 1.64): the wait a `429 rate_limit_exceeded` asked for. It is a
     // minimum, replaces the next interval wait (so it counts as one interval) and leaves
     // `interval` itself alone.
@@ -1755,6 +1764,12 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
                 "expired_token", std::nullopt);
         }
         p_->sleeper(std::chrono::milliseconds(wait_ms));
+        // C164-54: re-check after the sleep (an oversleep must not carry the poll past the deadline).
+        if (p_->now_ms_fn() >= deadline) {
+            throw OAuthProtocolError(
+                "expired_token: the device grant expired before the user approved it",
+                "expired_token", std::nullopt);
+        }
 
         try {
             return device_poll_with(*p_, config, device_code, client_id, tenant, deadline);
@@ -2458,6 +2473,15 @@ CibaPollOutcome ciba_poll_once(Client::Impl& impl, const OidcConfiguration& conf
             return out;
         }
         impl.sleeper(delay);
+        // C164-54: re-check after the sleep (an oversleep must not carry the retry past the deadline).
+        if (clock != nullptr && deadline && clock->now() >= *deadline) {
+            out.transient = false;
+            out.error = std::make_exception_ptr(OAuthProtocolError(
+                "expired_token: the CIBA request expired before it was decided (client-side "
+                "deadline from expires_in; CONTRACT.md §34.2 P10)",
+                "expired_token", std::nullopt));
+            return out;
+        }
     }
 }
 
@@ -2562,7 +2586,9 @@ OidcTokenSet Client::ciba_await(const CibaInitiateResponse& initiated,
     const OidcConfiguration config = oidc_discover();
     const CibaClock clock = options.clock ? *options.clock : CibaClock::system();
 
-    const auto deadline = initiated.received_at + std::chrono::seconds(initiated.expires_in);
+    // `expires_in` is clamped (about 31 years) so the conversion to nanoseconds cannot overflow
+    const auto deadline = initiated.received_at +
+                          std::chrono::seconds(std::min<std::int64_t>(initiated.expires_in, 1'000'000'000));
     std::int64_t interval =
         initiated.interval > 0 ? initiated.interval : kCibaDefaultIntervalSeconds;
     for (;;) {
@@ -2576,6 +2602,13 @@ OidcTokenSet Client::ciba_await(const CibaInitiateResponse& initiated,
         }
         // Rule 2: the first poll waits too — polling earlier only earns slow_down.
         clock.sleep(std::chrono::seconds(interval));
+        // C164-54: re-check after the sleep (an oversleep must not carry the poll past the deadline).
+        if (clock.now() >= deadline) {
+            throw OAuthProtocolError(
+                "expired_token: the CIBA request expired before it was decided (client-side "
+                "deadline from expires_in; CONTRACT.md §33.7 rule 4)",
+                "expired_token", std::nullopt);
+        }
         CibaPollOutcome outcome =
             ciba_poll_once(*p_, config, detail::reveal(initiated.auth_req_id), tenant, &clock,
                            deadline);
