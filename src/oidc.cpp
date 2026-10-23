@@ -453,7 +453,11 @@ std::int64_t now_seconds() {
         // specifies that shape, and no token, secret or verifier from this SDK
         // ever reaches it.
         const std::string message = description ? (code + ": " + *description) : (code + " (" + context + ")");
-        throw OAuthProtocolError(message, code, std::move(description));
+        std::optional<std::chrono::milliseconds> retry_after;
+        if (const auto hint = resp.headers.find("Retry-After"); hint != resp.headers.end()) {
+            retry_after = detail::retry_after_from_header(hint->second);
+        }
+        throw OAuthProtocolError(message, code, std::move(description), retry_after);
     }
     if (resp.status == 401) throw AuthError(context);
     if (resp.status == 403 || resp.status == 409) throw AuthzError(context);
@@ -880,6 +884,16 @@ std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
         const std::optional<long> status =
             resp.transport_error.empty() ? std::optional<long>(resp.status) : std::nullopt;
         if (!detail::retry_should_retry(status)) break;
+        // §14.2 rule 9 (contract 1.64): a `429` that names its error is the protocol
+        // answer, not a transient failure -- the polling loop waits it out against the
+        // grant's deadline, so it is raised here and not retried inside the poll.
+        if (*status == 429) {
+            const json body = parse_or_object(resp.body);
+            if (body.contains("error") && body["error"].is_string() &&
+                !body["error"].get<std::string>().empty()) {
+                break;
+            }
+        }
         const auto hint = resp.headers.find("Retry-After");
         impl.sleeper(detail::retry_delay(
             attempt,
@@ -1686,8 +1700,14 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
 
     std::int64_t interval = authorization.interval;
     const auto deadline = now_seconds() + authorization.expires_in;
+    // §14.2 rule 9 (contract 1.64): the wait a `429 rate_limit_exceeded` asked for. It is a
+    // minimum, replaces the next interval wait (so it counts as one interval) and leaves
+    // `interval` itself alone.
+    std::int64_t retry_floor = 0;
 
     for (;;) {
+        const std::int64_t wait = std::max(interval, retry_floor);
+        retry_floor = 0;
         // §14.2 rule 4, and the subtlety that makes it worth a comment: it is
         // the NEXT ATTEMPT that must fall inside the deadline, not the current
         // moment. Checking `now < deadline` before sleeping looks equivalent and
@@ -1695,18 +1715,26 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
         // remaining, that check passes, the loop sleeps through the deadline,
         // and polls anyway. That request is exactly the "pure load" this rule
         // exists to prevent.
-        if (now_seconds() + interval >= deadline) {
+        if (now_seconds() + wait >= deadline) {
             throw OAuthProtocolError(
                 "expired_token: the device grant expired before the user approved it",
                 "expired_token", std::nullopt);
         }
-        p_->sleeper(std::chrono::milliseconds(interval * 1000));
+        p_->sleeper(std::chrono::milliseconds(wait * 1000));
 
         try {
             return device_poll_with(*p_, config, device_code, client_id, tenant);
         } catch (const OAuthProtocolError& e) {
             const std::string& code = e.error_code();
             if (code == "authorization_pending") continue;
+            if (code == "rate_limit_exceeded") {
+                // Rule 9: not terminal, and not the polling signal -- the interval is
+                // unchanged; the wait is Retry-After when it is longer than the interval.
+                if (e.retry_after()) {
+                    retry_floor = static_cast<std::int64_t>((e.retry_after()->count() + 999) / 1000);
+                }
+                continue;
+            }
             if (code == "slow_down") {
                 // Rule 1: permanent, cumulative, never reset. An SDK that backed
                 // off for one round and returned to the original rate would be

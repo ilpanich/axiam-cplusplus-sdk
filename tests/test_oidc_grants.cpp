@@ -52,6 +52,8 @@ struct Replies {
     std::size_t token_calls = 0;
     std::size_t device_calls = 0;
     long device_status = 200;
+    // `Retry-After` set on every 429 the token script answers (contract 1.64, §14.6).
+    std::string retry_after_429;
     std::string device_body = "{}";
     std::string jwks_body = R"({"keys":[]})";
     // Widen the coalescing window for the §9 single-flight tests, exactly as the
@@ -76,7 +78,7 @@ struct Replies {
 axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<Replies> r) {
     st->router = [r](const axiam::HttpRequest& req, axtest::FakeState&) -> axiam::HttpResponse {
         const std::string& url = req.url;
-        auto reply = [](long status, const std::string& body) {
+        auto reply = [r](long status, const std::string& body) {
             axiam::HttpResponse resp;
             if (status == 0) {
                 resp.transport_error = "connection refused";
@@ -84,6 +86,9 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
             }
             resp.status = status;
             resp.body = body;
+            if (status == 429 && !r->retry_after_429.empty()) {
+                resp.headers["Retry-After"] = r->retry_after_429;
+            }
             return resp;
         };
         if (url.find("openid-configuration") != std::string::npos) return reply(200, kDiscovery);
@@ -431,6 +436,56 @@ AXIAM_TEST("§14.2 rule 1 slow_down raises the interval permanently") {
     AXIAM_REQUIRE((*f.sleeps)[1] == std::chrono::milliseconds(6000));
     // ...and it persists across the subsequent poll — never reset.
     AXIAM_REQUIRE((*f.sleeps)[2] == std::chrono::milliseconds(6000));
+}
+
+AXIAM_TEST("§14.2 rule 9 (1.64): a 429 rate_limit_exceeded on a poll is waited out -- the loop waits Retry-After, polls again and completes, the interval unchanged") {
+    // Interval 2 s, Retry-After 9 s. One 429, then the tokens. The wait after the 429 is the
+    // Retry-After (a minimum, and it counts as the one interval), the poll after it is back at
+    // the 2 s the loop held -- not 7 s (+5), which is what reading the 429 as slow_down gives.
+    Fixture f;
+    f.replies->device_body = device_body(R"(,"interval":2)", 600);
+    f.replies->retry_after_429 = "9";
+    f.replies->token_script = {{429, R"({"error":"rate_limit_exceeded"})"},
+                               {200, kSuccessTokens}};
+    auto client = make_client(f);
+    const auto set = client.device_login(nullptr);
+
+    AXIAM_REQUIRE(axiam::detail::reveal(set.access_token) == "the-access-token");
+    // Two polls only: the 429 was not retried inside the poll and was not terminal.
+    AXIAM_REQUIRE(f.replies->token_calls == 2);
+    AXIAM_REQUIRE(f.sleeps->size() == 2);
+    AXIAM_REQUIRE((*f.sleeps)[0] == std::chrono::milliseconds(2000));
+    AXIAM_REQUIRE((*f.sleeps)[1] >= std::chrono::milliseconds(9000));  // Retry-After, a minimum
+}
+
+AXIAM_TEST("§14.2 rule 9 (1.64): after a 429 the next wait is the held interval again, not a raised one") {
+    Fixture f;
+    f.replies->device_body = device_body(R"(,"interval":2)", 600);
+    f.replies->retry_after_429 = "7";
+    f.replies->token_script = {{429, R"({"error":"rate_limit_exceeded"})"},
+                               {400, R"({"error":"authorization_pending"})"},
+                               {200, kSuccessTokens}};
+    auto client = make_client(f);
+    client.device_login(nullptr);
+    AXIAM_REQUIRE(f.sleeps->size() == 3);
+    AXIAM_REQUIRE((*f.sleeps)[1] >= std::chrono::milliseconds(7000));
+    AXIAM_REQUIRE((*f.sleeps)[2] == std::chrono::milliseconds(2000));  // unchanged
+}
+
+AXIAM_TEST("§14.2 rule 9 (1.64): a Retry-After past the expires_in deadline is capped at it -- expired_token, nothing sent after the deadline") {
+    Fixture f;
+    f.replies->device_body = device_body(R"(,"interval":1)", 30);
+    f.replies->retry_after_429 = "3600";
+    f.replies->token_script = {{429, R"({"error":"rate_limit_exceeded"})"},
+                               {200, kSuccessTokens}};
+    auto client = make_client(f);
+    try {
+        client.device_login(nullptr);
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OAuthProtocolError& e) {
+        AXIAM_REQUIRE(e.error_code() == "expired_token");
+    }
+    AXIAM_REQUIRE(f.replies->token_calls == 1);  // the 429 poll only
 }
 
 AXIAM_TEST("§14.2 rule 4 polling stops at expires_in even with no expired_token answer") {
