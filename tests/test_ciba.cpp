@@ -586,6 +586,50 @@ AXIAM_TEST("§33.7 rule 4 (C164-54): an OS oversleep of the interval wait does n
     AXIAM_CHECK(rig.token_calls == 0);
 }
 
+AXIAM_TEST("§33.7 rule 4 (C164-58): a sleep that ends EXACTLY on the deadline sends nothing -- the post-sleep re-check is >=, CIBA interval wait") {
+    Rig rig;
+    rig.token_script = {{200, rig.tokens()}};
+    auto client = rig.client();
+    FakeClock fc;
+    CibaAwaitOptions o;
+    o.clock = fc.clock();
+    auto now = fc.t;
+    // 6 s request, 5 s interval, a caller clock that sleeps 1 s too long: it lands on the deadline.
+    o.clock->sleep = [now](std::chrono::seconds d) { *now += d + std::chrono::seconds(1); };
+    AXIAM_CHECK(oauth_code([&] { client.ciba_await(fc.initiated(6, 5), o); }) == "expired_token");
+    AXIAM_CHECK(rig.token_calls == 0);
+}
+
+AXIAM_TEST("§34.2 P10 (C164-58): a section 16 wait inside a poll that ends EXACTLY on the deadline sends no retry -- the re-check is >=, CIBA") {
+    Rig rig;
+    rig.token_script = {{500, ""}, {200, rig.tokens()}};
+    auto client = rig.client();
+    FakeClock fc;
+    auto now = fc.t;
+    // Poll at 5 s of a 10 s request answered 500; the 100 ms backoff (jitter 0.5) passes the
+    // pre-sleep check and the client's sleeper takes 4.9 s too long: the clock lands on 10.0 s.
+    client._set_retry_test_seams([] { return 0.5; }, [now](std::chrono::milliseconds d) {
+        *now += d + std::chrono::milliseconds(4900);
+    });
+    CibaAwaitOptions o;
+    o.clock = fc.clock();
+    AXIAM_CHECK(oauth_code([&] { client.ciba_await(fc.initiated(10, 5), o); }) == "expired_token");
+    AXIAM_CHECK(rig.token_calls == 1);
+}
+
+AXIAM_TEST("§33.7 rule 4 (C164-58): a hostile expires_in cannot overflow the deadline -- a hugely negative value expires at once, no request") {
+    Rig rig;
+    rig.token_script = {{200, rig.tokens()}};
+    auto client = rig.client();
+    FakeClock fc;
+    CibaAwaitOptions o;
+    o.clock = fc.clock();
+    // -9e18 s overflows the conversion to nanoseconds (UBSan reports it).
+    AXIAM_CHECK(oauth_code([&] { client.ciba_await(fc.initiated(std::int64_t(-9'000'000'000'000'000'000LL), 5), o); }) ==
+                "expired_token");
+    AXIAM_CHECK(rig.token_calls == 0);
+}
+
 AXIAM_TEST("§34.2 P10 (C164-54): an OS oversleep of the section 16 wait inside a poll does not carry the retry past the deadline") {
     Rig rig;
     rig.token_script = {{500, ""}, {200, rig.tokens()}};

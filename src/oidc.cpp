@@ -1740,9 +1740,10 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
     const std::string device_code = detail::reveal(authorization.device_code);
 
     std::int64_t interval = authorization.interval;
-    // milliseconds; a hostile `expires_in` is clamped (about 31 years) so the product cannot overflow
+    // milliseconds; a hostile `expires_in` is clamped to [0, about 31 years] so the product cannot
+    // overflow in either direction (a value <= 0 expires at once, as before)
     const auto deadline =
-        p_->now_ms_fn() + std::min<std::int64_t>(authorization.expires_in, 1'000'000'000) * 1000;
+        p_->now_ms_fn() + std::clamp<std::int64_t>(authorization.expires_in, 0, 1'000'000'000) * 1000;
     // §14.2 rule 9 (contract 1.64): the wait a `429 rate_limit_exceeded` asked for. It is a
     // minimum, replaces the next interval wait (so it counts as one interval) and leaves
     // `interval` itself alone.
@@ -2586,9 +2587,10 @@ OidcTokenSet Client::ciba_await(const CibaInitiateResponse& initiated,
     const OidcConfiguration config = oidc_discover();
     const CibaClock clock = options.clock ? *options.clock : CibaClock::system();
 
-    // `expires_in` is clamped (about 31 years) so the conversion to nanoseconds cannot overflow
+    // `expires_in` is clamped to [0, about 31 years] so the conversion to nanoseconds cannot overflow
+    // in either direction (a value <= 0 expires at once, as before)
     const auto deadline = initiated.received_at +
-                          std::chrono::seconds(std::min<std::int64_t>(initiated.expires_in, 1'000'000'000));
+                          std::chrono::seconds(std::clamp<std::int64_t>(initiated.expires_in, 0, 1'000'000'000));
     std::int64_t interval =
         initiated.interval > 0 ? initiated.interval : kCibaDefaultIntervalSeconds;
     for (;;) {

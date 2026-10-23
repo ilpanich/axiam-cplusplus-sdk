@@ -175,7 +175,7 @@ bool body_has_field(axtest::FakeState& st, const std::string& needle, const std:
 
 std::int64_t now() { return static_cast<std::int64_t>(std::time(nullptr)); }
 
-std::string device_body(const std::string& interval_json, int expires) {
+std::string device_body(const std::string& interval_json, std::int64_t expires) {
     return R"({"device_code":"the-device-code","user_code":"WDJB-MJHT",)"
            R"("verification_uri":"https://id.test/device","expires_in":)" +
            std::to_string(expires) + interval_json + "}";
@@ -692,6 +692,65 @@ AXIAM_TEST("§14.2 rule 4 (C164-54): an OS oversleep of the interval wait does n
         AXIAM_REQUIRE(e.error_code() == "expired_token");
     }
     AXIAM_REQUIRE(f.replies->token_calls == 0);
+}
+
+AXIAM_TEST("§14.2 rule 4 (C164-58): a sleep that ends EXACTLY on the deadline sends nothing -- the post-sleep re-check is >=, device interval wait") {
+    // 6 s grant, 5 s interval, a sleeper that takes 1 s too long: the clock lands on the deadline
+    // to the millisecond. A `>` in the re-check would send the poll.
+    Fixture f;
+    f.replies->device_body = device_body(R"(,"interval":5)", 6);
+    f.replies->token_script = {{200, kSuccessTokens}};
+    auto client = make_client(f);
+    use_oversleeping_clock(f, client, 1000, /*all=*/true);
+    try {
+        client.device_login(nullptr);
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OAuthProtocolError& e) {
+        AXIAM_REQUIRE(e.error_code() == "expired_token");
+    }
+    AXIAM_REQUIRE(f.replies->token_calls == 0);
+}
+
+AXIAM_TEST("§14.2 rule 4 (C164-58): a section 16 wait inside a poll that ends EXACTLY on the deadline sends no retry -- the re-check is >=") {
+    // Poll at 5 s of a 7 s grant answered 500; the 100 ms backoff (jitter 0.5) passes the pre-sleep
+    // check (5.1 < 7) and the sleeper takes 1.9 s too long, so the clock lands on 7.0 s exactly.
+    Fixture f;
+    f.replies->device_body = device_body(R"(,"interval":5)", 7);
+    f.replies->token_script = {{500, R"({"error":"server_error"})"}, {200, kSuccessTokens}};
+    auto client = make_client(f);
+    use_oversleeping_clock(f, client, 1900, /*all=*/false);
+    try {
+        client.device_login(nullptr);
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OAuthProtocolError& e) {
+        AXIAM_REQUIRE(e.error_code() == "expired_token");
+    }
+    AXIAM_REQUIRE(f.replies->token_calls == 1);
+}
+
+AXIAM_TEST("§14.2 rule 4 (C164-58): a hostile expires_in cannot overflow the deadline -- a hugely negative or zero value expires at once, no request") {
+    // -9e18 * 1000 overflows a signed 64-bit integer (UBSan reports it, and the wrapped deadline
+    // was far in the future, so the poll was served). The clamp to [0, 1e9] makes it 0: expired.
+    for (const std::int64_t expires : {std::int64_t(-9'000'000'000'000'000'000LL), std::int64_t(-1), std::int64_t(0)}) {
+        Fixture f;
+        f.replies->device_body = device_body(R"(,"interval":5)", expires);
+        f.replies->token_script = {{200, kSuccessTokens}};
+        auto client = make_client(f);
+        try {
+            client.device_login(nullptr);
+            AXIAM_REQUIRE(false);
+        } catch (const axiam::OAuthProtocolError& e) {
+            AXIAM_REQUIRE(e.error_code() == "expired_token");
+        }
+        AXIAM_REQUIRE(f.replies->token_calls == 0);
+    }
+    // And a hugely POSITIVE one is clamped (about 31 years), not wrapped: the grant completes.
+    Fixture g;
+    g.replies->device_body = device_body(R"(,"interval":5)", std::int64_t(9'000'000'000'000'000'000LL));
+    g.replies->token_script = {{200, kSuccessTokens}};
+    auto client = make_client(g);
+    const auto set = client.device_login(nullptr);
+    AXIAM_REQUIRE(axiam::detail::reveal(set.access_token) == "the-access-token");
 }
 
 AXIAM_TEST("§14.2 rule 4 (C164-54): an OS oversleep of the section 16 wait inside a poll does not carry the retry past the deadline") {

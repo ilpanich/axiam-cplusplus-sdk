@@ -47,7 +47,9 @@ poll never waits past the grant's deadline); none changes a signature, so none t
   §34.2 P10). Every deadline check ran before the sleep, so an OS oversleep could send a request a few
   milliseconds late; the clock is now read again after each sleep (the interval waits and the §16 waits inside a
   poll, device and CIBA) and the typed `expired_token` is raised without sending. A hostile `expires_in` is
-  clamped (about 31 years) so converting it to milliseconds or nanoseconds cannot overflow.
+  clamped to [0, about 31 years] (C164-58) so converting it to milliseconds or nanoseconds cannot overflow in
+  either direction: a hugely negative value used to wrap into a far-future deadline and the poll was served; a
+  value <= 0 now expires at once, as a zero always did.
 - **The cookie-less handle pool is bounded by `max_concurrent_requests`** (C163-20). Before this a burst of
   `/oauth2/*` calls opened an unbounded number of connections; now `n + 1` concurrent calls against a cap
   of `n` hold `n` handles. Test: `tests/test_transport_concurrency.cpp`.
@@ -94,7 +96,9 @@ end; not source-breaking. Rebuild against 1.1.2.
   `CibaAwaitOptions::clock` documents that it governs the interval waits and the deadline while the §16 wait
   inside a poll sleeps on the client's own sleeper. C164-54: four oversleep tests (an OS sleep that overshoots
   the interval wait, or the §16 wait inside a poll, for the device grant and for CIBA); removing any one of the
-  four re-checks fails its test.
+  four re-checks fails its test. C164-58: one test per re-check where the sleep ends exactly on the deadline
+  (`>=` to `>` on any of the four fails), and hostile `expires_in` tests for the device grant and CIBA (run under
+  UBSan in the sanitizer leg; removing the lower clamp fails them).
 - C164-38: the W7.1c in-poll retry test now covers a transport failure (twice then `200`: three requests;
   three failures: three requests and the `NetworkError`; retry off: one) and `device_login` taking its next
   interval after the cap is exhausted (4 calls). C164-41: `README.md` no longer says "the one behaviour note".
