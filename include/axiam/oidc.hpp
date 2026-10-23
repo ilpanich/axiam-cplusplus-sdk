@@ -800,6 +800,11 @@ struct CibaAwaitOptions {
     /// Tenant UUID for the `tenant_id` query parameter; as CibaInitiateParams.
     std::optional<std::string> tenant_id = std::nullopt;
     /// Disengaged: CibaClock::system().
+    ///
+    /// It governs the INTERVAL waits and the deadline. The §16 wait inside a poll (§34.2 P10) is
+    /// checked against `clock.now()` but slept on the client's own sleeper, so a virtual clock
+    /// must be advanced by that sleeper too (Client::_set_retry_test_seams); with the system
+    /// clock the two agree.
     std::optional<CibaClock> clock = std::nullopt;
 };
 

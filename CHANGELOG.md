@@ -14,10 +14,12 @@ Contract 1.64 (§34.8) and the 1.63 conformance follow-ups (#78). `CONTRACT.md`,
 `scripts/gen_management.py --check` is current, with no new operation (**202 across 29**). The README states
 conformance at contract 1.64. **Version: patch (1.1.2), in lockstep with the AXIAM 1.1.2 platform release
 (§34.8: "releases under the patch-bump rule").** No symbol is removed and no signature changes
-incompatibly; two public types gain members, covered by the ABI bump (`SOVERSION` 3 -> 4). Two behaviours are
-changed and recorded under *Changed*: `plan`'s refusal (a correction of a refusal released a week ago to what
-§27.6.2 item 4 and §34.2 P12.2 already say) and the device poll's status handling (what the amended §14.2
-rules 6 and 9 require); neither changes a signature, so neither takes the minor.
+incompatibly; two public types gain members, covered by the ABI bump (`SOVERSION` 3 -> 4), and one test-only
+member function is added (`Client::_set_clock_test_seam`; no layout change). The behaviour changes are recorded
+under *Changed* (`plan`'s refusal, a correction of a refusal released a week ago to what §27.6.2 item 4 and
+§34.2 P12.2 already say; and the device poll's status handling, which the amended §14.2 rules 6 and 9 require)
+and under *Fixed* (a transport failure on the poll is now retried inside the attempt, and a retry inside a
+poll never waits past the grant's deadline); none changes a signature, so none takes the minor.
 
 ### Fixed
 
@@ -73,13 +75,18 @@ end; not source-breaking. Rebuild against 1.1.2.
 
 ### Added
 
-- `Client::_set_clock_test_seam(std::function<std::int64_t()>)`, a test-only seam for the clock the device
-  grant's deadline reads (as `_set_retry_test_seams` is for the §16 sleeper); nothing in `src/` calls it.
+- `Client::_set_clock_test_seam(std::function<std::int64_t()>)`, a test-only seam for the clock (milliseconds)
+  the device grant's deadline reads (as `_set_retry_test_seams` is for the §16 sleeper); nothing in `src/` calls it.
 - `OAuthProtocolError::retry_after()` (`std::optional<std::chrono::milliseconds>`), the response's
   `Retry-After` when it carried a parseable one.
 
 ### Tests
 
+- C164-48: the device grant's deadline is now kept in milliseconds on a monotonic clock, not whole seconds, so
+  a grant no longer ends up to a second early by a rounding (a retry in the last second is served when it
+  lands inside the grant, refused when it lands on it); the CIBA and device deadline boundaries are pinned
+  (`>=` vs `>` mutants fail), and `CibaAwaitOptions::clock` documents that it governs the interval waits and
+  the deadline while the §16 wait inside a poll sleeps on the client's own sleeper.
 - C164-38: the W7.1c in-poll retry test now covers a transport failure (twice then `200`: three requests;
   three failures: three requests and the `NetworkError`; retry off: one) and `device_login` taking its next
   interval after the cap is exhausted (4 calls). C164-41: `README.md` no longer says "the one behaviour note".

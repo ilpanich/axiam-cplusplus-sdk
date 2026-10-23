@@ -620,12 +620,12 @@ namespace {
 /// A virtual clock for the device grant's deadline: the recorded sleeper advances it, so a test
 /// can say "nothing is sent at or after the deadline" without waiting (C164-36).
 std::shared_ptr<std::int64_t> use_virtual_clock(Fixture& f, axiam::Client& client) {
-    auto t = std::make_shared<std::int64_t>(1'000'000);
+    auto t = std::make_shared<std::int64_t>(1'000'000);  // milliseconds
     auto sleeps = f.sleeps;
     client._set_clock_test_seam([t] { return *t; });
     client._set_retry_test_seams([] { return 0.5; }, [t, sleeps](std::chrono::milliseconds d) {
         sleeps->push_back(d);
-        *t += (d.count() + 999) / 1000;
+        *t += d.count();
     });
     return t;
 }
@@ -646,7 +646,7 @@ AXIAM_TEST("§14.2 rule 4 (C164-36): a 503 + Retry-After past expires_in is not 
         AXIAM_REQUIRE(e.error_code() == "expired_token");
     }
     AXIAM_REQUIRE(f.replies->token_calls == 1);       // the first poll only
-    AXIAM_REQUIRE(*t - start < 30);                   // never waited into or past the deadline
+    AXIAM_REQUIRE(*t - start < 30000);                // never waited into or past the deadline
     AXIAM_REQUIRE(f.sleeps->size() == 1);             // the 5 s interval; the 120 s was not served
 
     // A bare device_poll outside the loop keeps the unbounded section 16 behaviour.
@@ -659,20 +659,38 @@ AXIAM_TEST("§14.2 rule 4 (C164-36): a 503 + Retry-After past expires_in is not 
     AXIAM_REQUIRE(g.replies->token_calls == 3);
 }
 
-AXIAM_TEST("§14.2 rule 4 (C164-36): a poll sent just before the deadline and answered 500 is not retried") {
-    Fixture f;
-    f.replies->device_body = device_body(R"(,"interval":5)", 6);
-    f.replies->token_script = {{500, R"({"error":"server_error"})"}, {200, kSuccessTokens}};
-    auto client = make_client(f);
-    use_virtual_clock(f, client);
-    try {
-        client.device_login(nullptr);
-        AXIAM_REQUIRE(false);
-    } catch (const axiam::OAuthProtocolError& e) {
-        AXIAM_REQUIRE(e.error_code() == "expired_token");
+AXIAM_TEST("§14.2 rule 4 (C164-36/48): the deadline is exact to the millisecond -- a retry landing ON it is refused, one landing before it is served") {
+    // Poll at t = 5 s of a 6 s grant, answered 500 + Retry-After 1: the retry would land exactly
+    // on the deadline (6000 ms >= 6000 ms), so nothing more is sent. A `>` instead of `>=` would
+    // send it.
+    {
+        Fixture f;
+        f.replies->device_body = device_body(R"(,"interval":5)", 6);
+        f.replies->retry_after_5xx = "1";
+        f.replies->token_script = {{500, R"({"error":"server_error"})"}, {200, kSuccessTokens}};
+        auto client = make_client(f);
+        use_virtual_clock(f, client);
+        try {
+            client.device_login(nullptr);
+            AXIAM_REQUIRE(false);
+        } catch (const axiam::OAuthProtocolError& e) {
+            AXIAM_REQUIRE(e.error_code() == "expired_token");
+        }
+        AXIAM_REQUIRE(f.replies->token_calls == 1);
     }
-    // The poll went out at t = 5 of 6; its backoff would land on the deadline, so no retry.
-    AXIAM_REQUIRE(f.replies->token_calls == 1);
+    // The same poll answered 500 with no Retry-After: the 100 ms backoff lands at 5.1 s, well
+    // inside the 6 s grant, so it IS retried and the grant completes. (Whole-second rounding
+    // refused this retry and ended the grant about a second early.)
+    {
+        Fixture f;
+        f.replies->device_body = device_body(R"(,"interval":5)", 6);
+        f.replies->token_script = {{500, R"({"error":"server_error"})"}, {200, kSuccessTokens}};
+        auto client = make_client(f);
+        use_virtual_clock(f, client);
+        const auto set = client.device_login(nullptr);
+        AXIAM_REQUIRE(axiam::detail::reveal(set.access_token) == "the-access-token");
+        AXIAM_REQUIRE(f.replies->token_calls == 2);
+    }
 }
 
 AXIAM_TEST("§14.2 rule 9 (1.64 amended): a 429 whose body says slow_down is the wait, not the polling signal -- the interval is unchanged") {

@@ -572,6 +572,35 @@ AXIAM_TEST("§34.2 P10 (C164-36): a 503 + Retry-After past expires_in is not ret
     AXIAM_CHECK(*fc.t - start < std::chrono::seconds(30));  // the clock never reached the deadline
 }
 
+AXIAM_TEST("§34.2 P10 (C164-48): a retry landing ON the deadline is refused, one landing before it is served -- the boundary is exact") {
+    // The first poll goes out at t = 5 s (the interval). A 500 + `Retry-After: 1` makes the
+    // section 16 wait exactly 1 s (the test's jitter is 0, so the backoff is 0 and the hint is the
+    // whole wait): the retry lands at t = 6 s. With a 6 s grant that is ON the deadline
+    // (`>=` refuses it; a `>` would send it); with a 7 s grant it is a second inside it.
+    {
+        Rig rig;
+        rig.token_script = {{500, ""}, {200, rig.tokens()}};
+        rig.token_retry_after = "1";
+        auto client = rig.client();
+        FakeClock fc;
+        CibaAwaitOptions o;
+        o.clock = fc.clock();
+        AXIAM_CHECK(oauth_code([&] { client.ciba_await(fc.initiated(6, 5), o); }) == "expired_token");
+        AXIAM_CHECK(rig.token_calls == 1);
+    }
+    {
+        Rig rig;
+        rig.token_script = {{500, ""}, {200, rig.tokens()}};
+        rig.token_retry_after = "1";
+        auto client = rig.client();
+        FakeClock fc;
+        CibaAwaitOptions o;
+        o.clock = fc.clock();
+        client.ciba_await(fc.initiated(7, 5), o);
+        AXIAM_CHECK(rig.token_calls == 2);
+    }
+}
+
 AXIAM_TEST("§33.8 t07: expires_in 12, interval 5 polls at 5 and 10, then expired_token locally") {
     Rig rig;
     rig.token_script = {{400, error_body("authorization_pending")}};

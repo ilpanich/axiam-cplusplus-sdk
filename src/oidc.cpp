@@ -905,7 +905,7 @@ std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
         // Nothing more is sent: raise the typed `expired_token` at once (P10 allows that or
         // serving the capped wait first). A bare device_poll passes no deadline and keeps the
         // §16 budget.
-        if (deadline && impl.now_seconds_fn() + (delay.count() + 999) / 1000 >= *deadline) {
+        if (deadline && impl.now_ms_fn() + delay.count() >= *deadline) {
             throw OAuthProtocolError(
                 "expired_token: the device grant expired before the user approved it",
                 "expired_token", std::nullopt);
@@ -1733,15 +1733,15 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
     const std::string device_code = detail::reveal(authorization.device_code);
 
     std::int64_t interval = authorization.interval;
-    const auto deadline = p_->now_seconds_fn() + authorization.expires_in;
+    const auto deadline = p_->now_ms_fn() + authorization.expires_in * 1000;  // milliseconds
     // §14.2 rule 9 (contract 1.64): the wait a `429 rate_limit_exceeded` asked for. It is a
     // minimum, replaces the next interval wait (so it counts as one interval) and leaves
     // `interval` itself alone.
-    std::int64_t retry_floor = 0;
+    std::int64_t retry_floor_ms = 0;
 
     for (;;) {
-        const std::int64_t wait = std::max(interval, retry_floor);
-        retry_floor = 0;
+        const std::int64_t wait_ms = std::max(interval * 1000, retry_floor_ms);
+        retry_floor_ms = 0;
         // §14.2 rule 4, and the subtlety that makes it worth a comment: it is
         // the NEXT ATTEMPT that must fall inside the deadline, not the current
         // moment. Checking `now < deadline` before sleeping looks equivalent and
@@ -1749,12 +1749,12 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
         // remaining, that check passes, the loop sleeps through the deadline,
         // and polls anyway. That request is exactly the "pure load" this rule
         // exists to prevent.
-        if (p_->now_seconds_fn() + wait >= deadline) {
+        if (p_->now_ms_fn() + wait_ms >= deadline) {
             throw OAuthProtocolError(
                 "expired_token: the device grant expired before the user approved it",
                 "expired_token", std::nullopt);
         }
-        p_->sleeper(std::chrono::milliseconds(wait * 1000));
+        p_->sleeper(std::chrono::milliseconds(wait_ms));
 
         try {
             return device_poll_with(*p_, config, device_code, client_id, tenant, deadline);
@@ -1764,7 +1764,7 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
                 // Rule 9: not terminal, and not the polling signal -- the interval is
                 // unchanged; the wait is Retry-After when it is longer than the interval.
                 if (e.retry_after()) {
-                    retry_floor = static_cast<std::int64_t>((e.retry_after()->count() + 999) / 1000);
+                    retry_floor_ms = static_cast<std::int64_t>(e.retry_after()->count());
                 }
                 continue;
             }
