@@ -479,36 +479,70 @@ AXIAM_TEST("§14.2 rule 9 (1.64): a single device_poll answered 429 raises after
     AXIAM_REQUIRE(f.replies->token_calls == 1);
 }
 
-AXIAM_TEST("§14.2 rule 6 / §16.2 (1.64): with retry enabled a 500 on a poll is retried within the poll, before the loop takes its next interval -- a 429 is not") {
-    // C164-25 / C164-35: the first poll (500, then 200) is served inside ONE attempt, so the
-    // loop sleeps once for the interval and once for the §16 backoff (shorter than the interval).
-    Fixture f;
-    f.replies->device_body = device_body(R"(,"interval":5)", 600);
-    f.replies->token_script = {{500, R"({"error":"server_error","error_description":"db"})"},
-                               {200, kSuccessTokens}};
-    auto client = make_client(f);
-    client.device_login(nullptr);
-    AXIAM_REQUIRE(f.replies->token_calls == 2);
-    AXIAM_REQUIRE(f.sleeps->size() == 2);
-    AXIAM_REQUIRE((*f.sleeps)[0] == std::chrono::milliseconds(5000));
-    AXIAM_REQUIRE((*f.sleeps)[1] < std::chrono::milliseconds(5000));  // the backoff, not an interval
+AXIAM_TEST("§14.2 rule 6 / §16.2 (1.64 amended, C164-35): the device poll is §16-retried inside the attempt on a 5xx -- three requests, a 429 is not") {
+    const std::string body500 = R"({"error":"server_error","error_description":"db"})";
 
-    // A single poll that keeps failing is attempted three times (at most), then surfaces.
-    Fixture g;
-    g.replies->device_body = device_body(R"(,"interval":5)", 600);
-    g.replies->token_script = {{503, R"({"error":"temporarily_unavailable"})"}};
-    auto c2 = make_client(g);
-    AXIAM_REQUIRE_THROWS_AS(c2.device_poll(axiam::Sensitive<std::string>("dc")), axiam::NetworkError);
-    AXIAM_REQUIRE(g.replies->token_calls == 3);
-
-    // A 429 is never retried inside the poll (the loop owns the wait): one request.
-    Fixture h;
-    h.replies->device_body = device_body(R"(,"interval":5)", 600);
-    h.replies->retry_after_429 = "4";
-    h.replies->token_script = {{429, R"({"error":"rate_limit_exceeded"})"}, {200, kSuccessTokens}};
-    auto c3 = make_client(h);
-    AXIAM_REQUIRE_THROWS_AS(c3.device_poll(axiam::Sensitive<std::string>("dc")), axiam::OAuthProtocolError);
-    AXIAM_REQUIRE(h.replies->token_calls == 1);
+    // Two 500s then 200 (the attempt cap of section 16.1 is 3 in total): a single device_poll
+    // makes three requests and returns the token set.
+    {
+        Fixture f;
+        f.replies->device_body = device_body(R"(,"interval":5)", 600);
+        f.replies->token_script = {{500, body500}, {500, body500}, {200, kSuccessTokens}};
+        auto client = make_client(f);
+        const auto set = client.device_poll(axiam::Sensitive<std::string>("dc"));
+        AXIAM_REQUIRE(axiam::detail::reveal(set.access_token) == "the-access-token");
+        AXIAM_REQUIRE(f.replies->token_calls == 3);
+    }
+    // device_login completes within ONE interval with those three requests: the only loop wait
+    // is the 5 s interval, the other two are section 16 backoffs.
+    {
+        Fixture f;
+        f.replies->device_body = device_body(R"(,"interval":5)", 600);
+        f.replies->token_script = {{500, body500}, {500, body500}, {200, kSuccessTokens}};
+        auto client = make_client(f);
+        client.device_login(nullptr);
+        AXIAM_REQUIRE(f.replies->token_calls == 3);
+        AXIAM_REQUIRE(f.sleeps->size() == 3);
+        AXIAM_REQUIRE((*f.sleeps)[0] == std::chrono::milliseconds(5000));
+        AXIAM_REQUIRE((*f.sleeps)[1] < std::chrono::milliseconds(5000));
+        AXIAM_REQUIRE((*f.sleeps)[2] < std::chrono::milliseconds(5000));
+    }
+    // A third 500 in a row exhausts the cap: three requests, then device_poll surfaces it.
+    {
+        Fixture f;
+        f.replies->device_body = device_body(R"(,"interval":5)", 600);
+        f.replies->token_script = {{500, body500}};
+        auto client = make_client(f);
+        AXIAM_REQUIRE_THROWS_AS(client.device_poll(axiam::Sensitive<std::string>("dc")), axiam::NetworkError);
+        AXIAM_REQUIRE(f.replies->token_calls == 3);
+    }
+    // A 429 is not retried inside the poll: one request, the wait is the loop's (rule 9).
+    {
+        Fixture f;
+        f.replies->device_body = device_body(R"(,"interval":5)", 600);
+        f.replies->retry_after_429 = "4";
+        f.replies->token_script = {{429, R"({"error":"rate_limit_exceeded"})"}, {200, kSuccessTokens}};
+        auto client = make_client(f);
+        AXIAM_REQUIRE_THROWS_AS(client.device_poll(axiam::Sensitive<std::string>("dc")), axiam::OAuthProtocolError);
+        AXIAM_REQUIRE(f.replies->token_calls == 1);
+    }
+    // With retry disabled a 5xx makes one request per poll.
+    {
+        Fixture f;
+        f.replies->device_body = device_body(R"(,"interval":5)", 600);
+        f.replies->token_script = {{500, body500}, {200, kSuccessTokens}};
+        auto client = axiam::Client::builder()
+                          .base_url("https://iam.example.com")
+                          .tenant_slug("acme")
+                          .oidc_client_id(kClientId)
+                          .tenant_id(kTenantUuid)
+                          .oidc_client_secret(kClientSecret)
+                          .retry_enabled(false)
+                          .transport(routed(f.st, f.replies))
+                          .build();
+        AXIAM_REQUIRE_THROWS_AS(client.device_poll(axiam::Sensitive<std::string>("dc")), axiam::NetworkError);
+        AXIAM_REQUIRE(f.replies->token_calls == 1);
+    }
 }
 
 AXIAM_TEST("§14.2 rule 9 (1.64 amended): a 429 whose body says slow_down is the wait, not the polling signal -- the interval is unchanged") {
