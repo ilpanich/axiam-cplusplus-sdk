@@ -38,7 +38,7 @@ the status decides on the poll: a `5xx` is a `NetworkError` whatever its body (s
 Its other changes are informative. 1.1.2 also closes the 1.63 conformance follow-ups: the manifest `plan` refusal of an
 unknown carried open-enum value is a `std::invalid_argument` quoting the value (`NetworkReplyProfile`
 keeps `termination_action_wire` and `service_type_wire`), and the cookie-less `/oauth2/*` handle pool is
-bounded by `max_concurrent_requests`. See the [CHANGELOG](CHANGELOG.md) for the one behaviour note.
+bounded by `max_concurrent_requests`. See the [CHANGELOG](CHANGELOG.md) for the behaviour notes.
 
 Contract 1.63 (§34.7) is the **1.1.1** release: no `axiam_*` session cookie and no `X-CSRF-Token` on any
 `/oauth2/*` request (§6.1 rule 11, §12.1 rule 3), a manifest `plan` that refuses to carry an unknown open-enum

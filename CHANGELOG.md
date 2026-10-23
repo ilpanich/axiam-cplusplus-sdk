@@ -28,6 +28,16 @@ rules 6 and 9 require); neither changes a signature, so neither takes the minor.
   owns the wait; the single `device_poll` still raises the `OAuthProtocolError`, now carrying the
   response's `Retry-After` on `retry_after()`. Tests (§14.6): `tests/test_oidc_grants.cpp`. The 1.63 §14.6
   tests are unchanged.
+- **A transport failure on the device poll is retried inside the attempt** (C164-39, §16.2, §14.2 rule 6). The
+  poll's §16 loop sent through `send_raw`, which throws on a transport failure, so a connection reset ended the
+  attempt at once and `device_login` waited a full interval per failure; it now retries up to the §16.1 cap of
+  three requests, then raises the `NetworkError`. `introspect` had the same shape and gets the same fix.
+- **A retry inside a poll never waits past the grant's deadline** (C164-36, §14.2 rule 4, §34.2 P10). Under
+  `device_login` and `ciba_await` the §16 wait (`Retry-After` a floor of up to an hour) was not capped at
+  `expires_in`, so a `503` + `Retry-After: 120` against a 30 s grant sent requests after the deadline. Now,
+  when the wait would reach the deadline, nothing more is sent and the typed `expired_token` is raised at
+  once; a bare `device_poll` / `ciba_poll` keeps the §16 behaviour. Tests: `tests/test_oidc_grants.cpp`,
+  `tests/test_ciba.cpp` (on a virtual clock; both fail against the previous code).
 - **The cookie-less handle pool is bounded by `max_concurrent_requests`** (C163-20). Before this a burst of
   `/oauth2/*` calls opened an unbounded number of connections; now `n + 1` concurrent calls against a cap
   of `n` hold `n` handles. Test: `tests/test_transport_concurrency.cpp`.
@@ -63,10 +73,16 @@ end; not source-breaking. Rebuild against 1.1.2.
 
 ### Added
 
+- `Client::_set_clock_test_seam(std::function<std::int64_t()>)`, a test-only seam for the clock the device
+  grant's deadline reads (as `_set_retry_test_seams` is for the §16 sleeper); nothing in `src/` calls it.
 - `OAuthProtocolError::retry_after()` (`std::optional<std::chrono::milliseconds>`), the response's
   `Retry-After` when it carried a parseable one.
 
 ### Tests
+
+- C164-38: the W7.1c in-poll retry test now covers a transport failure (twice then `200`: three requests;
+  three failures: three requests and the `NetworkError`; retry off: one) and `device_login` taking its next
+  interval after the cap is exhausted (4 calls). C164-41: `README.md` no longer says "the one behaviour note".
 
 - C163-09: `tests/test_manifest_network.cpp` covers the `service_type` refusal, the stated case's
   `replace_profile` body (`radius_request`, never the unknown value) and `Unchanged` with no write (`apply`,
