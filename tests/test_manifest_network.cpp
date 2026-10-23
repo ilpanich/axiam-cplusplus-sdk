@@ -769,6 +769,57 @@ AXIAM_TEST("§27.6.2 item 4 (C163-09): an unknown value on an unstated member wi
     for (const auto& w : wire_of(fixture)) AXIAM_CHECK(w.method == "GET");
 }
 
+AXIAM_TEST("§27.6.2 item 4 (C164-12): apply of an unknown unstated value with nothing else drifted writes nothing -- termination_action and service_type") {
+    for (const char* member : {"termination_action", "service_type"}) {
+        auto fixture = axtest::mgmt::signed_in_many({
+            {200, page({segment_json(kSegA, "staff")})},
+            {200, page({profile_json(kSegA, {{member, "future_value"}})})},
+        });
+        Manifest manifest{{segment_entity("seg", "staff"), profile_entity("prof", "seg")}};
+        const auto report = fixture.client.management().manifest().apply(manifest);
+        AXIAM_CHECK(report.complete());
+        for (const auto& w : wire_of(fixture)) AXIAM_CHECK(w.method == "GET");
+    }
+}
+
+AXIAM_TEST("§27.6.2 item 4 (C164-12): stating service_type resolves an unknown one -- the PUT body carries the stated value, never the unknown") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, page({segment_json(kSegA, "staff")})},
+        {200, page({profile_json(kSegA, {{"service_type", "future_type"}})})},
+        {200, profile_json(kSegA, {{"version", 5}}).dump()},  // PUT
+    });
+    Manifest manifest{{segment_entity("seg", "staff"), profile_entity("prof", "seg")}};
+    manifest.entities[1].network_profile->service_type = RadiusServiceType::FramedUser;
+    manifest.entities[1].network_profile->idle_timeout_secs = 900;
+    const auto report = fixture.client.management().manifest().apply(manifest);
+    AXIAM_CHECK(report.complete());
+    const auto wire = wire_of(fixture);
+    AXIAM_REQUIRE(wire.size() == 3);
+    AXIAM_CHECK(wire[2].method == "PUT");
+    AXIAM_CHECK(wire[2].body.dump().find("future_type") == std::string::npos);
+    const auto& profile = wire[2].body.contains("profile") ? wire[2].body.at("profile") : wire[2].body;
+    AXIAM_CHECK(profile.at("service_type") == "framed_user");
+}
+
+AXIAM_TEST("§27.6.2 item 4 (C164-21): the quoted server value is capped at 64 bytes and carries no control character") {
+    auto fixture = axtest::mgmt::signed_in_many({
+        {200, page({segment_json(kSegA, "staff")})},
+        {200, page({profile_json(kSegA, {{"termination_action", std::string("bad\nvalue") + std::string(100, 'x')}})})},
+    });
+    Manifest manifest{{segment_entity("seg", "staff"), profile_entity("prof", "seg")}};
+    manifest.entities[1].network_profile->idle_timeout_secs = 900;
+    try {
+        fixture.client.management().manifest().plan(manifest);
+        AXIAM_REQUIRE(false);
+    } catch (const std::invalid_argument& e) {
+        const std::string what = e.what();
+        AXIAM_CHECK(what.find('\n') == std::string::npos);
+        AXIAM_CHECK(what.find("bad?valuexxx") != std::string::npos);
+        AXIAM_CHECK(what.find(std::string(65, 'x')) == std::string::npos);
+        AXIAM_CHECK(what.find("...\"") != std::string::npos);
+    }
+}
+
 AXIAM_TEST("§27.6.2 item 4 (C162-07): stating the member replaces the unknown value, so plan proceeds") {
     auto fixture = axtest::mgmt::signed_in_many({
         {200, page({segment_json(kSegA, "staff")})},

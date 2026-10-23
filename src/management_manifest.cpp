@@ -251,9 +251,22 @@ NetworkReplyProfileInput profile_replace_input(const ManifestNetworkProfile& spe
 // fill it), unless the manifest states that member (the stated value then replaces it). The
 // refusal is a local one of a value the caller's manifest cannot be sent as, hence
 // `std::invalid_argument`, as for every other P12.2 refusal (C163-07).
+// The quoted text is server data headed for logs (C164-21): at most 64 bytes, and every control
+// or non-ASCII byte becomes `?`, so a newline or a split multi-byte character cannot reach them.
+std::string quote_server_value(const std::string& raw) {
+    constexpr std::size_t kMax = 64;
+    std::string out = "\"";
+    for (std::size_t i = 0; i < raw.size() && i < kMax; ++i) {
+        const unsigned char c = static_cast<unsigned char>(raw[i]);
+        out += (c < 0x20 || c >= 0x7f) ? '?' : static_cast<char>(c);
+    }
+    if (raw.size() > kMax) out += "...";
+    return out + "\"";
+}
+
 void refuse_unknown_carried(const ManifestNetworkProfile& spec, const NetworkReplyProfile& read) {
     const auto refuse = [&](const char* member, const std::optional<std::string>& wire) {
-        const std::string shown = wire ? "\"" + *wire + "\"" : std::string("unknown");
+        const std::string shown = wire ? quote_server_value(*wire) : std::string("unknown");
         throw std::invalid_argument(
             "network profile '" + spec.segment + "': " + member + " holds the value " + shown +
             ", which this SDK does not know, and the manifest does not state it, so an Update "
