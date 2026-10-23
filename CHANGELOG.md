@@ -31,8 +31,23 @@ what §27.6.2 item 4 and §34.2 P12.2 already say, so it does not take the minor
   `/oauth2/*` calls opened an unbounded number of connections; now `n + 1` concurrent calls against a cap
   of `n` hold `n` handles. Test: `tests/test_transport_concurrency.cpp`.
 
+### Binary compatibility
+
+The shared library's ABI version is now 4 (`libaxiam_cpp.so.4`): `OAuthProtocolError` (`retry_after`,
+`http_status`) and `NetworkReplyProfile` (`termination_action_wire`, `service_type_wire`) gained members at the
+end; not source-breaking. Rebuild against 1.1.2.
+
 ### Changed
 
+- **On the device poll, the status decides** (contract 1.64 as amended; C164-03, C164-04, §14.2 rules 6 and 9).
+  A `5xx` is a `NetworkError` whatever its body, so AXIAM's `500 {"error":"server_error"}` mid-poll is retried
+  under §16 and then waited out by the loop instead of ending the grant with an `OAuthProtocolError`
+  (`device_login` and a single `device_poll` alike). Any `429` is the rule-9 wait whatever its body names, so a
+  `429 {"error":"slow_down"}` (a server before 1.1.2, or an intermediary) no longer raises the interval, and a
+  bodiless `429` honours `Retry-After` as a floor; a single `device_poll` on a `429` is now always an
+  `OAuthProtocolError` with `error() == "rate_limit_exceeded"` (a bodiless one was a `NetworkError`), so
+  **a caller driving its own loop that caught only `NetworkError` for a `429` must also catch
+  `OAuthProtocolError`**. `OAuthProtocolError::http_status()` is new. Tests: `tests/test_oidc_grants.cpp`.
 - **`plan`'s refusal of an unknown carried open-enum value is a `std::invalid_argument`** (C163-07), no longer
   `management::ValidationError`: it is a local refusal of a value the SDK cannot send (§27.6.2 item 4, P12.2),
   not the server's `400`/`422`. **Code that caught `ValidationError` (or `NetworkError`) around
@@ -40,7 +55,8 @@ what §27.6.2 item 4 and §34.2 P12.2 already say, so it does not take the minor
   before.
 - **The refusal quotes the value** (C163-10, D-15): `NetworkReplyProfile` gains
   `std::optional<std::string> termination_action_wire` and `service_type_wire`, the wire text as the server
-  sent it (informational, never sent), and the message names the member and the value.
+  sent it (informational, never sent), and the message names the member and the value, capped at 64 bytes with
+  control and non-ASCII bytes shown as `?` (C164-21).
 
 ### Added
 
@@ -50,7 +66,8 @@ what §27.6.2 item 4 and §34.2 P12.2 already say, so it does not take the minor
 ### Tests
 
 - C163-09: `tests/test_manifest_network.cpp` covers the `service_type` refusal, the stated case's
-  `replace_profile` body (`radius_request`, never the unknown value) and `Unchanged` with no write.
+  `replace_profile` body (`radius_request`, never the unknown value) and `Unchanged` with no write (`apply`,
+  both members; C164-12).
 - C163-08: the mock server also sets `axiam_csrf`; the control after the `/oauth2/*` calls is a state-changing
   `POST` asserting `Cookie` (`axiam_session`, `axiam_csrf`) and `X-CSRF-Token`
   (`tests/test_integration_curl.cpp`).
