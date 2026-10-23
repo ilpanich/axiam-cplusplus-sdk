@@ -885,6 +885,15 @@ AXIAM_TEST("§12.1 rule 4 introspect refuses a public client with no wire call")
     AXIAM_REQUIRE(f.replies->introspect_calls == 0);
 }
 
+AXIAM_TEST("§16.2 (C164-39): introspect retries a transport failure inside the attempt -- three requests, then the network error") {
+    Fixture f;
+    f.replies->introspect_status = 0;  // connection refused at the transport
+    auto client = make_client(f);
+    client._set_retry_test_seams([] { return 0.5; }, [](std::chrono::milliseconds) {});
+    AXIAM_REQUIRE_THROWS_AS(client.introspect(axiam::Sensitive<std::string>("t")), axiam::NetworkError);
+    AXIAM_REQUIRE(f.replies->introspect_calls == 3);
+}
+
 AXIAM_TEST("§12.1 introspect surfaces the full result, and inactive is a success") {
     Fixture f;
     f.replies->introspect_body =

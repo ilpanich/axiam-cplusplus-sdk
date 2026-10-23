@@ -1164,6 +1164,10 @@ void Client::_set_retry_test_seams(std::function<double()> jitter,
     p_->sleeper = std::move(sleeper);
 }
 
+void Client::_set_clock_test_seam(std::function<std::int64_t()> now_seconds) {
+    p_->now_seconds_fn = std::move(now_seconds);
+}
+
 int Client::refresh_call_count() const { return p_->refresh_count.load(); }
 
 std::optional<std::string> Client::csrf_token() const {

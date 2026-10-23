@@ -1358,6 +1358,10 @@ public:
     /// production; nothing in src/ writes it.
     void _set_retry_test_seams(std::function<double()> jitter,
                                std::function<void(std::chrono::milliseconds)> sleeper);
+    /// Test seam for the clock the device grant's `expires_in` deadline reads (whole seconds
+    /// since the epoch), so a recorded sleeper can advance it (§14.2 rule 4). NEVER called in
+    /// production; nothing in src/ writes it.
+    void _set_clock_test_seam(std::function<std::int64_t()> now_seconds);
     /// Currently-stored CSRF token, if any (§3).
     std::optional<std::string> csrf_token() const;
     /// Whether a session has been established (login/verify_mfa succeeded).
