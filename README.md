@@ -32,8 +32,10 @@ is the public accessor (§7 rule 3), and management reads follow §16 (`408`, `4
 Contract 1.64 (§34.8) is the **1.1.2** release and ports one rule: a `429 rate_limit_exceeded` on a
 device-code poll is waited out, not terminal (§14.2 rule 9) -- `device_login` waits `Retry-After` (a minimum,
 capped at the `expires_in` deadline), counts it as one interval, leaves the interval unchanged and polls again;
-the single `device_poll` still raises the `OAuthProtocolError`, which now carries `retry_after()`. Its other
-changes are informative. 1.1.2 also closes the 1.63 conformance follow-ups: the manifest `plan` refusal of an
+the single `device_poll` still raises the `OAuthProtocolError`, which now carries `retry_after()`. As amended,
+the status decides on the poll: a `5xx` is a `NetworkError` whatever its body (so AXIAM's
+`500 {"error":"server_error"}` does not end the grant) and any `429` is the wait, a `429 slow_down` included.
+Its other changes are informative. 1.1.2 also closes the 1.63 conformance follow-ups: the manifest `plan` refusal of an
 unknown carried open-enum value is a `std::invalid_argument` quoting the value (`NetworkReplyProfile`
 keeps `termination_action_wire` and `service_type_wire`), and the cookie-less `/oauth2/*` handle pool is
 bounded by `max_concurrent_requests`. See the [CHANGELOG](CHANGELOG.md) for the one behaviour note.

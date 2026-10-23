@@ -109,7 +109,7 @@ endif()
 # The ABI version of the shared library, kept apart from the package's SemVer: bump it whenever
 # a public type the caller allocates or the library fills changes size or layout (1.1.0 grew
 # ApplyReport, PlannedChange, ManifestEntity, ConflictError and the models, so it is 2; 1.1.1 grew
-# PageRequest (`site`), so it is 3; 1.1.2 grew OAuthProtocolError (`retry_after`) and
+# PageRequest (`site`), so it is 3; 1.1.2 grew OAuthProtocolError (`retry_after`, `http_status`) and
 # NetworkReplyProfile (the two `*_wire` members), so it is 4 while the package is still 1.x). The file is
 # libaxiam_cpp.so.${PROJECT_VERSION} with SONAME
 # libaxiam_cpp.so.${AXIAM_SOVERSION}; tests/CMakeLists.txt (abi_soname) pins it.

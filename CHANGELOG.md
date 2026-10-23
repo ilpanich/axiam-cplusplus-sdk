@@ -9,21 +9,22 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 ## [1.1.2] - 2026-10-23
 
 Contract 1.64 (§34.8) and the 1.63 conformance follow-ups (#78). `CONTRACT.md`, `openapi.json` and
-`management-registry.json` are re-vendored byte for byte from ilpanich/axiam `fb92ec4` (branch
+`management-registry.json` are re-vendored byte for byte from ilpanich/axiam `21beda0` (branch
 `claude/release-1.1.2-w7`; this SDK vendors no `proto/`; `opaque-test-vectors.json` is unchanged);
 `scripts/gen_management.py --check` is current, with no new operation (**202 across 29**). The README states
 conformance at contract 1.64. **Version: patch (1.1.2), in lockstep with the AXIAM 1.1.2 platform release
 (§34.8: "releases under the patch-bump rule").** No symbol is removed and no signature changes
-incompatibly; two public types gain members, covered by the ABI bump (`SOVERSION` 3 -> 4). One behaviour of
-1.1.1 is corrected and is recorded under *Changed*; it is a correction of a refusal released a week ago to
-what §27.6.2 item 4 and §34.2 P12.2 already say, so it does not take the minor.
+incompatibly; two public types gain members, covered by the ABI bump (`SOVERSION` 3 -> 4). Two behaviours are
+changed and recorded under *Changed*: `plan`'s refusal (a correction of a refusal released a week ago to what
+§27.6.2 item 4 and §34.2 P12.2 already say) and the device poll's status handling (what the amended §14.2
+rules 6 and 9 require); neither changes a signature, so neither takes the minor.
 
 ### Fixed
 
 - **A `429 rate_limit_exceeded` on a device poll is waited out** (contract 1.64 (b), §14.2 rule 9).
   `device_login` waits `Retry-After` (a minimum, replacing that round's interval wait, capped at the
   `expires_in` deadline: past it the loop raises `expired_token` and sends nothing), does not raise the
-  interval and polls again. The `429` that names its error is no longer retried inside the poll, so the loop
+  interval and polls again. A `429` on the poll is no longer retried inside the poll, so the loop
   owns the wait; the single `device_poll` still raises the `OAuthProtocolError`, now carrying the
   response's `Retry-After` on `retry_after()`. Tests (§14.6): `tests/test_oidc_grants.cpp`. The 1.63 §14.6
   tests are unchanged.
@@ -47,7 +48,9 @@ end; not source-breaking. Rebuild against 1.1.2.
   bodiless `429` honours `Retry-After` as a floor; a single `device_poll` on a `429` is now always an
   `OAuthProtocolError` with `error() == "rate_limit_exceeded"` (a bodiless one was a `NetworkError`), so
   **a caller driving its own loop that caught only `NetworkError` for a `429` must also catch
-  `OAuthProtocolError`**. `OAuthProtocolError::http_status()` is new. Tests: `tests/test_oidc_grants.cpp`.
+  `OAuthProtocolError`**; and, in the reverse direction, **a hand-rolled loop that caught `OAuthProtocolError`
+  with `error() == "server_error"` from `device_poll` now receives a `NetworkError`**, which is not terminal.
+  `OAuthProtocolError::http_status()` is new. Tests: `tests/test_oidc_grants.cpp`.
 - **`plan`'s refusal of an unknown carried open-enum value is a `std::invalid_argument`** (C163-07), no longer
   `management::ValidationError`: it is a local refusal of a value the SDK cannot send (§27.6.2 item 4, P12.2),
   not the server's `400`/`422`. **Code that caught `ValidationError` (or `NetworkError`) around
