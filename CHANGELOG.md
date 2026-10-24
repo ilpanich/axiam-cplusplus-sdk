@@ -9,8 +9,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 ## [1.1.2] - 2026-10-23
 
 Contract 1.64 (§34.8) and the 1.63 conformance follow-ups (#78). `CONTRACT.md`, `openapi.json` and
-`management-registry.json` are re-vendored byte for byte from ilpanich/axiam `b3f8687` (branch
-`claude/release-1.1.2-w7`; this SDK vendors no `proto/`; `opaque-test-vectors.json` is unchanged);
+`management-registry.json` are re-vendored byte for byte from ilpanich/axiam `356a6da` (platform
+PR #793 merge; this SDK vendors no `proto/`; `opaque-test-vectors.json` is unchanged);
 `scripts/gen_management.py --check` is current, with no new operation (**202 across 29**). The README states
 conformance at contract 1.64. **Version: patch (1.1.2), in lockstep with the AXIAM 1.1.2 platform release
 (§34.8: "releases under the patch-bump rule").** No symbol is removed and no signature changes
