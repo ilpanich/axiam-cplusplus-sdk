@@ -24,6 +24,7 @@ using namespace axiam;
 namespace {
 
 struct SeenRequest {
+    std::string method;
     std::string path;
     bool had_cookie = false;
     std::string cookie_header;  // raw value, so a specific cookie can be told apart from "some cookie"
@@ -119,14 +120,17 @@ struct MiniServer {
 
         // Parse request line: METHOD SP PATH SP HTTP/1.1
         std::string path;
+        std::string method;
         {
             auto sp1 = data.find(' ');
             auto sp2 = data.find(' ', sp1 + 1);
+            if (sp1 != std::string::npos) method = data.substr(0, sp1);
             if (sp1 != std::string::npos && sp2 != std::string::npos)
                 path = data.substr(sp1 + 1, sp2 - sp1 - 1);
         }
 
         SeenRequest sr;
+        sr.method = method;
         sr.path = path;
         sr.cookie_header = header_value(data, "Cookie");
         sr.had_cookie = !sr.cookie_header.empty();
@@ -164,6 +168,7 @@ struct MiniServer {
                 R"("user":{"id":"u","username":"a","email":"a@x","tenant_id":"t"}})";
             extra_headers =
                 "Set-Cookie: axiam_session=xyz; Path=/\r\n"
+                "Set-Cookie: axiam_csrf=csrf-int; Path=/\r\n"  // C163-08: the CSRF cookie too
                 "X-CSRF-Token: csrf-int\r\n";
         } else if (path.find("/webauthn/setup/register/start") != std::string::npos) {
             // §24.1 (contract 1.45): a StartRegistrationResponse, same shape as
@@ -345,7 +350,10 @@ AXIAM_TEST("§14.6 (1.63): no session cookie and no X-CSRF-Token on device autho
     AXIAM_CHECK(server.seen[0].path.find("/auth/login") != std::string::npos);
     const auto& last = server.seen.back();
     AXIAM_CHECK(last.path.find("/oauth2/") == std::string::npos);
+    AXIAM_CHECK(last.method == "POST");  // C163-08: a state-changing request, after oidc_refresh
     AXIAM_CHECK(last.had_cookie);
+    AXIAM_CHECK(last.cookie_header.find("axiam_session=xyz") != std::string::npos);
+    AXIAM_CHECK(last.cookie_header.find("axiam_csrf=csrf-int") != std::string::npos);
     AXIAM_CHECK(last.csrf == "csrf-int");
 }
 

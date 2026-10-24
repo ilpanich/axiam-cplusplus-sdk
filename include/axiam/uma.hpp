@@ -20,6 +20,7 @@
 // the exchange succeeded. See Client::uma_exchange_ticket.
 #pragma once
 
+#include <chrono>
 #include <optional>
 #include <string>
 #include <vector>
@@ -171,10 +172,14 @@ struct UmaExchangeTicketParams {
 class OAuthProtocolError : public AuthError {
 public:
     OAuthProtocolError(const std::string& message, std::string error_code,
-                       std::optional<std::string> error_description)
+                       std::optional<std::string> error_description,
+                       std::optional<std::chrono::milliseconds> retry_after = std::nullopt,
+                       std::optional<long> http_status = std::nullopt)
         : AuthError(message),
           error_code_(std::move(error_code)),
-          error_description_(std::move(error_description)) {}
+          error_description_(std::move(error_description)),
+          retry_after_(retry_after),
+          http_status_(http_status) {}
 
     /// The `error` field: `invalid_grant`, `access_denied`, `invalid_client`, …
     const std::string& error_code() const noexcept { return error_code_; }
@@ -183,6 +188,14 @@ public:
         return error_description_;
     }
 
+    /// The response's `Retry-After`, when it carried a parseable one (§14.2 rule 9, contract
+    /// 1.64: the device-poll loop waits it out on a `429 rate_limit_exceeded`).
+    const std::optional<std::chrono::milliseconds>& retry_after() const noexcept {
+        return retry_after_;
+    }
+    /// The HTTP status of the response this was read from, when it came from one. The device-poll
+    /// loop decides a `429` by it, whatever the body names (§14.2 rule 9, contract 1.64).
+    const std::optional<long>& http_status() const noexcept { return http_status_; }
     /// `access_denied` — at a CIBA or device poll, the USER refused (§33.4,
     /// §14.2 rule 3). Distinct from is_expired_token(): a client acts
     /// differently on "a human said no" and "nobody answered".
@@ -194,6 +207,8 @@ public:
 private:
     std::string error_code_;
     std::optional<std::string> error_description_;
+    std::optional<std::chrono::milliseconds> retry_after_;
+    std::optional<long> http_status_;
 };
 
 /// Parse a `WWW-Authenticate: UMA …` header value (§20.3), or `std::nullopt`

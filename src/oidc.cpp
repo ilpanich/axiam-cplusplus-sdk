@@ -453,7 +453,11 @@ std::int64_t now_seconds() {
         // specifies that shape, and no token, secret or verifier from this SDK
         // ever reaches it.
         const std::string message = description ? (code + ": " + *description) : (code + " (" + context + ")");
-        throw OAuthProtocolError(message, code, std::move(description));
+        std::optional<std::chrono::milliseconds> retry_after;
+        if (const auto hint = resp.headers.find("Retry-After"); hint != resp.headers.end()) {
+            retry_after = detail::retry_after_from_header(hint->second);
+        }
+        throw OAuthProtocolError(message, code, std::move(description), retry_after, resp.status);
     }
     if (resp.status == 401) throw AuthError(context);
     if (resp.status == 403 || resp.status == 409) throw AuthzError(context);
@@ -853,7 +857,8 @@ namespace {
 /// share this body instead of forking it.
 std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
                         const std::string& tenant, const Form& form, bool retryable,
-                        const std::string& context) {
+                        const std::string& context,
+                        std::optional<std::int64_t> deadline = std::nullopt) {
     const std::string url = with_tenant(
         preferred_endpoint(impl, config, alias_of::token, config.token_endpoint), tenant);
 
@@ -875,23 +880,72 @@ std::string token_grant(Client::Impl& impl, const OidcConfiguration& config,
     req.replayable = budget > 1;  // §34.2 P11: a request this SDK sends twice may keep the pool
     HttpResponse resp;
     for (int attempt = 1; attempt <= budget; ++attempt) {
-        resp = impl.send_raw(req);
+        // The transport, not send_raw(): send_raw throws on a transport failure, which would end
+        // the attempt at once; here a transport failure is a retryable outcome (§16.2: the device
+        // poll on "a 5xx or transport failure"), and the failure is raised below once the budget
+        // is spent. A /oauth2/* request is sessionless, so there is no CSRF to capture.
+        resp = impl.transport(req);
         if (attempt == budget) break;
         const std::optional<long> status =
             resp.transport_error.empty() ? std::optional<long>(resp.status) : std::nullopt;
         if (!detail::retry_should_retry(status)) break;
+        // §14.2 rule 9 (contract 1.64): on the poll, the STATUS decides -- any `429` is the
+        // rate-limit answer, whatever its body names (a `slow_down` from a server before 1.1.2
+        // or an intermediary included). The polling loop waits it out against the grant's
+        // deadline, so it is raised below and not retried inside the poll.
+        if (retryable && status && *status == 429) break;
         const auto hint = resp.headers.find("Retry-After");
-        impl.sleeper(detail::retry_delay(
+        const auto delay = detail::retry_delay(
             attempt,
             hint == resp.headers.end() ? std::nullopt
                                        : detail::retry_after_from_header(hint->second),
-            impl.jitter()));
+            impl.jitter());
+        // §14.2 rule 4 (C164-36): a retry inside a poll that `device_login` makes never waits
+        // past the grant's deadline, `Retry-After` included -- the extra requests are pure load.
+        // Nothing more is sent: raise the typed `expired_token` at once (P10 allows that or
+        // serving the capped wait first). A bare device_poll passes no deadline and keeps the
+        // §16 budget.
+        if (deadline && impl.now_ms_fn() + delay.count() >= *deadline) {
+            throw OAuthProtocolError(
+                "expired_token: the device grant expired before the user approved it",
+                "expired_token", std::nullopt);
+        }
+        impl.sleeper(delay);
+        // C164-54: the check above runs BEFORE the sleep, and an OS oversleep can carry the clock
+        // past the deadline; look again before the request is built and send nothing if it has.
+        if (deadline && impl.now_ms_fn() >= *deadline) {
+            throw OAuthProtocolError(
+                "expired_token: the device grant expired before the user approved it",
+                "expired_token", std::nullopt);
+        }
     }
 
     if (!resp.transport_error.empty()) {
         throw NetworkError(context + ": " + resp.transport_error, resp.transport_error);
     }
-    if (resp.status < 200 || resp.status >= 300) raise_grant_error(resp, context);
+    if (resp.status < 200 || resp.status >= 300) {
+        if (retryable) {
+            // §14.2 rule 6 (contract 1.64, amended): a `5xx` on the device poll is a transport
+            // failure WHATEVER its body -- the status is read before the `error` member, as
+            // §34.2 P8 says for `ciba_poll`. AXIAM answers a datastore fault
+            // `500 {"error":"server_error"}`, which must not end the flow.
+            if (resp.status >= 500) {
+                throw NetworkError(context + " (HTTP " + std::to_string(resp.status) + ")",
+                                   "http_" + std::to_string(resp.status));
+            }
+            // Rule 9: a `429` is `rate_limit_exceeded` whatever the body says, so the loop
+            // waits it out and never reads it as the `400` polling signal.
+            if (resp.status == 429) {
+                std::optional<std::chrono::milliseconds> retry_after;
+                if (const auto hint = resp.headers.find("Retry-After"); hint != resp.headers.end()) {
+                    retry_after = detail::retry_after_from_header(hint->second);
+                }
+                throw OAuthProtocolError("rate_limit_exceeded (" + context + ")",
+                                         "rate_limit_exceeded", std::nullopt, retry_after, 429);
+            }
+        }
+        raise_grant_error(resp, context);
+    }
     return resp.body;
 }
 
@@ -1132,7 +1186,7 @@ std::string token_admin_call(Client::Impl& impl, const OidcConfiguration& config
     req.replayable = budget > 1;  // §34.2 P11: a request this SDK sends twice may keep the pool
     HttpResponse resp;
     for (int attempt = 1; attempt <= budget; ++attempt) {
-        resp = impl.send_raw(req);
+        resp = impl.transport(req);  // not send_raw(): a transport failure is retried, then raised below
         if (attempt == budget) break;
         const std::optional<long> status =
             resp.transport_error.empty() ? std::optional<long>(resp.status) : std::nullopt;
@@ -1635,7 +1689,8 @@ namespace {
 
 OidcTokenSet device_poll_with(Client::Impl& impl, const OidcConfiguration& config,
                               const std::string& device_code, const std::string& client_id,
-                              const std::string& tenant) {
+                              const std::string& tenant,
+                              std::optional<std::int64_t> deadline = std::nullopt) {
     Form form;
     form.add("grant_type", kDeviceCodeGrantType);
     form.add("device_code", device_code);
@@ -1650,7 +1705,7 @@ OidcTokenSet device_poll_with(Client::Impl& impl, const OidcConfiguration& confi
     // is per poll ATTEMPT and does not consume the grant's own `expires_in`
     // loop.
     const std::string body =
-        token_grant(impl, config, tenant, form, /*retryable=*/true, "device poll failed");
+        token_grant(impl, config, tenant, form, /*retryable=*/true, "device poll failed", deadline);
     // §12.4 rules 1-5 and 7 apply to any id_token; rule 6 is skipped — there was
     // no authorization request in this flow to carry a nonce.
     return parse_token_set(impl, body, config, std::nullopt);
@@ -1685,9 +1740,18 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
     const std::string device_code = detail::reveal(authorization.device_code);
 
     std::int64_t interval = authorization.interval;
-    const auto deadline = now_seconds() + authorization.expires_in;
+    // milliseconds; a hostile `expires_in` is clamped to [0, about 31 years] so the product cannot
+    // overflow in either direction (a value <= 0 expires at once, as before)
+    const auto deadline =
+        p_->now_ms_fn() + std::clamp<std::int64_t>(authorization.expires_in, 0, 1'000'000'000) * 1000;
+    // §14.2 rule 9 (contract 1.64): the wait a `429 rate_limit_exceeded` asked for. It is a
+    // minimum, replaces the next interval wait (so it counts as one interval) and leaves
+    // `interval` itself alone.
+    std::int64_t retry_floor_ms = 0;
 
     for (;;) {
+        const std::int64_t wait_ms = std::max(interval * 1000, retry_floor_ms);
+        retry_floor_ms = 0;
         // §14.2 rule 4, and the subtlety that makes it worth a comment: it is
         // the NEXT ATTEMPT that must fall inside the deadline, not the current
         // moment. Checking `now < deadline` before sleeping looks equivalent and
@@ -1695,17 +1759,31 @@ OidcTokenSet Client::device_login(DeviceCodeDisplay display, std::optional<std::
         // remaining, that check passes, the loop sleeps through the deadline,
         // and polls anyway. That request is exactly the "pure load" this rule
         // exists to prevent.
-        if (now_seconds() + interval >= deadline) {
+        if (p_->now_ms_fn() + wait_ms >= deadline) {
             throw OAuthProtocolError(
                 "expired_token: the device grant expired before the user approved it",
                 "expired_token", std::nullopt);
         }
-        p_->sleeper(std::chrono::milliseconds(interval * 1000));
+        p_->sleeper(std::chrono::milliseconds(wait_ms));
+        // C164-54: re-check after the sleep (an oversleep must not carry the poll past the deadline).
+        if (p_->now_ms_fn() >= deadline) {
+            throw OAuthProtocolError(
+                "expired_token: the device grant expired before the user approved it",
+                "expired_token", std::nullopt);
+        }
 
         try {
-            return device_poll_with(*p_, config, device_code, client_id, tenant);
+            return device_poll_with(*p_, config, device_code, client_id, tenant, deadline);
         } catch (const OAuthProtocolError& e) {
             const std::string& code = e.error_code();
+            if (code == "rate_limit_exceeded" || e.http_status() == 429L) {
+                // Rule 9: not terminal, and not the polling signal -- the interval is
+                // unchanged; the wait is Retry-After when it is longer than the interval.
+                if (e.retry_after()) {
+                    retry_floor_ms = static_cast<std::int64_t>(e.retry_after()->count());
+                }
+                continue;
+            }
             if (code == "authorization_pending") continue;
             if (code == "slow_down") {
                 // Rule 1: permanent, cumulative, never reset. An SDK that backed
@@ -2317,7 +2395,10 @@ struct CibaPollOutcome {
 };
 
 CibaPollOutcome ciba_poll_once(Client::Impl& impl, const OidcConfiguration& config,
-                               const std::string& auth_req_id, const std::string& tenant) {
+                               const std::string& auth_req_id, const std::string& tenant,
+                               const CibaClock* clock = nullptr,
+                               std::optional<std::chrono::steady_clock::time_point> deadline =
+                                   std::nullopt) {
     Form form;
     form.add("grant_type", kCibaGrantType);
     form.add("auth_req_id", auth_req_id);
@@ -2376,11 +2457,32 @@ CibaPollOutcome ciba_poll_once(Client::Impl& impl, const OidcConfiguration& conf
             return out;
         }
         const auto hint = resp.headers.find("Retry-After");
-        impl.sleeper(detail::retry_delay(
+        const auto delay = detail::retry_delay(
             attempt,
             hint == resp.headers.end() ? std::nullopt
                                        : detail::retry_after_from_header(hint->second),
-            impl.jitter()));
+            impl.jitter());
+        // §34.2 P10 (C164-36): a retry inside a poll that `ciba_await` makes never waits past
+        // the request's deadline, `Retry-After` included. Nothing more is sent: the typed
+        // `expired_token` is raised at once. A bare ciba_poll passes no deadline.
+        if (clock != nullptr && deadline && clock->now() + delay >= *deadline) {
+            out.transient = false;
+            out.error = std::make_exception_ptr(OAuthProtocolError(
+                "expired_token: the CIBA request expired before it was decided (client-side "
+                "deadline from expires_in; CONTRACT.md §34.2 P10)",
+                "expired_token", std::nullopt));
+            return out;
+        }
+        impl.sleeper(delay);
+        // C164-54: re-check after the sleep (an oversleep must not carry the retry past the deadline).
+        if (clock != nullptr && deadline && clock->now() >= *deadline) {
+            out.transient = false;
+            out.error = std::make_exception_ptr(OAuthProtocolError(
+                "expired_token: the CIBA request expired before it was decided (client-side "
+                "deadline from expires_in; CONTRACT.md §34.2 P10)",
+                "expired_token", std::nullopt));
+            return out;
+        }
     }
 }
 
@@ -2485,7 +2587,10 @@ OidcTokenSet Client::ciba_await(const CibaInitiateResponse& initiated,
     const OidcConfiguration config = oidc_discover();
     const CibaClock clock = options.clock ? *options.clock : CibaClock::system();
 
-    const auto deadline = initiated.received_at + std::chrono::seconds(initiated.expires_in);
+    // `expires_in` is clamped to [0, about 31 years] so the conversion to nanoseconds cannot overflow
+    // in either direction (a value <= 0 expires at once, as before)
+    const auto deadline = initiated.received_at +
+                          std::chrono::seconds(std::clamp<std::int64_t>(initiated.expires_in, 0, 1'000'000'000));
     std::int64_t interval =
         initiated.interval > 0 ? initiated.interval : kCibaDefaultIntervalSeconds;
     for (;;) {
@@ -2499,8 +2604,16 @@ OidcTokenSet Client::ciba_await(const CibaInitiateResponse& initiated,
         }
         // Rule 2: the first poll waits too — polling earlier only earns slow_down.
         clock.sleep(std::chrono::seconds(interval));
+        // C164-54: re-check after the sleep (an oversleep must not carry the poll past the deadline).
+        if (clock.now() >= deadline) {
+            throw OAuthProtocolError(
+                "expired_token: the CIBA request expired before it was decided (client-side "
+                "deadline from expires_in; CONTRACT.md §33.7 rule 4)",
+                "expired_token", std::nullopt);
+        }
         CibaPollOutcome outcome =
-            ciba_poll_once(*p_, config, detail::reveal(initiated.auth_req_id), tenant);
+            ciba_poll_once(*p_, config, detail::reveal(initiated.auth_req_id), tenant, &clock,
+                           deadline);
         if (outcome.tokens) return std::move(*outcome.tokens);
         // Rule 5: a transport failure, 5xx or bodiless 429 that outlived §16 waits
         // one interval and polls again.

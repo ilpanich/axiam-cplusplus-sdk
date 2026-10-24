@@ -6,6 +6,110 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-23
+
+Contract 1.64 (§34.8) and the 1.63 conformance follow-ups (#78). `CONTRACT.md`, `openapi.json` and
+`management-registry.json` are re-vendored byte for byte from ilpanich/axiam `356a6da` (platform
+PR #793 merge; this SDK vendors no `proto/`; `opaque-test-vectors.json` is unchanged);
+`scripts/gen_management.py --check` is current, with no new operation (**202 across 29**). The README states
+conformance at contract 1.64. **Version: patch (1.1.2), in lockstep with the AXIAM 1.1.2 platform release
+(§34.8: "releases under the patch-bump rule").** No symbol is removed and no signature changes
+incompatibly; two public types gain members, covered by the ABI bump (`SOVERSION` 3 -> 4), and one test-only
+member function is added (`Client::_set_clock_test_seam`; no layout change). The behaviour changes are recorded
+under *Changed* (`plan`'s refusal, a correction of a refusal released a week ago to what §27.6.2 item 4 and
+§34.2 P12.2 already say; and the device poll's status handling, which the amended §14.2 rules 6 and 9 require)
+and under *Fixed* (a transport failure on the poll is now retried inside the attempt, and a retry inside a
+poll never waits past the grant's deadline); none changes a signature, so none takes the minor.
+
+### Fixed
+
+- **A `429 rate_limit_exceeded` on a device poll is waited out** (contract 1.64 (b), §14.2 rule 9).
+  `device_login` waits `Retry-After` (a minimum, replacing that round's interval wait, capped at the
+  `expires_in` deadline: past it the loop raises `expired_token` and sends nothing), does not raise the
+  interval and polls again. A `429` on the poll is no longer retried inside the poll, so the loop
+  owns the wait; the single `device_poll` still raises the `OAuthProtocolError`, now carrying the
+  response's `Retry-After` on `retry_after()`. Tests (§14.6): `tests/test_oidc_grants.cpp`. The 1.63 §14.6
+  tests are unchanged.
+- **A transport failure on the device poll is retried inside the attempt** (C164-39, §16.2, §14.2 rule 6). The
+  poll's §16 loop sent through `send_raw`, which throws on a transport failure, so a connection reset ended the
+  attempt at once and `device_login` waited a full interval per failure; it now retries up to the §16.1 cap of
+  three requests, then raises the `NetworkError`. `introspect` had the same shape and gets the same fix.
+- **A retry inside a poll never waits past the grant's deadline** (C164-36, §14.2 rule 4, §34.2 P10). Under
+  `device_login` and `ciba_await` the §16 wait (`Retry-After` a floor of up to an hour) was not capped at
+  `expires_in`, so a `503` + `Retry-After: 120` against a 30 s grant sent requests after the deadline. Now,
+  when the wait would reach the deadline, nothing more is sent and the typed `expired_token` is raised at
+  once; a bare `device_poll` / `ciba_poll` keeps the §16 behaviour. Tests: `tests/test_oidc_grants.cpp`,
+  `tests/test_ciba.cpp` (on a virtual clock; both fail against the previous code).
+- **A device grant no longer ends up to a second early** (C164-48). The deadline is kept in milliseconds on a
+  monotonic clock, not whole seconds, so a last-second retry that lands inside the grant is served and one that
+  lands on it is refused.
+- **A sleep that overshoots cannot carry a request past the deadline** (C164-54, §14.2 rule 4, §33.7 rule 4,
+  §34.2 P10). Every deadline check ran before the sleep, so an OS oversleep could send a request a few
+  milliseconds late; the clock is now read again after each sleep (the interval waits and the §16 waits inside a
+  poll, device and CIBA) and the typed `expired_token` is raised without sending. A hostile `expires_in` is
+  clamped to [0, about 31 years] (C164-58) so converting it to milliseconds or nanoseconds cannot overflow in
+  either direction: a hugely negative value used to wrap into a far-future deadline and the poll was served; a
+  value <= 0 now expires at once, as a zero always did.
+- **The cookie-less handle pool is bounded by `max_concurrent_requests`** (C163-20). Before this a burst of
+  `/oauth2/*` calls opened an unbounded number of connections; now `n + 1` concurrent calls against a cap
+  of `n` hold `n` handles. Test: `tests/test_transport_concurrency.cpp`.
+
+### Binary compatibility
+
+The shared library's ABI version is now 4 (`libaxiam_cpp.so.4`): `OAuthProtocolError` (`retry_after`,
+`http_status`) and `NetworkReplyProfile` (`termination_action_wire`, `service_type_wire`) gained members at the
+end; not source-breaking. Rebuild against 1.1.2.
+
+### Changed
+
+- **On the device poll, the status decides** (contract 1.64 as amended; C164-03, C164-04, §14.2 rules 6 and 9).
+  A `5xx` is a `NetworkError` whatever its body, so AXIAM's `500 {"error":"server_error"}` mid-poll is retried
+  under §16 and then waited out by the loop instead of ending the grant with an `OAuthProtocolError`
+  (`device_login` and a single `device_poll` alike). Any `429` is the rule-9 wait whatever its body names, so a
+  `429 {"error":"slow_down"}` (a server before 1.1.2, or an intermediary) no longer raises the interval, and a
+  bodiless `429` honours `Retry-After` as a floor; a single `device_poll` on a `429` is now always an
+  `OAuthProtocolError` with `error() == "rate_limit_exceeded"` (a bodiless one was a `NetworkError`), so
+  **a caller driving its own loop that caught only `NetworkError` for a `429` must also catch
+  `OAuthProtocolError`**; and, in the reverse direction, **a hand-rolled loop that caught `OAuthProtocolError`
+  with `error() == "server_error"` from `device_poll` now receives a `NetworkError`**, which is not terminal.
+  `OAuthProtocolError::http_status()` is new. Tests: `tests/test_oidc_grants.cpp`.
+- **`plan`'s refusal of an unknown carried open-enum value is a `std::invalid_argument`** (C163-07), no longer
+  `management::ValidationError`: it is a local refusal of a value the SDK cannot send (§27.6.2 item 4, P12.2),
+  not the server's `400`/`422`. **Code that caught `ValidationError` (or `NetworkError`) around
+  `ManifestApi::plan`/`apply` for this case must catch `std::invalid_argument`.** Nothing is written, as
+  before.
+- **The refusal quotes the value** (C163-10, D-15): `NetworkReplyProfile` gains
+  `std::optional<std::string> termination_action_wire` and `service_type_wire`, the wire text as the server
+  sent it (informational, never sent), and the message names the member and the value, capped at 64 bytes with
+  control and non-ASCII bytes shown as `?` (C164-21).
+
+### Added
+
+- `Client::_set_clock_test_seam(std::function<std::int64_t()>)`, a test-only seam for the clock (milliseconds)
+  the device grant's deadline reads (as `_set_retry_test_seams` is for the §16 sleeper); nothing in `src/` calls it.
+- `OAuthProtocolError::retry_after()` (`std::optional<std::chrono::milliseconds>`), the response's
+  `Retry-After` when it carried a parseable one.
+
+### Tests
+
+- C164-48: the CIBA and device deadline boundaries are pinned (`>=` vs `>` mutants fail), and
+  `CibaAwaitOptions::clock` documents that it governs the interval waits and the deadline while the §16 wait
+  inside a poll sleeps on the client's own sleeper. C164-54: four oversleep tests (an OS sleep that overshoots
+  the interval wait, or the §16 wait inside a poll, for the device grant and for CIBA); removing any one of the
+  four re-checks fails its test. C164-58: one test per re-check where the sleep ends exactly on the deadline
+  (`>=` to `>` on any of the four fails), and hostile `expires_in` tests for the device grant and CIBA (run under
+  UBSan in the sanitizer leg; removing the lower clamp fails them).
+- C164-38: the W7.1c in-poll retry test now covers a transport failure (twice then `200`: three requests;
+  three failures: three requests and the `NetworkError`; retry off: one) and `device_login` taking its next
+  interval after the cap is exhausted (4 calls). C164-41: `README.md` no longer says "the one behaviour note".
+
+- C163-09: `tests/test_manifest_network.cpp` covers the `service_type` refusal, the stated case's
+  `replace_profile` body (`radius_request`, never the unknown value) and `Unchanged` with no write (`apply`,
+  both members; C164-12).
+- C163-08: the mock server also sets `axiam_csrf`; the control after the `/oauth2/*` calls is a state-changing
+  `POST` asserting `Cookie` (`axiam_session`, `axiam_csrf`) and `X-CSRF-Token`
+  (`tests/test_integration_curl.cpp`).
+
 ## [1.1.1] - 2026-10-21
 
 Contract 1.63 (§34.7) and the two follow-ups of the 1.62 conformance review (#76). `CONTRACT.md`,

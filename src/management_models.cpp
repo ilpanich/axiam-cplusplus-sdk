@@ -3905,6 +3905,12 @@ void from_json(const nlohmann::json& j, NetworkReplyProfile& value) {
     value.updated_at = j.at("updated_at").get<std::string>();
     value.updated_by = j.at("updated_by").get<std::string>();
     value.version = j.at("version").get<std::int64_t>();
+    if (auto it = j.find("termination_action"); it != j.end() && it->is_string()) {
+        value.termination_action_wire = it->get<std::string>();
+    }
+    if (auto it = j.find("service_type"); it != j.end() && it->is_string()) {
+        value.service_type_wire = it->get<std::string>();
+    }
 }
 
 void to_json(nlohmann::json& j, const NetworkSegmentResponse& value) {

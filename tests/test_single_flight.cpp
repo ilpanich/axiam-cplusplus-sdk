@@ -68,6 +68,52 @@ AXIAM_TEST("single-flight refresh: 5 concurrent 401s -> exactly 1 refresh") {
     AXIAM_CHECK(st->count_path("/auth/refresh") == 1);
 }
 
+// C164-33: the request replayed after a 401 refresh carries the CSRF token the REFRESH response
+// returned, not the stale one captured at login.
+AXIAM_TEST("single-flight refresh: the replay after the refresh carries the refreshed X-CSRF-Token") {
+    auto st = std::make_shared<FakeState>();
+    auto checks = std::make_shared<std::atomic<int>>(0);
+
+    st->router = [checks](const HttpRequest& req, FakeState&) -> HttpResponse {
+        if (req.url.find("/auth/login") != std::string::npos) {
+            auto r = json_response(200,
+                                   R"({"session_id":"s","expires_in":900,)"
+                                   R"("user":{"id":"u","username":"a","email":"a@x","tenant_id":"t"}})");
+            r.headers["X-CSRF-Token"] = "STALE";
+            return r;
+        }
+        if (req.url.find("/auth/refresh") != std::string::npos) {
+            auto r = json_response(200, R"({"expires_in":900})");
+            r.headers["X-CSRF-Token"] = "FRESH";
+            return r;
+        }
+        return checks->fetch_add(1) == 0 ? json_response(401, "{}")
+                                         : json_response(200, R"({"allowed":true})");
+    };
+
+    Client c = Client::builder()
+                   .base_url("https://api.example.test")
+                   .tenant_slug("acme")
+                   .org_id("org-1")
+                   .transport(axtest::make_fake(st))
+                   .build();
+    c.login("a", "b");
+    AXIAM_REQUIRE(c.check_access("read", "r").allowed);
+
+    std::vector<std::string> check_tokens;
+    {
+        std::lock_guard<std::mutex> lock(st->mtx);
+        for (const auto& r : st->requests) {
+            if (r.url.find("/authz/check") == std::string::npos) continue;
+            const auto it = r.headers.find("X-CSRF-Token");
+            check_tokens.push_back(it == r.headers.end() ? std::string() : it->second);
+        }
+    }
+    AXIAM_REQUIRE(check_tokens.size() == 2);
+    AXIAM_CHECK(check_tokens[0] == "STALE");  // the original, before the refresh
+    AXIAM_CHECK(check_tokens[1] == "FRESH");  // the replay, after it
+}
+
 // §9 guards *concurrent* callers; it must not turn into a cache. A 401 arriving
 // after a previous refresh has finished is a new, uncontended refresh: the guard
 // must issue a second wire call rather than replay the first refresh's outcome

@@ -89,10 +89,13 @@ struct CurlTransport::Impl {
 
     // Handles with NO cookie engine and no share object, for the requests that must neither
     // read nor write the jar (`no_stored_cookies`, `sessionless`: §24.1, §28.12.2, §6.1 rule 11).
-    // Pooled like the others so such a request keeps a hot connection, but outside the
-    // `max_concurrent_requests` cap: they are the exception, and bounding them by it could
-    // starve a pooled request behind a handle that is merely idle.
+    // Pooled like the others so such a request keeps a hot connection, and bounded by
+    // `max_concurrent_requests` as they are (C163-20): they are a separate pool, so a cap of n
+    // holds n pooled handles and n cookie-less ones at most -- never an unbounded number of
+    // connections -- and a burst of /oauth2/* calls waits for a handle exactly as any other
+    // request does. Two pools, not one shared count, so neither can starve the other.
     std::mutex plain_mtx;
+    std::condition_variable plain_cv;
     std::vector<CURL*> plain_idle;
     std::vector<CURL*> plain_all;
 
@@ -151,23 +154,31 @@ struct CurlTransport::Impl {
     }
 
     CURL* acquire_plain() {
-        std::lock_guard<std::mutex> lock(plain_mtx);
-        if (!plain_idle.empty()) {
-            CURL* h = plain_idle.back();
-            plain_idle.pop_back();
-            return h;
+        std::unique_lock<std::mutex> lock(plain_mtx);
+        for (;;) {
+            if (!plain_idle.empty()) {
+                CURL* h = plain_idle.back();
+                plain_idle.pop_back();
+                return h;
+            }
+            if (plain_all.size() < cfg.max_concurrent_requests) {
+                CURL* h = curl_easy_init();
+                if (h == nullptr) return nullptr;
+                apply_connection_reuse_options(h);  // connection-scoped only; no cookie/share option here.
+                plain_all.push_back(h);
+                return h;
+            }
+            plain_cv.wait(lock);
         }
-        CURL* h = curl_easy_init();
-        if (h == nullptr) return nullptr;
-        apply_connection_reuse_options(h);  // connection-scoped only; no cookie/share option here.
-        plain_all.push_back(h);
-        return h;
     }
 
     void release_plain(CURL* h) {
         if (h == nullptr) return;
-        std::lock_guard<std::mutex> lock(plain_mtx);
-        plain_idle.push_back(h);
+        {
+            std::lock_guard<std::mutex> lock(plain_mtx);
+            plain_idle.push_back(h);
+        }
+        plain_cv.notify_one();
     }
 
     void release(CURL* h) {

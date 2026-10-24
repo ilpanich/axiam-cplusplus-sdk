@@ -3271,6 +3271,15 @@ struct NetworkReplyProfile {
     std::string updated_by;
     /// The version the next replace or delete must name. Starts at 1.
     std::int64_t version;
+
+    /// The wire text of `termination_action` as the server sent it, kept beside the open enum
+    /// so a refusal can quote a value this SDK decoded as `Unknown` (contract 1.64, §27.6.2
+    /// item 4). Informational: it is never sent.
+    std::optional<std::string> termination_action_wire = std::nullopt;
+
+    /// The wire text of `service_type` as the server sent it (absent when the member is absent
+    /// or `null`); see `termination_action_wire`.
+    std::optional<std::string> service_type_wire = std::nullopt;
 };
 
 /// A network segment, as the management API returns it.

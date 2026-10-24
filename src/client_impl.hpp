@@ -171,6 +171,17 @@ struct Client::Impl {
     std::function<void(std::chrono::milliseconds)> sleeper = [](std::chrono::milliseconds d) {
         if (d > std::chrono::milliseconds{0}) std::this_thread::sleep_for(d);
     };
+    // Milliseconds on a monotonic clock, for the device grant's `expires_in` deadline (§14.2 rule
+    // 4), which the polling loop AND the §16 retry inside a poll must both see. Milliseconds, not
+    // whole seconds, so a grant never ends early by a rounding (C164-48). A test seam like the two
+    // above: a recorded sleeper does not advance the real clock, so a test that checks "nothing is
+    // sent after the deadline" moves this one itself.
+    std::function<std::int64_t()> now_ms_fn = [] {
+        return static_cast<std::int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+    };
 
     // §17. Constructed by build(); disabled unless a TTL was configured.
     std::unique_ptr<detail::DecisionMemo> memo;

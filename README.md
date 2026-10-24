@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34 and §36 at contract 1.63, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34 and §36 at contract 1.64, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
 Manifest pruning: not offered in any namespace (§27.10) — a manifest's `apply` never deletes, so a
 resource omitted from it is left alone, `network` included.
@@ -28,6 +28,17 @@ strings (P12.2), the RFC 7592 update sends only what the read carried (P12.4), t
 replacement inputs cannot be built without their required members, `Sensitive<T>::expose()`
 is the public accessor (§7 rule 3), and management reads follow §16 (`408`, `429`,
 `Retry-After`).
+
+Contract 1.64 (§34.8) is the **1.1.2** release and ports one rule: a `429 rate_limit_exceeded` on a
+device-code poll is waited out, not terminal (§14.2 rule 9) -- `device_login` waits `Retry-After` (a minimum,
+capped at the `expires_in` deadline), counts it as one interval, leaves the interval unchanged and polls again;
+the single `device_poll` still raises the `OAuthProtocolError`, which now carries `retry_after()`. As amended,
+the status decides on the poll: a `5xx` is a `NetworkError` whatever its body (so AXIAM's
+`500 {"error":"server_error"}` does not end the grant) and any `429` is the wait, a `429 slow_down` included.
+Its other changes are informative. 1.1.2 also closes the 1.63 conformance follow-ups: the manifest `plan` refusal of an
+unknown carried open-enum value is a `std::invalid_argument` quoting the value (`NetworkReplyProfile`
+keeps `termination_action_wire` and `service_type_wire`), and the cookie-less `/oauth2/*` handle pool is
+bounded by `max_concurrent_requests`. See the [CHANGELOG](CHANGELOG.md) for the behaviour notes.
 
 Contract 1.63 (§34.7) is the **1.1.1** release: no `axiam_*` session cookie and no `X-CSRF-Token` on any
 `/oauth2/*` request (§6.1 rule 11, §12.1 rule 3), a manifest `plan` that refuses to carry an unknown open-enum
@@ -80,12 +91,12 @@ token exchange is this client's own `client_credentials` token (§15.2 rule 9). 
 
 From 1.0.0 the SDK is stable and follows [Semantic Versioning](https://semver.org/): a
 breaking change to the public API waits for the next major version. A contract record may add a
-member or widen a type with a minor bump (1.1.0 is one: contract 1.61 and 1.62); 1.1.1, cut in lockstep with
-the AXIAM 1.1.1 platform release, also adds one, and the ABI bump below covers it. A removal waits for 2.0.0.
+member or widen a type with a minor bump (1.1.0 is one: contract 1.61 and 1.62); 1.1.1 and 1.1.2, cut in lockstep with
+the AXIAM platform releases, also add members, and the ABI bump below covers them. A removal waits for 2.0.0.
 
 The shared library's `SOVERSION` is its ABI version and moves independently of that SemVer: a
 public type that grows (as `ApplyReport`, `PlannedChange`, `ManifestEntity` and `ConflictError`
-did in 1.1.0, and `PageRequest` in 1.1.1) bumps it, so 1.1.1 installs `libaxiam_cpp.so.3` and a binary
+did in 1.1.0, `PageRequest` in 1.1.1, and `OAuthProtocolError` and `NetworkReplyProfile` in 1.1.2) bumps it, so 1.1.2 installs `libaxiam_cpp.so.4` and a binary
 built against 1.1.x must be rebuilt rather than loaded against it.
 
 Sections are named individually rather than folded into ranges: widening a
@@ -108,7 +119,7 @@ This one is.
 - Public headers under `include/axiam/`; umbrella header `#include <axiam/axiam.hpp>`.
 - Dependencies: **libcurl** (HTTP + strict TLS + mTLS), **OpenSSL** (Ed25519 JWKS
   verification), vendored single-header **nlohmann/json** (`third_party/nlohmann/json.hpp`).
-- Version: `1.1.1`.
+- Version: `1.1.2`.
 
 ---
 
@@ -162,7 +173,7 @@ build when `CMakeLists.txt`, the header constants and the CI matrix stop agreein
 include(FetchContent)
 FetchContent_Declare(axiam_cpp_sdk
   GIT_REPOSITORY https://github.com/ilpanich/axiam-cplusplus-sdk.git
-  GIT_TAG        v1.1.1)
+  GIT_TAG        v1.1.2)
 FetchContent_MakeAvailable(axiam_cpp_sdk)
 
 target_link_libraries(my_app PRIVATE axiam::axiam_cpp)
@@ -187,7 +198,7 @@ vcpkg install axiam-cpp-sdk --overlay-ports=./ports
 ### Conan
 
 ```bash
-conan create . --version=1.1.1
+conan create . --version=1.1.2
 ```
 
 The [`conanfile.py`](conanfile.py) requires `libcurl`, `openssl`, and `nlohmann_json`.

@@ -361,6 +361,15 @@ def ctor_param(f: dict[str, Any]) -> str:
 # src/management_helpers.cpp): the read-modify-write helpers §27.4 rule 5
 # recommends and the factories that make a §29/§31 body hard to get wrong.
 MODEL_MEMBERS: dict[str, list[tuple[str, str]]] = {
+    "NetworkReplyProfile": [
+        ("The wire text of `termination_action` as the server sent it, kept beside the open "
+         "enum so a refusal can quote a value this SDK decoded as `Unknown` (contract 1.64, "
+         "§27.6.2 item 4). Informational: it is never sent.",
+         "std::optional<std::string> termination_action_wire = std::nullopt;"),
+        ("The wire text of `service_type` as the server sent it (absent when the member is "
+         "absent or `null`); see `termination_action_wire`.",
+         "std::optional<std::string> service_type_wire = std::nullopt;"),
+    ],
     "DirectoryConfig": [(
         "The replacement body for `directory.set` holding every member of this read "
         "-- the read-modify-write form (§27.4 rule 5). `bind_secret` is absent: no "
@@ -1476,6 +1485,19 @@ def emit_from_json_member(f: dict[str, Any]) -> list[str]:
     ]
 
 
+#: Decoder lines appended after a model's own members (the raw text MODEL_MEMBERS declares).
+FROM_JSON_EXTRA: dict[str, list[str]] = {
+    "NetworkReplyProfile": [
+        '    if (auto it = j.find("termination_action"); it != j.end() && it->is_string()) {',
+        "        value.termination_action_wire = it->get<std::string>();",
+        "    }",
+        '    if (auto it = j.find("service_type"); it != j.end() && it->is_string()) {',
+        "        value.service_type_wire = it->get<std::string>();",
+        "    }",
+    ],
+}
+
+
 def emit_models_source() -> str:
     """to_json / from_json for every model, plus the enum conversions."""
     secrets = sensitive_map()
@@ -1630,6 +1652,7 @@ def emit_models_source() -> str:
         out.append(f"void from_json(const nlohmann::json& j, {rendered}& value) {{")
         for f in fields:
             out.extend(emit_from_json_member(f))
+        out.extend(FROM_JSON_EXTRA.get(name, []))
         out.append("}")
         out.append("")
 
