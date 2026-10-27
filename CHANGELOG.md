@@ -6,6 +6,20 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+### Changed
+
+- **Vendored nlohmann/json 3.11.3 -> 3.12.0** (`third_party/nlohmann/json.hpp`, the upstream
+  release asset byte for byte under the existing vendoring banner). Upstream calls the release
+  backward-compatible; the header is a private implementation detail of the library, so no public
+  type changes and the ABI (`SOVERSION` 4) is unaffected. `conanfile.py` raises its
+  `nlohmann_json` requirement floor to `[>=3.12.0]` to match.
+- **CI compilers are pinned rather than taken from `ubuntu-latest`**, whose label moves from
+  Ubuntu 24.04 to 26.04 between 2026-10-19 and 2026-11-19. The C++17 floor legs are g++ 14 (the
+  oldest maintained GCC branch; GCC 13 closed with 13.5 in September 2026) and clang++ 18 (the
+  Ubuntu 24.04 LTS default); the C++23 legs are the newest GA compilers, g++ 16 and clang++ 23.
+  Previously the four legs were g++ 13 and clang++ 18 at both standards. The supported C++
+  standards are unchanged: C++17 floor, C++23 newest.
+
 ## [1.1.2] - 2026-10-23
 
 Contract 1.64 (§34.8) and the 1.63 conformance follow-ups (#78). `CONTRACT.md`, `openapi.json` and
