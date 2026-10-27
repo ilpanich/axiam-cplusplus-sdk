@@ -12,8 +12,9 @@ permissions:
 
 jobs:
   build-test:
-    name: build + test (${{ matrix.cxx }}, C++${{ matrix.std }})
+    name: build + test (${{ matrix.name || matrix.cxx }}, C++${{ matrix.std }})
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
@@ -48,16 +49,19 @@ jobs:
         #       its newest release line, so "oldest maintained" would make the
         #       floor the newest; the distro default is the meaningful floor.
         #   newest (C++23): the newest GA release of each compiler.
-        #     g++-16: GCC 16.1 (2026-04-30), from 26.04's universe archive.
+        #     g++-16: GCC 16.1 (2026-04-30), from the official gcc:16 image.
+        #       (26.04's universe package hung in apt for 30+ minutes on the
+        #       hosted runner; the image is what the C SDK uses and is fast.)
         #     clang++-23: LLVM 23.1 (2026-08-25), from apt.llvm.org, which
         #       publishes it for noble (24.04).
         #
         # `pkgs` is what apt installs on top of the common packages; `llvm`, when
-        # set, is the apt.llvm.org release line to add first.
+        # set, is the apt.llvm.org release line to add first; `container`, when
+        # set, runs the leg inside that image (as root, so without sudo).
         include:
           - { os: ubuntu-26.04, cc: gcc-14,   cxx: g++-14,     std: 17, pkgs: g++-14 }
           - { os: ubuntu-24.04, cc: clang-18, cxx: clang++-18, std: 17, pkgs: clang-18 }
-          - { os: ubuntu-26.04, cc: gcc-16,   cxx: g++-16,     std: 23, pkgs: g++-16 }
+          - { os: ubuntu-24.04, cc: gcc,      cxx: g++,        std: 23, pkgs: openssl, container: "gcc:16", name: g++-16 }
           - { os: ubuntu-24.04, cc: clang-23, cxx: clang++-23, std: 23, pkgs: "", llvm: 23 }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
@@ -70,8 +74,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libcurl4-openssl-dev libssl-dev ${{ matrix.pkgs }}
+          SUDO=$(command -v sudo || true)
+          $SUDO apt-get update
+          $SUDO apt-get install -y cmake ninja-build libcurl4-openssl-dev libssl-dev ${{ matrix.pkgs }}
           ${{ matrix.cxx }} --version
 
       - name: Configure

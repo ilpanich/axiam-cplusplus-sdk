@@ -138,7 +138,7 @@ C++20 sits between the two.
 | Leg | Standard | g++ | clang++ | Why this compiler |
 |---|---|---|---|---|
 | **Floor** | C++17 | 14 (Ubuntu 26.04) | 18 (Ubuntu 24.04) | GCC 14 is the oldest GCC branch upstream still maintains (13 closed with 13.5, September 2026); clang 18 is the Ubuntu 24.04 LTS default. |
-| **Newest** | C++23 | 16 (Ubuntu 26.04) | 23 (apt.llvm.org, Ubuntu 24.04) | The newest GA release of each: GCC 16.1 and LLVM 23.1. |
+| **Newest** | C++23 | 16 (official `gcc:16` image) | 23 (apt.llvm.org, Ubuntu 24.04) | The newest GA release of each: GCC 16.1 and LLVM 23.1. |
 
 These are the toolchains CI proves, not a hard minimum the build enforces: the
 only thing `<axiam/axiam.hpp>` refuses is a standard below C++17.
