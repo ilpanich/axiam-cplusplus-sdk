@@ -6,6 +6,14 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+### Changed
+
+- **Vendored nlohmann/json 3.11.3 -> 3.12.0** (`third_party/nlohmann/json.hpp`, the upstream
+  release asset byte for byte under the existing vendoring banner). Upstream calls the release
+  backward-compatible; the header is a private implementation detail of the library, so no public
+  type changes and the ABI (`SOVERSION` 4) is unaffected. `conanfile.py` raises its
+  `nlohmann_json` requirement floor to `[>=3.12.0]` to match.
+
 ## [1.1.2] - 2026-10-23
 
 Contract 1.64 (§34.8) and the 1.63 conformance follow-ups (#78). `CONTRACT.md`, `openapi.json` and

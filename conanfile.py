@@ -40,7 +40,7 @@ class AxiamCppSdkConan(ConanFile):
     def requirements(self):
         self.requires("libcurl/[>=8.0.0]")
         self.requires("openssl/[>=3.0.0]")
-        self.requires("nlohmann_json/[>=3.11.0]")
+        self.requires("nlohmann_json/[>=3.12.0]")
 
     def layout(self):
         cmake_layout(self)
