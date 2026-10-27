@@ -133,7 +133,15 @@ This one is.
 C++20 sits between the two.
 
 **The SDK is built at the floor and additionally compiled and tested at C++23**, on
-**both g++ and clang++** — four legs in `sdk-ci-cpp.yml`.
+**both g++ and clang++** — four legs in `sdk-ci-cpp.yml`, each with a pinned compiler:
+
+| Leg | Standard | g++ | clang++ | Why this compiler |
+|---|---|---|---|---|
+| **Floor** | C++17 | 14 (Ubuntu 26.04) | 18 (Ubuntu 24.04) | GCC 14 is the oldest GCC branch upstream still maintains (13 closed with 13.5, September 2026); clang 18 is the Ubuntu 24.04 LTS default. |
+| **Newest** | C++23 | 16 (Ubuntu 26.04) | 23 (apt.llvm.org, Ubuntu 24.04) | The newest GA release of each: GCC 16.1 and LLVM 23.1. |
+
+These are the toolchains CI proves, not a hard minimum the build enforces: the
+only thing `<axiam/axiam.hpp>` refuses is a standard below C++17.
 
 That second axis is not cosmetic, and this repo is the proof: adding it immediately
 caught a `u8""` literal assigned to a `std::string` in the test suite. That is
