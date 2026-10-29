@@ -6,6 +6,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-29
+
 ### Changed
 
 - **Vendored nlohmann/json 3.11.3 -> 3.12.0** (`third_party/nlohmann/json.hpp`, the upstream
@@ -19,6 +21,12 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
   Ubuntu 24.04 LTS default); the C++23 legs are the newest GA compilers, g++ 16 and clang++ 23.
   Previously the four legs were g++ 13 and clang++ 18 at both standards. The supported C++
   standards are unchanged: C++17 floor, C++23 newest.
+
+- Run the g++-16 leg in the official gcc:16 image
+
+- Pin the compiler matrix and cover the newest GA compilers
+
+- Vendor nlohmann/json 3.12.0
 
 ## [1.1.2] - 2026-10-23
 
