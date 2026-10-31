@@ -247,6 +247,38 @@ SplitUrl split_url(const std::string& url) {
     return out;
 }
 
+/// Percent-decode a query value (no `+` handling: oidc_begin emits RFC 3986 `%20`).
+std::string pct_decode(const std::string& in) {
+    auto hex = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        return -1;
+    };
+    std::string out;
+    out.reserve(in.size());
+    for (std::size_t i = 0; i < in.size(); ++i) {
+        if (in[i] == '%' && i + 2 < in.size() && hex(in[i + 1]) >= 0 && hex(in[i + 2]) >= 0) {
+            out.push_back(static_cast<char>(hex(in[i + 1]) * 16 + hex(in[i + 2])));
+            i += 2;
+        } else {
+            out.push_back(in[i]);
+        }
+    }
+    return out;
+}
+
+/// The `axiam_idp_hint` a begin URL carries (§26.2 rule 8, D-N36), decoded; disengaged when
+/// the URL has none. Only the first occurrence is read: oidc_begin emits it exactly once.
+std::optional<std::string> begin_url_idp_hint(const std::string& url) {
+    static const char kKey[] = "axiam_idp_hint=";
+    static const std::size_t kLen = sizeof(kKey) - 1;
+    for (const std::string& pair : split_url(url).pairs) {
+        if (pair.compare(0, kLen, kKey) == 0) return pct_decode(pair.substr(kLen));
+    }
+    return std::nullopt;
+}
+
 /// True when a raw query pair names `tenant_id`, with or without a value.
 bool is_tenant_pair(const std::string& pair) {
     static const char kKey[] = "tenant_id";
@@ -2096,6 +2128,9 @@ PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
                                             std::optional<std::string> tenant_id,
                                             std::optional<std::string> dpop_jkt,
                                             std::optional<std::string> idp_hint) {
+    // §26.2 rule 8 (D-N36): when the argument is unset, the hint the begin URL carries is
+    // pushed; the argument wins when both are set.
+    if (!idp_hint) idp_hint = begin_url_idp_hint(request.url);
     check_idp_hint(idp_hint, "oidc_par");
     p_->ensure_open();
     if (redirect_uri.empty()) throw AuthError("oidc_par needs a redirect_uri");

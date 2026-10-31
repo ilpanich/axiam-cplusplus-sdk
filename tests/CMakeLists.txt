@@ -196,8 +196,9 @@ target_compile_definitions(axiam_cpp_tests PRIVATE
 add_test(NAME axiam_cpp_tests COMMAND axiam_cpp_tests)
 set_tests_properties(axiam_cpp_tests PROPERTIES TIMEOUT 120)
 
-# C162-02: the ABI version. A public type the caller holds grew in 1.1.0, in 1.1.1 and again in 1.1.2, so the shared library
-# is libaxiam_cpp.so.4 while the package stays 1.x (CMakeLists.txt, AXIAM_SOVERSION). Only a
+# C162-02, C165-03: the ABI version. A public type the caller holds grew in 1.1.0, in 1.1.1, in 1.1.2 and again
+# with contract 1.65 (the generated management structs), so the shared library
+# is libaxiam_cpp.so.5 while the package stays 1.x (CMakeLists.txt, AXIAM_SOVERSION). Only a
 # shared ELF build has a SONAME to read.
 if(BUILD_SHARED_LIBS AND UNIX AND NOT APPLE)
   find_program(AXIAM_READELF readelf)

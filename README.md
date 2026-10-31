@@ -37,6 +37,13 @@ Contract 1.65 (§34.9, the AXIAM 1.2.0 platform release) adds **native sign-in w
 session server-side by default (§9): `invalid_grant` on `oidc_refresh` means the session is over and is
 never retried. The rest of 1.65 is informative.
 
+**Server floor:** federation-config admin calls (`federation.create_config`, `get_config`, `list_configs`,
+`update_config`) of this 1.2-line SDK need an AXIAM server **1.2.0 or later**:
+`FederationConfigResponse.native_login` is required from 1.2.0, and a response from an older server fails to
+decode. `oidc_par` also pushes the `axiam_idp_hint` its begin URL carries when its own `idp_hint` argument is
+unset (the argument wins when both are set; §26.2 rule 8). The shared library's ABI version is now 5
+(`libaxiam_cpp.so.5`); see the CHANGELOG.
+
 Contract 1.64 (§34.8) is the **1.1.2** release and ports one rule: a `429 rate_limit_exceeded` on a
 device-code poll is waited out, not terminal (§14.2 rule 9) -- `device_login` waits `Retry-After` (a minimum,
 capped at the `expires_in` deadline), counts it as one interval, leaves the interval unchanged and polls again;
@@ -104,8 +111,9 @@ the AXIAM platform releases, also add members, and the ABI bump below covers the
 
 The shared library's `SOVERSION` is its ABI version and moves independently of that SemVer: a
 public type that grows (as `ApplyReport`, `PlannedChange`, `ManifestEntity` and `ConflictError`
-did in 1.1.0, `PageRequest` in 1.1.1, and `OAuthProtocolError` and `NetworkReplyProfile` in 1.1.2) bumps it, so 1.1.2 installs `libaxiam_cpp.so.4` and a binary
-built against 1.1.x must be rebuilt rather than loaded against it.
+did in 1.1.0, `PageRequest` in 1.1.1, and `OAuthProtocolError` and `NetworkReplyProfile` in 1.1.2, and the generated management structs of contract 1.65) bumps it, so the
+contract-1.65 release installs `libaxiam_cpp.so.5` and a binary built against 1.1.x must be rebuilt rather than
+loaded against it.
 
 Sections are named individually rather than folded into ranges: widening a
 range silently turns a statement that was true when written into a different

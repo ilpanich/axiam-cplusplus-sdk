@@ -1058,6 +1058,52 @@ AXIAM_TEST("§26.2 par_idp_hint_in_pushed_body") {
     AXIAM_REQUIRE(f.replies->par_calls == 3);
 }
 
+AXIAM_TEST("§26.6 par_idp_hint_from_begin_url_pushed") {
+    Fixture f;
+    auto client = make_client(f);
+    const auto cfg = client.oidc_discover();
+    auto pushed_body = [&]() {
+        std::lock_guard<std::mutex> lock(f.st->mtx);
+        for (auto it = f.st->requests.rbegin(); it != f.st->requests.rend(); ++it) {
+            if (it->url.find("/oauth2/par") != std::string::npos) return it->body;
+        }
+        return std::string();
+    };
+    // oidc_begin(idp_hint=...) then oidc_par(request) with no hint of its own: the hint the
+    // begin URL carries is pushed, once, decoded back to the caller's bytes.
+    for (const std::string hint : {"corp-okta", "  Not A/Provider&x=1  "}) {
+        const auto begun = client.oidc_begin(cfg, kRedirectUri, std::nullopt, hint);
+        const auto pushed = client.oidc_par(cfg, begun, kRedirectUri);
+        const Params body = parse_params(pushed_body());
+        AXIAM_REQUIRE(count_of(body, "axiam_idp_hint") == 1);
+        AXIAM_REQUIRE(value_of(body, "axiam_idp_hint") == hint);
+        AXIAM_REQUIRE(pushed.url.find("idp_hint") == std::string::npos);
+    }
+    // A begin URL without a hint pushes none.
+    const auto plain = client.oidc_begin(cfg, kRedirectUri);
+    (void)client.oidc_par(cfg, plain, kRedirectUri);
+    AXIAM_REQUIRE(count_of(parse_params(pushed_body()), "axiam_idp_hint") == 0);
+}
+
+AXIAM_TEST("§26.6 par_idp_hint_argument_wins") {
+    Fixture f;
+    auto client = make_client(f);
+    const auto cfg = client.oidc_discover();
+    auto pushed_body = [&]() {
+        std::lock_guard<std::mutex> lock(f.st->mtx);
+        for (auto it = f.st->requests.rbegin(); it != f.st->requests.rend(); ++it) {
+            if (it->url.find("/oauth2/par") != std::string::npos) return it->body;
+        }
+        return std::string();
+    };
+    const auto begun = client.oidc_begin(cfg, kRedirectUri, std::nullopt, std::string("from-begin"));
+    (void)client.oidc_par(cfg, begun, kRedirectUri, std::nullopt, std::nullopt, std::nullopt,
+                          std::string("from-argument"));
+    const Params body = parse_params(pushed_body());
+    AXIAM_REQUIRE(count_of(body, "axiam_idp_hint") == 1);
+    AXIAM_REQUIRE(value_of(body, "axiam_idp_hint") == "from-argument");
+}
+
 // ---------------------------------------------------------------------------
 // §9 (contract 1.65): refresh-reuse confirmation
 // ---------------------------------------------------------------------------

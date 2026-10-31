@@ -1367,6 +1367,10 @@ public:
     /// reads the pushed hint and ignores a copy beside a `request_uri`. Validation is
     /// oidc_begin's -- emptiness and length only.
     ///
+    /// When `idp_hint` is unset, the `axiam_idp_hint` that `request.url` (from an
+    /// `oidc_begin` that was given one) carries is pushed instead; the argument wins when both
+    /// are set (§26.2 rule 8, D-N36). The same overload is reached by the six-argument form.
+    ///
     /// A separate overload for the reason oidc_begin's is: the established signature, and
     /// the ABI, stay as they were.
     ///
