@@ -350,7 +350,8 @@ AXIAM_TEST("§37.9 raw_nonce_sent_not_hash") {
     client.oidc_discover();
 
     // A token whose payload carries the HASH, as the provider's token does.
-    const std::string token = "eyJhbGciOiJSUzI1NiJ9." +
+    // A stub, not a credential: header {"alg":"RS256"}, a literal ".sig" signature.
+    const std::string token = axtest::b64url_encode(std::string("{\"alg\":\"RS256\"}")) + "." +
                               axtest::b64url_encode(std::string("{\"nonce\":\"") + kVectorHash +
                                                     "\"}") +
                               ".sig";
