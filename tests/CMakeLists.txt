@@ -112,6 +112,9 @@ add_executable(axiam_cpp_tests
   test_mtls_endpoint_aliases.cpp
   test_revocation.cpp
   test_oidc_grants.cpp
+  # CONTRACT.md §37 (contract 1.65): native sign-in with a provider ID token, plus the
+  # `idp_hint` of §12.1 / §26.2 rule 8 and the §9 refresh-reuse confirmation.
+  test_native_signin.cpp
   test_oidc_errors.cpp
   # CONTRACT.md §28.12 (contract 1.53): RFC 7592 client configuration.
   test_client_registration.cpp

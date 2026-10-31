@@ -6,6 +6,34 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+Contract 1.65 (§34.9). `CONTRACT.md`, `openapi.json` (info.version 1.2.0) and
+`management-registry.json` are re-vendored byte for byte from ilpanich/axiam `76d35d9` (this SDK
+vendors no `proto/`); `scripts/gen_management.py` was re-run. The README states conformance at
+contract 1.65 with §37. The release number is the maintainer's.
+
+### Added
+
+- **Native sign-in with a provider ID token** (§37): `Client::login_with_provider_id_token(provider,
+  id_token, nonce, scopes = {}, resource = nullopt, tenant_id = nullopt)`, the free function
+  `native_nonce()` and the `ProviderNonce` type (`raw` is `Sensitive<std::string>`, `hashed` is a
+  lower-case SHA-256 hex string). One form `POST /oauth2/token`, never retried, the raw nonce and the
+  provider token never logged or stored, no `openid` added, ID-token validation under §12.4 with the
+  raw nonce. `kProviderIdTokenGrantType` names the grant.
+- **`idp_hint`** on `oidc_begin` (emitted once as `axiam_idp_hint`) and on `oidc_par` (pushed in the
+  body, never on the redirect), as new overloads; empty or over-256-byte values throw
+  `std::invalid_argument`. The existing signatures are unchanged, so the ABI is too.
+- Tests: the 13 tests of §37.9, the five `idp_hint` tests and the §9 refresh-reuse confirmation
+  (`tests/test_native_signin.cpp`).
+
+### Changed
+
+- Regenerated management members: `default_idp`, `refresh_reuse_response` (preserved by the
+  read-modify-write forms, §34.9 (i)), `native_login`, and the `TokenRequest` /
+  `PushedAuthorizationRequest` members of openapi 1.2.0.
+- Informative, no code change: a replayed refresh token now ends the session server-side by default
+  (tenant setting `oauth2.refresh_reuse_response = revoke_session`); `invalid_grant` on `oidc_refresh`
+  means the session is over and is never retried (§9).
+
 ## [1.1.3] - 2026-10-29
 
 ### Changed

@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34 and §36 at contract 1.64, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34, §36 and §37 at contract 1.65, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
 Manifest pruning: not offered in any namespace (§27.10) — a manifest's `apply` never deletes, so a
 resource omitted from it is left alone, `network` included.
@@ -28,6 +28,14 @@ strings (P12.2), the RFC 7592 update sends only what the read carried (P12.4), t
 replacement inputs cannot be built without their required members, `Sensitive<T>::expose()`
 is the public accessor (§7 rule 3), and management reads follow §16 (`408`, `429`,
 `Retry-After`).
+
+Contract 1.65 (§34.9, the AXIAM 1.2.0 platform release) adds **native sign-in with a provider ID token**
+(§37: `Client::login_with_provider_id_token` and `native_nonce()`, see
+[Native sign-in](#native-sign-in-with-a-provider-id-token-37)), the optional **`idp_hint`** of
+`oidc_begin` and `oidc_par` (§12.1, §26.2 rule 8), and regenerated management members
+(`default_idp`, `refresh_reuse_response`, `native_login`, ...). A replayed refresh token now ends the
+session server-side by default (§9): `invalid_grant` on `oidc_refresh` means the session is over and is
+never retried. The rest of 1.65 is informative.
 
 Contract 1.64 (§34.8) is the **1.1.2** release and ports one rule: a `429 rate_limit_exceeded` on a
 device-code poll is waited out, not terminal (§14.2 rule 9) -- `device_login` waits `Retry-After` (a minimum,
@@ -1230,6 +1238,50 @@ for (const auto& p : client.sso_providers(std::nullopt, typed_by_the_user)) {
 - **Inheritance is resolved server-side** (note 13). `FederationProvider::inherited`
   tells you a provider belongs to the organization rather than the tenant; pass
   the `id` you were handed and let the server work out the rest.
+
+### Native sign-in with a provider ID token (§37)
+
+A mobile or desktop app that holds the ID token a Google, Apple or Facebook native SDK produced
+presents it to AXIAM's token endpoint and gets the client's ordinary token set, with no browser
+redirect. It is **not** token exchange (§15) and is never routed through it.
+
+```cpp
+// 1. A fresh pair per attempt. Give the PROVIDER's SDK `hashed`; keep `raw` for this attempt only.
+const axiam::ProviderNonce nonce = axiam::native_nonce();   // no network, no client needed
+//    provider_sdk.sign_in(/* nonce = */ nonce.hashed) -> provider_id_token
+
+// 2. Present the provider's token and the RAW nonce. A public client (no secret) is the normal case.
+auto client = axiam::Client::builder()
+                  .base_url("https://iam.example.com")
+                  .tenant_id("22222222-2222-2222-2222-222222222222")
+                  .oidc_client_id("my-mobile-app")
+                  .build();
+const axiam::OidcTokenSet tokens = client.login_with_provider_id_token(
+    "corp-google",                                           // provider UUID or slug, sent verbatim
+    axiam::Sensitive<std::string>(provider_id_token), nonce.raw,
+    {"openid"});                                             // scopes: only what you name
+```
+
+- `provider` is the provider's UUID or `provider_slug` and is sent as given (a kind name such as
+  `google` works only if the operator chose it as the slug). `nonce` is the **raw** value, never its hash.
+- No `openid` is added: the server treats an omitted scope as empty, so pass `openid` to get an ID token.
+- **Never retried** (the provider's token is single use): every refusal of it is one
+  `OAuthProtocolError` `invalid_grant`, causes are not refined, and a transport failure after the request
+  left is a `NetworkError`. Recover with a fresh provider token and a fresh `native_nonce()`.
+- Empty `provider`, `id_token` or `nonce` throws `std::invalid_argument` with no request; a slug-only
+  client throws `AuthError` (§12.3 rule 4). The ID token and the raw nonce are never logged, stored or put
+  in an error. The result is not adopted as the client's own session.
+
+**`idp_hint`** sends the browser straight to one provider instead of the chooser:
+
+```cpp
+const auto req = client.oidc_begin(doc, redirect_uri, std::nullopt, std::string("corp-google"));
+// ...adds axiam_idp_hint=corp-google, once. With PAR the hint rides the pushed body only:
+const auto pushed = client.oidc_par(doc, req, redirect_uri, std::nullopt, std::nullopt,
+                                    std::nullopt, std::string("corp-google"));
+```
+
+An empty or over-256-byte hint throws `std::invalid_argument`; nothing else is validated.
 
 ### Sender-constrained tokens and DPoP (§10.1 rule 9, §21.7.3)
 

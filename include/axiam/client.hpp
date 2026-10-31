@@ -629,6 +629,28 @@ public:
                                     const std::string& redirect_uri,
                                     std::optional<std::string> scope = std::nullopt);
 
+    /// `oidc_begin` with the optional `idp_hint` (contract 1.65, §12.1).
+    ///
+    /// When engaged, the URL carries one more query parameter, **`axiam_idp_hint`**, exactly
+    /// once and RFC 3986 percent-encoded: a relying party that already knows which provider
+    /// its user should use sends the browser straight to it instead of the provider chooser.
+    /// The value is a provider's UUID, its `provider_slug` or a branded kind name
+    /// (`google`, `apple`, ...) and is sent AS GIVEN -- not trimmed, case-folded, parsed as a
+    /// UUID or looked up. An unresolvable hint is ignored by the server. There is no
+    /// `kc_idp_hint` alias. This SDK accepts no other caller-supplied query parameter, so the
+    /// hint is the single source of the name.
+    ///
+    /// A separate overload rather than a defaulted fourth parameter on the one above, so the
+    /// mangled name of the established entry point (and with it the library's ABI) is
+    /// unchanged.
+    ///
+    /// @throws std::invalid_argument (C++'s local ValidationError mapping), with NO URL
+    ///         built, when `idp_hint` is engaged and empty or longer than 256 bytes.
+    AuthorizationRequest oidc_begin(const OidcConfiguration& config,
+                                    const std::string& redirect_uri,
+                                    std::optional<std::string> scope,
+                                    std::optional<std::string> idp_hint);
+
     /// `POST /oauth2/token` with `grant_type=authorization_code` (§12.1).
     ///
     /// Validates the returned `id_token` against every §12.4 rule before
@@ -1336,6 +1358,78 @@ public:
                                         std::optional<std::string> scope = std::nullopt,
                                         std::optional<std::string> tenant_id = std::nullopt,
                                         std::optional<std::string> dpop_jkt = std::nullopt);
+
+    /// `oidc_par` with the optional `idp_hint` (contract 1.65, §26.2 rule 8).
+    ///
+    /// When engaged, the PUSHED form body carries `axiam_idp_hint=<value>` exactly once; when
+    /// not, the field is absent. The hint never appears on the returned redirect `url`, which
+    /// stays exactly `client_id` and `request_uri` (plus the routing `tenant_id`): the server
+    /// reads the pushed hint and ignores a copy beside a `request_uri`. Validation is
+    /// oidc_begin's -- emptiness and length only.
+    ///
+    /// A separate overload for the reason oidc_begin's is: the established signature, and
+    /// the ABI, stay as they were.
+    ///
+    /// @throws std::invalid_argument, before any request, for an empty or over-256-byte hint.
+    PushedAuthorizationRequest oidc_par(const OidcConfiguration& config,
+                                        const AuthorizationRequest& request,
+                                        const std::string& redirect_uri,
+                                        std::optional<std::string> scope,
+                                        std::optional<std::string> tenant_id,
+                                        std::optional<std::string> dpop_jkt,
+                                        std::optional<std::string> idp_hint);
+
+    /// `login_with_provider_id_token` (contract 1.65, §37) -- native sign-in: exchange the
+    /// ID token a provider's native SDK (Google, Apple, Facebook Limited Login) produced for
+    /// this client's ordinary token set, with no browser redirect.
+    ///
+    /// One `POST /oauth2/token?tenant_id=<uuid>` with
+    /// `grant_type=urn:axiam:params:oauth:grant-type:provider-id-token`. The form carries
+    /// `client_id`, `provider`, `id_token`, `nonce`, the client's secret when it holds one
+    /// (none for a public client, the normal registration of a mobile app), `scope` when
+    /// `scopes` is non-empty and `resource` when given -- and nothing else.
+    ///
+    /// @param provider the provider's UUID or its `provider_slug`, sent VERBATIM (§37.2 rule 2):
+    ///        not trimmed, case-folded, resolved or looked up. A provider *kind* name is not
+    ///        accepted by the server here unless the operator also chose it as the slug.
+    /// @param id_token the ID token the provider's SDK produced. Spent on first presentation
+    ///        anywhere in the deployment.
+    /// @param nonce the RAW nonce (native_nonce().raw), byte for byte. NOT its hash: the app
+    ///        gave the provider's SDK the hash, and the server hashes this and compares. This
+    ///        function never hashes it, never generates one and never reads the token's own
+    ///        `nonce` claim.
+    /// @param scopes sent only when non-empty and the SDK adds none: no `openid` is added
+    ///        (unlike oidc_begin). The server treats an omitted scope as the EMPTY set, so
+    ///        pass `openid` to receive an ID token.
+    /// @param resource optional RFC 8707 resource indicator.
+    /// @param tenant_id tenant UUID for the query parameter; falls back to the client's. A
+    ///        slug is never a substitute (§12.3 rule 4).
+    ///
+    /// **Never retried, by this SDK or a wrapper it ships (§37.2 rule 10).** The provider's
+    /// token is single use across the deployment, so every refusal of it is the one
+    /// `OAuthProtocolError` `invalid_grant` ("the provider ID token is not acceptable") and
+    /// is neither refined nor retried; a transport failure after the request left is
+    /// indeterminate and surfaces as NetworkError. The recovery is a FRESH provider token with
+    /// a FRESH nonce. `consent_required` has spent the token as well. A `429` spends nothing,
+    /// but this SDK still does not retry it.
+    ///
+    /// Where the response carries an `id_token` it is validated under §12.4 with the raw
+    /// `nonce` as the expected nonce, all-or-nothing as oidc_exchange's is. Nothing is
+    /// adopted: the posture of login_client_credentials() and device_login().
+    ///
+    /// Neither `id_token` nor `nonce` is logged, stored or placed in an error or telemetry
+    /// event, on success or on any failure path; hold the raw nonce only for the length of the
+    /// attempt.
+    ///
+    /// @throws std::invalid_argument, before any request, when `provider`, `id_token` or
+    ///         `nonce` is empty (§37.2 rule 4).
+    /// @throws AuthError, before any request, for a client with no tenant UUID.
+    OidcTokenSet login_with_provider_id_token(const std::string& provider,
+                                              const Sensitive<std::string>& id_token,
+                                              const Sensitive<std::string>& nonce,
+                                              const std::vector<std::string>& scopes = {},
+                                              std::optional<std::string> resource = std::nullopt,
+                                              std::optional<std::string> tenant_id = std::nullopt);
 
     // ---- Accepted per-language async twins (§1, C++ row: std::future) ----
     std::future<LoginResult> login_async(std::string username_or_email, std::string password);
