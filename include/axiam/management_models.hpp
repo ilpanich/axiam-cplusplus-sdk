@@ -936,6 +936,55 @@ std::string to_wire(ReactorMode value);
 /// `switch` over this enum needs an `Unknown` arm.
 ReactorMode reactor_mode_from_wire(const std::string& value);
 
+/// What the token endpoint does when a refresh token that has already been rotated is presented
+/// again and **refused** (G-C, #818 — the T-254 amendment).
+///
+/// Two values, ordered by strictness:
+///
+/// * `revoke_session` — the default (D-N2). The refusal also invalidates the session the
+/// replayed token names (which publishes to the revocation feed) and revokes every refresh
+/// token issued under that session — whichever client it was issued to, the console sign-in
+/// included, with no back-channel logout sent — as the authorization-code replay path does for
+/// a code (RFC 6749 §10.5; OAuth 2.0 Security BCP §4.14.2). Only a presentation by the token's
+/// own client, passing the token's sender constraint, triggers it (#821). On a client with no
+/// grace window the honest holder of a replayed token has nothing left to lose — its token is
+/// already dead and it never received the successor — so the revocation costs it nothing and
+/// costs whoever holds the successor everything. * `refuse` — the 1.1.x behaviour: the
+/// presentation is refused, marked on the session and audited, and nothing else is revoked.
+///
+/// Neither value changes what is *accepted*. A `fapi2` client's presentation inside the grace
+/// window is accepted and marked whatever this says (D-N4); a token revoked at logout is not a
+/// replay and revokes nothing.
+///
+/// This text is published as the schema's description in `sdks/openapi.json`, so it carries no
+/// rustdoc intra-doc links (F4-W1-08, #824).
+enum class RefreshReuseResponse {
+    RevokeSession,  ///< Wire value `revoke_session`.
+    Refuse,  ///< Wire value `refuse`.
+    Unknown,  ///< A value this SDK's copy of the spec does not list.
+};
+
+/// The wire spelling of a RefreshReuseResponse, for display and logs; never fails.
+///
+/// `RefreshReuseResponse::Unknown` spells as the empty string, which no server value is -- and
+/// it is never SENT: a request carrying it is refused locally with std::invalid_argument
+/// (contract 1.60 B5) before any request, never written as `""` for the server to refuse
+/// (CONTRACT.md §34.2 P12.2, contract 1.59).
+std::string to_wire(RefreshReuseResponse value);
+
+/// Parse a wire value into a RefreshReuseResponse.
+///
+/// An **open** enum: a value this SDK's copy of the spec does not list becomes
+/// `RefreshReuseResponse::Unknown` rather than throwing (CONTRACT.md §27.11 rule 1). Throwing
+/// fails the WHOLE response, so one field of one record would take down the page it arrived on
+/// -- including the records the caller did ask for.
+///
+/// It is never mapped to one of the KNOWN enumerators, which is the trap this used to avoid by
+/// throwing: reading a state this SDK does not know as whichever enumerator happens to be first
+/// turns a new server state into a wrong one, and on this surface these values gate access. A
+/// `switch` over this enum needs an `Unknown` arm.
+RefreshReuseResponse refresh_reuse_response_from_wire(const std::string& value);
+
 /// A SAML 2.0 protocol binding (SAML Bindings §3).
 ///
 /// The response binding for Web Browser SSO is always [`Self::HttpPost`], but the enum keeps
@@ -1449,6 +1498,8 @@ struct MfaMethodResponse;
 struct MfaPolicy;
 struct MigrateCustodyResponse;
 struct MtlsTrustAnchorResponse;
+struct NativeLoginTrustRequest;
+struct NativeLoginTrustResponse;
 struct NetworkPolicyResponse;
 struct NetworkReplyProfile;
 struct NetworkReplyProfileInput;
@@ -1457,6 +1508,7 @@ struct NotificationPolicy;
 struct NotificationRuleResponse;
 struct OAuth2ClientCreatedResponse;
 struct OAuth2ClientResponse;
+struct OAuth2Policy;
 struct OidcAuthorizeRequest;
 struct OidcAuthorizeResponse;
 struct OidcCallbackRequest;
@@ -2039,6 +2091,28 @@ struct CreateCertificateRequest {
     std::int64_t validity_days;
 };
 
+/// Native sign-in trust (G-A): which ID tokens this provider issued to an app are accepted as a
+/// sign-in at the token endpoint. Mirrors the domain block on the wire, as
+/// `TokenExchangeTrustRequest` does, so an omitted member takes its documented default rather
+/// than failing deserialization. Only an `OidcConnect` provider may enable it.
+///
+/// Every member is optional, so this is a SPARSE body: an engaged `std::optional` is sent and a
+/// disengaged one is OMITTED from the request entirely, rather than sent as null (§27.4 rule
+/// 5). On a sparse update those say opposite things, and only omission means "leave it alone".
+struct NativeLoginTrustRequest {
+    /// The audiences a presented ID token may carry: the iOS bundle ID, Android client ID or
+    /// Apple app ID the native SDK was configured with. Required (non-empty) when `enabled`; at
+    /// most 64 entries of at most 512 characters, none blank, none repeated. The web
+    /// `client_id` is accepted only when it is listed here. Optional.
+    std::optional<std::vector<std::string>> client_ids = std::nullopt;
+    /// Off unless explicitly enabled. Configuring a provider for browser login is not agreement
+    /// to accept its ID tokens from apps. Optional.
+    std::optional<bool> enabled = std::nullopt;
+    /// Bound on `now - iat` for a presented ID token, 1 to 3600 seconds. Omitted: 300.
+    /// Optional.
+    std::optional<std::int64_t> max_token_age_secs = std::nullopt;
+};
+
 /// X4 trust for exchanging this provider's tokens (RFC 8693, external issuer). Mirrors
 /// [`TokenExchangeTrust`] on the wire rather than reusing it directly so the API surface can
 /// carry its own defaults: an admin PUTting a partial block gets the documented default for
@@ -2112,6 +2186,8 @@ struct CreateFederationConfigRequest {
     std::optional<std::string> idp_signing_cert_pem = std::nullopt;
     /// OIDC discovery URL or SAML metadata URL. Optional.
     std::optional<std::string> metadata_url = std::nullopt;
+    /// The server's `native_login` field. Optional.
+    std::optional<NativeLoginTrustRequest> native_login = std::nullopt;
     /// Federation protocol: "OidcConnect" or "Saml".
     std::string protocol;
     /// Display name for the identity provider (e.g., "Google", "Okta").
@@ -2279,6 +2355,14 @@ struct CreateOAuth2ClientRequest {
     /// `authn_request_params` it is permitted on a `fapi2` client, because it relaxes nothing —
     /// it decides only how an anonymous browser is answered. Optional.
     std::optional<bool> browser_sso = std::nullopt;
+    /// G-B (#817) — the federation provider (a federation config `id`) this client's sign-in
+    /// page starts with when an authorization request carries no `axiam_idp_hint`; a hint that
+    /// names a provider overrides it. Must name a provider this tenant can sign in with — its
+    /// own enabled configs, or the organization's enabled ones it inherits — or the
+    /// registration is refused with `400`. If that provider is later disabled or deleted the
+    /// default is ignored at the authorization endpoint (the provider chooser is shown), never
+    /// an error. Omit for none. Optional.
+    std::optional<std::string> default_idp = std::nullopt;
     /// RFC 9449 §5.2 — issue DPoP-bound (sender-constrained) access tokens to this client.
     /// Independent of both the authentication method and
     /// `tls_client_certificate_bound_access_tokens`; a client may ask for both constraints, and
@@ -2767,6 +2851,17 @@ struct EncryptedExport {
     std::string recipient_key_id;
 };
 
+/// Native sign-in trust as returned to an administrator. Nothing here is secret; it is never
+/// part of the unauthenticated providers listing.
+struct NativeLoginTrustResponse {
+    /// The accepted ID-token audiences.
+    std::vector<std::string> client_ids;
+    /// Whether ID tokens from apps are accepted as a sign-in.
+    bool enabled;
+    /// Bound on `now - iat`, in seconds.
+    std::int64_t max_token_age_secs;
+};
+
 /// X4 trust as returned. Same shape as the request; nothing here is secret — an operator
 /// reading a provider needs to see exactly what it trusts.
 struct TokenExchangeTrustResponse {
@@ -2830,6 +2925,8 @@ struct FederationConfigResponse {
     /// Whether AXIAM mints this provider's client secret itself, per exchange, rather than
     /// sending a stored one. True only for an Apple config with both identifiers set.
     bool mints_client_secret;
+    /// Native sign-in trust (G-A).
+    NativeLoginTrustResponse native_login;
     /// Whether PKCE is sent on the authorization request. Always true for the OAuth2 variant
     /// regardless of the stored flag.
     bool pkce_required;
@@ -3401,6 +3498,10 @@ struct OAuth2ClientResponse {
     std::string client_id;
     /// The server's `created_at` field.
     std::string created_at;
+    /// G-B (#817) — the provider this client's sign-in page starts with when a request carries
+    /// no hint; absent for none. Echoed as stored: a value whose provider has since been
+    /// disabled is shown, and ignored at the authorization endpoint. Optional.
+    std::optional<std::string> default_idp = std::nullopt;
     /// The server's `dpop_bound_access_tokens` field.
     bool dpop_bound_access_tokens;
     /// The server's `dpop_require_nonce` field.
@@ -3457,6 +3558,21 @@ struct OAuth2ClientResponse {
     ClientAuthMethod token_endpoint_auth_method;
     /// The server's `updated_at` field.
     std::string updated_at;
+};
+
+/// OAuth 2.0 authorization-server behaviour that is a tenant's to decide (G-C, #818). A struct
+/// of its own rather than a field on `TokenPolicy` because it is not a lifetime, and so the
+/// resolved setting reads by its documented name, `oauth2.refresh_reuse_response`.
+///
+/// Every member is optional, so this is a SPARSE body: an engaged `std::optional` is sent and a
+/// disengaged one is OMITTED from the request entirely, rather than sent as null (§27.4 rule
+/// 5). On a sparse update those say opposite things, and only omission means "leave it alone".
+struct OAuth2Policy {
+    /// What a refused refresh-token replay does besides refusing. Ordered: a tenant may move
+    /// from `refuse` to `revoke_session` and never back while its organization's baseline is
+    /// `revoke_session`. Published as a reference to the `RefreshReuseResponse` schema, so the
+    /// two legal values reach the SDK generators as an `enum` (F4-W1-06, #823). Optional.
+    std::optional<RefreshReuseResponse> refresh_reuse_response = std::nullopt;
 };
 
 /// The `OidcAuthorizeRequest` schema from the server's OpenAPI document.
@@ -4538,6 +4654,9 @@ struct SecuritySettings {
     MfaPolicy mfa;
     /// The server's `notification` field.
     NotificationPolicy notification;
+    /// G-C (#818) — `oauth2.refresh_reuse_response`. Defaulted so a document written before the
+    /// field reads as the default. Optional.
+    std::optional<OAuth2Policy> oauth2 = std::nullopt;
     /// The server's `oidc` field.
     OidcPolicy oidc;
     /// The server's `opaque` field.
@@ -4744,6 +4863,12 @@ struct SetOrgSettings {
     std::optional<std::string> opaque_suite = std::nullopt;
     /// The server's `password_history_count` field.
     std::int64_t password_history_count;
+    /// G-C (#818) — defaulted to `revoke_session` (D-N2): an API client written before the
+    /// field lands on the new default. `refuse` restores the 1.1.x behaviour. Because it is
+    /// defaulted, a `PUT` from a client written before 1.2.0 (which omits it) sets an
+    /// organization on `refuse` back to `revoke_session` — the stricter direction (F4-W1-06).
+    /// Optional.
+    std::optional<RefreshReuseResponse> refresh_reuse_response = std::nullopt;
     /// The server's `refresh_token_lifetime_secs` field.
     std::int64_t refresh_token_lifetime_secs;
     /// The server's `require_digits` field.
@@ -5066,6 +5191,8 @@ struct TenantSettingsOverride {
     std::optional<std::string> opaque_suite = std::nullopt;
     /// The server's `password_history_count` field. Optional.
     std::optional<std::int64_t> password_history_count = std::nullopt;
+    /// The server's `refresh_reuse_response` field. Optional.
+    std::optional<RefreshReuseResponse> refresh_reuse_response = std::nullopt;
     /// The server's `refresh_token_lifetime_secs` field. Optional.
     std::optional<std::int64_t> refresh_token_lifetime_secs = std::nullopt;
     /// The server's `require_digits` field. Optional.
@@ -5196,6 +5323,8 @@ struct UpdateFederationConfigRequest {
     /// Tri-state (§27.4 rule 5, null is not absent): `std::nullopt` omits the member; an
     /// engaged value holding `std::nullopt` is JSON `null`; a value is a value.
     std::optional<std::optional<std::string>> metadata_url = std::nullopt;
+    /// The server's `native_login` field. Optional.
+    std::optional<NativeLoginTrustRequest> native_login = std::nullopt;
     /// The server's `provider` field. Optional.
     std::optional<std::string> provider = std::nullopt;
     /// Operator-chosen identifier for a `generic_*` kind. Explicit `null` clears it. Tri-state
@@ -5277,6 +5406,10 @@ struct UpdateOAuth2ClientRequest {
     std::optional<bool> backchannel_user_code_parameter = std::nullopt;
     /// X7.3 — see [`CreateOAuth2ClientRequest::browser_sso`]. Optional.
     std::optional<bool> browser_sso = std::nullopt;
+    /// G-B (#817) — see [`CreateOAuth2ClientRequest::default_idp`]. Omitted leaves it; `null`
+    /// clears it; an id is held to the create rule (`400` unless it names a provider this
+    /// tenant can sign in with). Optional.
+    std::optional<std::string> default_idp = std::nullopt;
     /// The server's `dpop_bound_access_tokens` field. Optional.
     std::optional<bool> dpop_bound_access_tokens = std::nullopt;
     /// The server's `dpop_require_nonce` field. Optional.

@@ -1149,6 +1149,44 @@ void from_json(const nlohmann::json& j, ReactorMode& value) {
     value = reactor_mode_from_wire(j.get<std::string>());
 }
 
+std::string to_wire(RefreshReuseResponse value) {
+    switch (value) {
+        case RefreshReuseResponse::RevokeSession: return "revoke_session";
+        case RefreshReuseResponse::Refuse: return "refuse";
+        // The empty string, which no server value is. For display only: send_wire() below
+        // refuses to put it on the wire.
+        case RefreshReuseResponse::Unknown: return "";
+    }
+    // Unreachable for a value produced by this SDK; present because a switch over an enum class
+    // with an out-of-range value is otherwise undefined.
+    return "revoke_session";
+}
+
+RefreshReuseResponse refresh_reuse_response_from_wire(const std::string& value) {
+    if (value == "revoke_session") return RefreshReuseResponse::RevokeSession;
+    if (value == "refuse") return RefreshReuseResponse::Refuse;
+    // §27.11 rule 1: an unrecognised value decodes, it does not throw. Throwing here fails the
+    // whole response the value arrived in, so one field of one record takes down the page it
+    // was on. It is still never mapped to one of the KNOWN enumerators -- that would turn a new
+    // server state into a wrong one.
+    return RefreshReuseResponse::Unknown;
+}
+
+// CONTRACT.md §34.2 P12.2 (contract 1.59): a value this SDK does not know is refused LOCALLY,
+// before any request -- never sent as "", never left for the server to refuse. Every
+// request-path serialization of this enum goes through here.
+static std::string send_wire(RefreshReuseResponse value) {
+    if (value == RefreshReuseResponse::Unknown) {
+        throw std::invalid_argument("RefreshReuseResponse: a value this SDK does not know is never sent (CONTRACT.md §34.2 P12.2)");
+    }
+    return to_wire(value);
+}
+
+void to_json(nlohmann::json& j, const RefreshReuseResponse& value) { j = send_wire(value); }
+void from_json(const nlohmann::json& j, RefreshReuseResponse& value) {
+    value = refresh_reuse_response_from_wire(j.get<std::string>());
+}
+
 std::string to_wire(SamlBinding value) {
     switch (value) {
         case SamlBinding::HttpPost: return "http_post";
@@ -2241,6 +2279,31 @@ void from_json(const nlohmann::json& j, CreateCertificateRequest& value) {
     value.validity_days = j.at("validity_days").get<std::int64_t>();
 }
 
+void to_json(nlohmann::json& j, const NativeLoginTrustRequest& value) {
+    j = nlohmann::json::object();
+    if (value.client_ids) {
+        j["client_ids"] = *value.client_ids;
+    }
+    if (value.enabled) {
+        j["enabled"] = *value.enabled;
+    }
+    if (value.max_token_age_secs) {
+        j["max_token_age_secs"] = *value.max_token_age_secs;
+    }
+}
+
+void from_json(const nlohmann::json& j, NativeLoginTrustRequest& value) {
+    if (auto it = j.find("client_ids"); it != j.end() && !it->is_null()) {
+        value.client_ids = it->get<std::vector<std::string>>();
+    }
+    if (auto it = j.find("enabled"); it != j.end() && !it->is_null()) {
+        value.enabled = it->get<bool>();
+    }
+    if (auto it = j.find("max_token_age_secs"); it != j.end() && !it->is_null()) {
+        value.max_token_age_secs = it->get<std::int64_t>();
+    }
+}
+
 void to_json(nlohmann::json& j, const TokenExchangeTrustRequest& value) {
     j = nlohmann::json::object();
     if (value.accepted_audiences) {
@@ -2326,6 +2389,9 @@ void to_json(nlohmann::json& j, const CreateFederationConfigRequest& value) {
     if (value.metadata_url) {
         j["metadata_url"] = *value.metadata_url;
     }
+    if (value.native_login) {
+        j["native_login"] = *value.native_login;
+    }
     j["protocol"] = value.protocol;
     j["provider"] = value.provider;
     if (value.provider_kind) {
@@ -2389,6 +2455,9 @@ void from_json(const nlohmann::json& j, CreateFederationConfigRequest& value) {
     }
     if (auto it = j.find("metadata_url"); it != j.end() && !it->is_null()) {
         value.metadata_url = it->get<std::string>();
+    }
+    if (auto it = j.find("native_login"); it != j.end() && !it->is_null()) {
+        value.native_login = it->get<NativeLoginTrustRequest>();
     }
     value.protocol = j.at("protocol").get<std::string>();
     value.provider = j.at("provider").get<std::string>();
@@ -2580,6 +2649,9 @@ void to_json(nlohmann::json& j, const CreateOAuth2ClientRequest& value) {
     if (value.browser_sso) {
         j["browser_sso"] = *value.browser_sso;
     }
+    if (value.default_idp) {
+        j["default_idp"] = *value.default_idp;
+    }
     if (value.dpop_bound_access_tokens) {
         j["dpop_bound_access_tokens"] = *value.dpop_bound_access_tokens;
     }
@@ -2649,6 +2721,9 @@ void from_json(const nlohmann::json& j, CreateOAuth2ClientRequest& value) {
     }
     if (auto it = j.find("browser_sso"); it != j.end() && !it->is_null()) {
         value.browser_sso = it->get<bool>();
+    }
+    if (auto it = j.find("default_idp"); it != j.end() && !it->is_null()) {
+        value.default_idp = it->get<std::string>();
     }
     if (auto it = j.find("dpop_bound_access_tokens"); it != j.end() && !it->is_null()) {
         value.dpop_bound_access_tokens = it->get<bool>();
@@ -3281,6 +3356,19 @@ void from_json(const nlohmann::json& j, EncryptedExport& value) {
     value.recipient_key_id = j.at("recipient_key_id").get<std::string>();
 }
 
+void to_json(nlohmann::json& j, const NativeLoginTrustResponse& value) {
+    j = nlohmann::json::object();
+    j["client_ids"] = value.client_ids;
+    j["enabled"] = value.enabled;
+    j["max_token_age_secs"] = value.max_token_age_secs;
+}
+
+void from_json(const nlohmann::json& j, NativeLoginTrustResponse& value) {
+    value.client_ids = j.at("client_ids").get<std::vector<std::string>>();
+    value.enabled = j.at("enabled").get<bool>();
+    value.max_token_age_secs = j.at("max_token_age_secs").get<std::int64_t>();
+}
+
 void to_json(nlohmann::json& j, const TokenExchangeTrustResponse& value) {
     j = nlohmann::json::object();
     j["accepted_audiences"] = value.accepted_audiences;
@@ -3336,6 +3424,7 @@ void to_json(nlohmann::json& j, const FederationConfigResponse& value) {
         j["metadata_url"] = *value.metadata_url;
     }
     j["mints_client_secret"] = value.mints_client_secret;
+    j["native_login"] = value.native_login;
     j["pkce_required"] = value.pkce_required;
     j["protocol"] = value.protocol;
     j["provider"] = value.provider;
@@ -3389,6 +3478,7 @@ void from_json(const nlohmann::json& j, FederationConfigResponse& value) {
         value.metadata_url = it->get<std::string>();
     }
     value.mints_client_secret = j.at("mints_client_secret").get<bool>();
+    value.native_login = j.at("native_login").get<NativeLoginTrustResponse>();
     value.pkce_required = j.at("pkce_required").get<bool>();
     value.protocol = j.at("protocol").get<std::string>();
     value.provider = j.at("provider").get<std::string>();
@@ -4037,6 +4127,9 @@ void to_json(nlohmann::json& j, const OAuth2ClientResponse& value) {
     j["browser_sso"] = value.browser_sso;
     j["client_id"] = value.client_id;
     j["created_at"] = value.created_at;
+    if (value.default_idp) {
+        j["default_idp"] = *value.default_idp;
+    }
     j["dpop_bound_access_tokens"] = value.dpop_bound_access_tokens;
     j["dpop_require_nonce"] = value.dpop_require_nonce;
     j["grant_types"] = value.grant_types;
@@ -4087,6 +4180,9 @@ void from_json(const nlohmann::json& j, OAuth2ClientResponse& value) {
     value.browser_sso = j.at("browser_sso").get<bool>();
     value.client_id = j.at("client_id").get<std::string>();
     value.created_at = j.at("created_at").get<std::string>();
+    if (auto it = j.find("default_idp"); it != j.end() && !it->is_null()) {
+        value.default_idp = it->get<std::string>();
+    }
     value.dpop_bound_access_tokens = j.at("dpop_bound_access_tokens").get<bool>();
     value.dpop_require_nonce = j.at("dpop_require_nonce").get<bool>();
     value.grant_types = j.at("grant_types").get<std::vector<std::string>>();
@@ -4120,6 +4216,19 @@ void from_json(const nlohmann::json& j, OAuth2ClientResponse& value) {
     value.tls_client_certificate_bound_access_tokens = j.at("tls_client_certificate_bound_access_tokens").get<bool>();
     value.token_endpoint_auth_method = client_auth_method_from_wire(j.at("token_endpoint_auth_method").get<std::string>());
     value.updated_at = j.at("updated_at").get<std::string>();
+}
+
+void to_json(nlohmann::json& j, const OAuth2Policy& value) {
+    j = nlohmann::json::object();
+    if (value.refresh_reuse_response) {
+        j["refresh_reuse_response"] = send_wire(*value.refresh_reuse_response);
+    }
+}
+
+void from_json(const nlohmann::json& j, OAuth2Policy& value) {
+    if (auto it = j.find("refresh_reuse_response"); it != j.end() && !it->is_null()) {
+        value.refresh_reuse_response = refresh_reuse_response_from_wire(it->get<std::string>());
+    }
 }
 
 void to_json(nlohmann::json& j, const OidcAuthorizeRequest& value) {
@@ -5302,6 +5411,9 @@ void to_json(nlohmann::json& j, const SecuritySettings& value) {
     j["lockout"] = value.lockout;
     j["mfa"] = value.mfa;
     j["notification"] = value.notification;
+    if (value.oauth2) {
+        j["oauth2"] = *value.oauth2;
+    }
     j["oidc"] = value.oidc;
     j["opaque"] = value.opaque;
     j["password"] = value.password;
@@ -5321,6 +5433,9 @@ void from_json(const nlohmann::json& j, SecuritySettings& value) {
     value.lockout = j.at("lockout").get<LockoutPolicy>();
     value.mfa = j.at("mfa").get<MfaPolicy>();
     value.notification = j.at("notification").get<NotificationPolicy>();
+    if (auto it = j.find("oauth2"); it != j.end() && !it->is_null()) {
+        value.oauth2 = it->get<OAuth2Policy>();
+    }
     value.oidc = j.at("oidc").get<OidcPolicy>();
     value.opaque = j.at("opaque").get<OpaquePolicy>();
     value.password = j.at("password").get<PasswordPolicy>();
@@ -5566,6 +5681,9 @@ void to_json(nlohmann::json& j, const SetOrgSettings& value) {
         j["opaque_suite"] = *value.opaque_suite;
     }
     j["password_history_count"] = value.password_history_count;
+    if (value.refresh_reuse_response) {
+        j["refresh_reuse_response"] = send_wire(*value.refresh_reuse_response);
+    }
     j["refresh_token_lifetime_secs"] = value.refresh_token_lifetime_secs;
     j["require_digits"] = value.require_digits;
     j["require_lowercase"] = value.require_lowercase;
@@ -5640,6 +5758,9 @@ void from_json(const nlohmann::json& j, SetOrgSettings& value) {
         value.opaque_suite = it->get<std::string>();
     }
     value.password_history_count = j.at("password_history_count").get<std::int64_t>();
+    if (auto it = j.find("refresh_reuse_response"); it != j.end() && !it->is_null()) {
+        value.refresh_reuse_response = refresh_reuse_response_from_wire(it->get<std::string>());
+    }
     value.refresh_token_lifetime_secs = j.at("refresh_token_lifetime_secs").get<std::int64_t>();
     value.require_digits = j.at("require_digits").get<bool>();
     value.require_lowercase = j.at("require_lowercase").get<bool>();
@@ -6000,6 +6121,9 @@ void to_json(nlohmann::json& j, const TenantSettingsOverride& value) {
     if (value.password_history_count) {
         j["password_history_count"] = *value.password_history_count;
     }
+    if (value.refresh_reuse_response) {
+        j["refresh_reuse_response"] = send_wire(*value.refresh_reuse_response);
+    }
     if (value.refresh_token_lifetime_secs) {
         j["refresh_token_lifetime_secs"] = *value.refresh_token_lifetime_secs;
     }
@@ -6113,6 +6237,9 @@ void from_json(const nlohmann::json& j, TenantSettingsOverride& value) {
     }
     if (auto it = j.find("password_history_count"); it != j.end() && !it->is_null()) {
         value.password_history_count = it->get<std::int64_t>();
+    }
+    if (auto it = j.find("refresh_reuse_response"); it != j.end() && !it->is_null()) {
+        value.refresh_reuse_response = refresh_reuse_response_from_wire(it->get<std::string>());
     }
     if (auto it = j.find("refresh_token_lifetime_secs"); it != j.end() && !it->is_null()) {
         value.refresh_token_lifetime_secs = it->get<std::int64_t>();
@@ -6314,6 +6441,9 @@ void to_json(nlohmann::json& j, const UpdateFederationConfigRequest& value) {
         if (*value.metadata_url) j["metadata_url"] = **value.metadata_url;
         else j["metadata_url"] = nullptr;
     }
+    if (value.native_login) {
+        j["native_login"] = *value.native_login;
+    }
     if (value.provider) {
         j["provider"] = *value.provider;
     }
@@ -6392,6 +6522,9 @@ void from_json(const nlohmann::json& j, UpdateFederationConfigRequest& value) {
     if (auto it = j.find("metadata_url"); it != j.end()) {
         if (it->is_null()) value.metadata_url.emplace(std::nullopt);
         else value.metadata_url.emplace(it->get<std::string>());
+    }
+    if (auto it = j.find("native_login"); it != j.end() && !it->is_null()) {
+        value.native_login = it->get<NativeLoginTrustRequest>();
     }
     if (auto it = j.find("provider"); it != j.end() && !it->is_null()) {
         value.provider = it->get<std::string>();
@@ -6514,6 +6647,9 @@ void to_json(nlohmann::json& j, const UpdateOAuth2ClientRequest& value) {
     if (value.browser_sso) {
         j["browser_sso"] = *value.browser_sso;
     }
+    if (value.default_idp) {
+        j["default_idp"] = *value.default_idp;
+    }
     if (value.dpop_bound_access_tokens) {
         j["dpop_bound_access_tokens"] = *value.dpop_bound_access_tokens;
     }
@@ -6591,6 +6727,9 @@ void from_json(const nlohmann::json& j, UpdateOAuth2ClientRequest& value) {
     }
     if (auto it = j.find("browser_sso"); it != j.end() && !it->is_null()) {
         value.browser_sso = it->get<bool>();
+    }
+    if (auto it = j.find("default_idp"); it != j.end() && !it->is_null()) {
+        value.default_idp = it->get<std::string>();
     }
     if (auto it = j.find("dpop_bound_access_tokens"); it != j.end() && !it->is_null()) {
         value.dpop_bound_access_tokens = it->get<bool>();

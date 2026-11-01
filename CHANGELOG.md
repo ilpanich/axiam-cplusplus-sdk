@@ -6,6 +6,58 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+Contract 1.65 (§34.9). `CONTRACT.md`, `openapi.json` (info.version 1.2.0) and
+`management-registry.json` are re-vendored byte for byte from ilpanich/axiam `d93976b` (`CONTRACT.md` as amended 2026-10-31; the other two unchanged) (this SDK
+vendors no `proto/`); `scripts/gen_management.py` was re-run. The README states conformance at
+contract 1.65 with §37. The release number is the maintainer's.
+
+### Added
+
+- **Native sign-in with a provider ID token** (§37): `Client::login_with_provider_id_token(provider,
+  id_token, nonce, scopes = {}, resource = nullopt, tenant_id = nullopt)`, the free function
+  `native_nonce()` and the `ProviderNonce` type (`raw` is `Sensitive<std::string>`, `hashed` is a
+  lower-case SHA-256 hex string). One form `POST /oauth2/token`, never retried, the raw nonce and the
+  provider token never logged or stored, no `openid` added, ID-token validation under §12.4 with the
+  raw nonce. `kProviderIdTokenGrantType` names the grant.
+- **`idp_hint`** on `oidc_begin` (emitted once as `axiam_idp_hint`) and on `oidc_par` (pushed in the
+  body, never on the redirect), as new overloads; empty or over-256-byte values throw
+  `std::invalid_argument`. The `oidc_begin`/`oidc_par` signatures are unchanged; the regenerated model structs
+  (see Binary compatibility) gained members, so the ABI version is now 5 -- rebuild.
+- Tests: the 13 tests of §37.9, the five `idp_hint` tests and the §9 refresh-reuse confirmation
+  (`tests/test_native_signin.cpp`).
+
+- **`oidc_par` pushes the begin URL's hint** (C165-11, D-N36, §26.2 rule 8): when its own `idp_hint` is unset,
+  the `axiam_idp_hint` that `request.url` carries is pushed in the body; the argument wins when both are set.
+  Tests: `par_idp_hint_from_begin_url_pushed`, `par_idp_hint_argument_wins` (`tests/test_native_signin.cpp`).
+
+- **A `3xx` from an `/oauth2/*` POST is a `NetworkError`** (C165-25, §12.1 rule 3): the shared OAuth2
+  response mapping (`raise_grant_error`) and the UMA ticket exchange now read the status before the body, so a
+  `3xx` carrying an `error` member is no longer an `OAuthProtocolError`. No redirect was ever followed.
+  Tests: `tests/test_oidc_errors.cpp` (3xx on exchange and device authorization).
+
+### Binary compatibility
+
+The shared library's ABI version is now 5 (`libaxiam_cpp.so.5`) (C165-03, D-N32): the regenerated model
+structs changed size and layout. `FederationConfigResponse` gained `NativeLoginTrustResponse native_login`
+after `mints_client_secret`; `CreateFederationConfigRequest`, `UpdateFederationConfigRequest`, the three
+OAuth2 client structs, `SecuritySettings` (`std::optional<OAuth2Policy> oauth2`), `SetOrgSettings` and
+`TenantSettingsOverride` gained `std::optional` members mid-struct. Rebuild against this release. Aggregate
+initialisation by position must name the new members. The `oidc_begin`/`oidc_par` function signatures are
+unchanged.
+
+### Changed
+
+- **Server floor** (C165-04, D-N33): federation-config admin calls (`federation.create_config`, `get_config`,
+  `list_configs`, `update_config`) of this 1.2-line SDK need an AXIAM server **1.2.0 or later**:
+  `FederationConfigResponse.native_login` is required from 1.2.0, and a response from an older server fails
+  to decode.
+- Regenerated management members: `default_idp`, `refresh_reuse_response` (preserved by the
+  read-modify-write forms, §34.9 (i)), `native_login`, and the `TokenRequest` /
+  `PushedAuthorizationRequest` members of openapi 1.2.0.
+- Informative, no code change: a replayed refresh token now ends the session server-side by default
+  (tenant setting `oauth2.refresh_reuse_response = revoke_session`); `invalid_grant` on `oidc_refresh`
+  means the session is over and is never retried (§9).
+
 ## [1.1.3] - 2026-10-29
 
 ### Changed

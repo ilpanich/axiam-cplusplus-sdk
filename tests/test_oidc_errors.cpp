@@ -13,6 +13,7 @@
 // fixed one cannot express: several §12.3 and §14.1 refusals are ABOUT the
 // document's contents.
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -71,6 +72,9 @@ struct Replies {
     std::string device_body = "{}";
 
     std::string jwks_body = R"({"keys":[]})";
+
+    // When set, every reply carries it as `Location` (the redirect tests, §12.1 rule 3).
+    std::string location;
 };
 
 axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<Replies> r) {
@@ -79,7 +83,7 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
         // status 0 means "the transport itself failed", which §2 maps to a
         // NetworkError carrying the transport's own message rather than a
         // status code.
-        auto reply = [](long status, const std::string& body) {
+        auto reply = [r](long status, const std::string& body) {
             axiam::HttpResponse resp;
             if (status == 0) {
                 resp.transport_error = "connection refused";
@@ -87,6 +91,7 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
             }
             resp.status = status;
             resp.body = body;
+            if (!r->location.empty()) resp.headers["Location"] = r->location;
             return resp;
         };
         if (url.find("openid-configuration") != std::string::npos) {
@@ -349,4 +354,86 @@ AXIAM_TEST("device_authorize: a document advertising no endpoint is refused") {
     f.replies->discovery_body = kNoDeviceDiscovery;
     axiam::Client c = make_client(f, kClientId, nullptr);
     AXIAM_REQUIRE_THROWS_AS(c.device_authorize(), axiam::NetworkError);
+}
+
+// ---------------------------------------------------------------------------
+// §12.1 rule 3 — no redirect is followed; a 3xx is a NetworkError (C165-25)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const char* kRedirectTarget = "https://second-host.invalid/capture";
+
+// The 3xx carries an OAuth2 `error` body on purpose: the status is read BEFORE the body, so an
+// intermediary's redirect is never mistaken for an authorization-server answer.
+const char* kRedirectBody =
+    R"({"error":"invalid_grant","error_description":"the-code the-verifier example-secret"})";
+
+void require_redirect_refused(Fixture& f, const std::function<void()>& call) {
+    bool threw_network = false;
+    try {
+        call();
+    } catch (const axiam::OAuthProtocolError&) {
+        AXIAM_REQUIRE(false);  // the C165-25 defect: a 3xx surfaced as a protocol error
+    } catch (const axiam::NetworkError& e) {
+        threw_network = true;
+        const std::string what = e.what();
+        // no secret, code, verifier or redirect target in the message
+        AXIAM_CHECK(what.find("example-secret") == std::string::npos);
+        AXIAM_CHECK(what.find("the-verifier") == std::string::npos);
+        AXIAM_CHECK(what.find("the-code") == std::string::npos);
+        AXIAM_CHECK(what.find("second-host") == std::string::npos);
+    }
+    AXIAM_REQUIRE(threw_network);
+    // The redirect was not followed: the second host saw nothing.
+    AXIAM_CHECK(f.st->count_path("second-host") == 0);
+}
+
+}  // namespace
+
+AXIAM_TEST("oidc_exchange: a 3xx with an error body is a NetworkError and is not followed") {
+    Fixture f;
+    f.replies->location = kRedirectTarget;
+    f.replies->token_script = {{302, kRedirectBody}};
+    axiam::Client c = make_client(f);
+
+    axiam::OidcExchangeParams p;
+    p.code = "the-code";
+    p.redirect_uri = kRedirectUri;
+    p.code_verifier = axiam::Sensitive<std::string>("the-verifier");
+    p.nonce = "the-nonce";
+    require_redirect_refused(f, [&] { c.oidc_exchange(p); });
+    AXIAM_CHECK(f.replies->token_calls == 1);
+}
+
+AXIAM_TEST("device_authorize: a 3xx with an error body is a NetworkError and is not followed") {
+    Fixture f;
+    f.replies->location = kRedirectTarget;
+    f.replies->device_status = 307;
+    f.replies->device_body = kRedirectBody;
+    axiam::Client c = make_client(f, kClientId, nullptr);
+    require_redirect_refused(f, [&] { c.device_authorize(); });
+}
+
+AXIAM_TEST("oidc token grant: 399 is a NetworkError, 400 with the same body stays OAuthProtocolError") {
+    {
+        Fixture f;
+        f.replies->token_script = {{399, kRedirectBody}};
+        axiam::Client c = make_client(f);
+        axiam::OidcExchangeParams p;
+        p.code = "the-code";
+        p.redirect_uri = kRedirectUri;
+        p.code_verifier = axiam::Sensitive<std::string>("the-verifier");
+        p.nonce = "the-nonce";
+        AXIAM_REQUIRE_THROWS_AS(c.oidc_exchange(p), axiam::NetworkError);
+    }
+    Fixture f;
+    f.replies->token_script = {{400, kRedirectBody}};
+    axiam::Client c = make_client(f);
+    axiam::OidcExchangeParams p;
+    p.code = "the-code";
+    p.redirect_uri = kRedirectUri;
+    p.code_verifier = axiam::Sensitive<std::string>("the-verifier");
+    p.nonce = "the-nonce";
+    AXIAM_REQUIRE_THROWS_AS(c.oidc_exchange(p), axiam::OAuthProtocolError);
 }

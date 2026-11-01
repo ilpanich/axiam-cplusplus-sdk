@@ -41,6 +41,7 @@
 //     a 5xx — go through §16.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <chrono>
 #include <functional>
@@ -336,6 +337,40 @@ struct PushedAuthorizationRequest {
     /// The PKCE verifier to pass into oidc_exchange().
     Sensitive<std::string> code_verifier;
 };
+
+// --- §37 native sign-in with a provider ID token (contract 1.65) -----------
+
+/// `grant_type` of the native sign-in token request (§37.1). **Not** token exchange:
+/// `kTokenExchangeGrantType` refuses ID tokens by name and shape, and nothing here
+/// routes one grant through the other (§37 preamble).
+inline constexpr const char* kProviderIdTokenGrantType =
+    "urn:axiam:params:oauth:grant-type:provider-id-token";
+
+/// The longest `idp_hint`, in UTF-8 bytes (§12.1 `idp_hint` rule 2). A longer value is
+/// refused client-side, because the server would drop it silently.
+inline constexpr std::size_t kIdpHintMaxBytes = 256;
+
+/// What native_nonce() returns (§37.4): the pair a native sign-in needs.
+///
+/// Give the provider's SDK `hashed` as ITS nonce; keep `raw` only for the length of
+/// the attempt and pass it to Client::login_with_provider_id_token(). `raw` is the
+/// preimage of the value inside the provider's token — what makes holding the token
+/// insufficient to spend it — so it is wrapped (§37.6) and prints as `[SENSITIVE]`.
+/// `hashed` travels to the provider and into the token and is a plain string.
+struct ProviderNonce {
+    /// At least 32 CSPRNG bytes, base64url without padding (43 ASCII characters).
+    Sensitive<std::string> raw;
+    /// `SHA-256` of the bytes of `raw`, as 64 lower-case hexadecimal characters.
+    std::string hashed;
+};
+
+/// `native_nonce` (§37.4, SHOULD) — a fresh nonce pair for a native sign-in.
+///
+/// **Pure local computation: no network I/O, no client, nothing stored.** Each call
+/// returns a different pair.
+///
+/// @throws NetworkError (`rand_failure`) when the system cannot supply randomness.
+ProviderNonce native_nonce();
 
 /// The validated claims of an ID token (§12.4). Present on a token set only when
 /// the response carried an `id_token` AND every §12.4 rule passed.

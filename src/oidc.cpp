@@ -247,6 +247,38 @@ SplitUrl split_url(const std::string& url) {
     return out;
 }
 
+/// Percent-decode a query value (no `+` handling: oidc_begin emits RFC 3986 `%20`).
+std::string pct_decode(const std::string& in) {
+    auto hex = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        return -1;
+    };
+    std::string out;
+    out.reserve(in.size());
+    for (std::size_t i = 0; i < in.size(); ++i) {
+        if (in[i] == '%' && i + 2 < in.size() && hex(in[i + 1]) >= 0 && hex(in[i + 2]) >= 0) {
+            out.push_back(static_cast<char>(hex(in[i + 1]) * 16 + hex(in[i + 2])));
+            i += 2;
+        } else {
+            out.push_back(in[i]);
+        }
+    }
+    return out;
+}
+
+/// The `axiam_idp_hint` a begin URL carries (§26.2 rule 8, D-N36), decoded; disengaged when
+/// the URL has none. Only the first occurrence is read: oidc_begin emits it exactly once.
+std::optional<std::string> begin_url_idp_hint(const std::string& url) {
+    static const char kKey[] = "axiam_idp_hint=";
+    static const std::size_t kLen = sizeof(kKey) - 1;
+    for (const std::string& pair : split_url(url).pairs) {
+        if (pair.compare(0, kLen, kKey) == 0) return pct_decode(pair.substr(kLen));
+    }
+    return std::nullopt;
+}
+
 /// True when a raw query pair names `tenant_id`, with or without a value.
 bool is_tenant_pair(const std::string& pair) {
     static const char kKey[] = "tenant_id";
@@ -439,6 +471,13 @@ std::int64_t now_seconds() {
 /// that is not an OAuth2ErrorResponse at all (a proxy's HTML 502) falls back to
 /// the §2 status mapping.
 [[noreturn]] void raise_grant_error(const HttpResponse& resp, const std::string& context) {
+    // §12.1 rule 3 (C165-25): no redirect is followed and a `3xx` is a NetworkError. The status
+    // is read BEFORE the body, so an intermediary's `3xx` that happens to carry an `error` member
+    // is not mistaken for an authorization-server answer. The Location header is never read.
+    if (resp.status >= 300 && resp.status < 400) {
+        throw NetworkError(context + " (HTTP " + std::to_string(resp.status) + ")",
+                           "http_" + std::to_string(resp.status));
+    }
     const json j = parse_or_object(resp.body);
     if (j.contains("error") && j["error"].is_string() &&
         !j["error"].get<std::string>().empty()) {
@@ -672,9 +711,40 @@ OidcConfiguration Client::oidc_discover() {
 // §12.1 oidc_begin — PKCE, state, nonce. No network I/O.
 // ---------------------------------------------------------------------------
 
+namespace {
+
+/// §12.1 `idp_hint` rule 2: emptiness and length, nothing else. The value is the
+/// caller's and is sent as given -- not trimmed, case-folded, parsed as a UUID,
+/// looked up against `sso_providers` or checked against the kind-name list -- so
+/// the only two things this may refuse are the two the server would otherwise drop
+/// silently. std::invalid_argument is C++'s local ValidationError mapping
+/// (CONTRACT.md §28.7). The message names no part of the value.
+void check_idp_hint(const std::optional<std::string>& idp_hint, const char* operation) {
+    if (!idp_hint) return;
+    if (idp_hint->empty()) {
+        throw std::invalid_argument(std::string(operation) +
+                                    ": idp_hint must not be empty (CONTRACT.md §12.1)");
+    }
+    if (idp_hint->size() > kIdpHintMaxBytes) {
+        throw std::invalid_argument(std::string(operation) +
+                                    ": idp_hint is longer than 256 bytes (CONTRACT.md §12.1)");
+    }
+}
+
+}  // namespace
+
 AuthorizationRequest Client::oidc_begin(const OidcConfiguration& config,
                                         const std::string& redirect_uri,
                                         std::optional<std::string> scope) {
+    return oidc_begin(config, redirect_uri, std::move(scope), std::nullopt);
+}
+
+AuthorizationRequest Client::oidc_begin(const OidcConfiguration& config,
+                                        const std::string& redirect_uri,
+                                        std::optional<std::string> scope,
+                                        std::optional<std::string> idp_hint) {
+    // §12.1 idp_hint rule 2: refuse before anything is built.
+    check_idp_hint(idp_hint, "oidc_begin");
     // NO ensure_open() and no transport acquisition: §12.6 makes oidc_begin
     // synchronous and network-free in this SDK specifically, so it must keep
     // working on a client whose transport has been released.
@@ -721,6 +791,11 @@ AuthorizationRequest Client::oidc_begin(const OidcConfiguration& config,
     q.add("nonce", req.nonce);
     q.add("code_challenge", challenge);
     q.add("code_challenge_method", "S256");
+    // The ninth parameter, present only when set (contract 1.65, §12.1 rule 5's
+    // exception). This operation takes no other caller-supplied query parameter, so
+    // the name cannot be repeated: the option is the single source (rule 3). There is
+    // no `kc_idp_hint` alias and none is emitted (rule 4).
+    if (idp_hint) q.add("axiam_idp_hint", *idp_hint);
 
     req.url = config.authorization_endpoint;
     req.url += (req.url.find('?') == std::string::npos) ? '?' : '&';
@@ -1064,6 +1139,85 @@ OidcTokenSet Client::login_client_credentials(std::optional<std::string> scope,
     //
     // Nothing below touches client state — §12.1's adoption MAY, declined.
     return parse_token_set(*p_, body, config, std::nullopt);
+}
+
+// ---------------------------------------------------------------------------
+// §37 native sign-in with a provider ID token (contract 1.65)
+// ---------------------------------------------------------------------------
+
+ProviderNonce native_nonce() {
+    // §37.4 rule 1: 32 CSPRNG bytes (the §12.1 rule 1 size), base64url without padding.
+    // The same generator oidc_begin draws `state` and `nonce` from -- there is one.
+    ProviderNonce out;
+    std::string raw = random_b64url();
+    // Rule 2: SHA-256 of the bytes of `raw` AS SENT (its ASCII bytes), lower-case hex,
+    // 64 characters. digest_hex is the lower-case form. Rule 4: nothing is stored.
+    out.hashed = digest_hex(raw);
+    out.raw = Sensitive<std::string>(std::move(raw));
+    return out;
+}
+
+OidcTokenSet Client::login_with_provider_id_token(const std::string& provider,
+                                                  const Sensitive<std::string>& id_token,
+                                                  const Sensitive<std::string>& nonce,
+                                                  const std::vector<std::string>& scopes,
+                                                  std::optional<std::string> resource,
+                                                  std::optional<std::string> tenant_id) {
+    p_->ensure_open();
+    // §37.2 rule 4: empty inputs are refused locally, with no request. The messages name
+    // the PARAMETER, never a value -- an error message is the one most often logged.
+    // Nothing else is checked: the token's format, issuer and audience are the server's.
+    if (provider.empty()) {
+        throw std::invalid_argument(
+            "login_with_provider_id_token: provider must not be empty (CONTRACT.md §37.2 rule 4)");
+    }
+    if (detail::reveal(id_token).empty()) {
+        throw std::invalid_argument(
+            "login_with_provider_id_token: id_token must not be empty (CONTRACT.md §37.2 rule 4)");
+    }
+    if (detail::reveal(nonce).empty()) {
+        throw std::invalid_argument(
+            "login_with_provider_id_token: nonce must not be empty (CONTRACT.md §37.2 rule 4)");
+    }
+    const std::string& client_id = require_client_id(*p_, "login_with_provider_id_token");
+    // §12.3 rule 4: a slug-only client refuses here, with no wire call.
+    const std::string tenant = require_tenant_uuid(*p_, tenant_id, "login_with_provider_id_token");
+    const OidcConfiguration config = oidc_discover();
+
+    // §37.1: exactly this field set. `provider` and `nonce` are sent byte for byte (rules
+    // 2 and 3); the nonce is NOT hashed, NOT generated here and NOT read from the token.
+    Form form;
+    form.add("grant_type", kProviderIdTokenGrantType);
+    // `client_id`, and `client_secret` only when this client holds one: a public client
+    // (the mobile-app persona) sends no credential and is not refused for lacking one
+    // (rule 5). Never an Authorization header.
+    add_client_auth(*p_, form, client_id);
+    form.add("provider", provider);
+    form.add("id_token", detail::reveal(id_token));
+    form.add("nonce", detail::reveal(nonce));
+    // Rule 7: only the scopes the caller named, space-joined, and NONE added -- in
+    // particular not `openid`, which oidc_begin adds and this must not copy. An empty
+    // list sends no `scope` key (Form::add drops an empty value); never `scope=`.
+    std::string joined;
+    for (const auto& s : scopes) {
+        if (!joined.empty()) joined += ' ';
+        joined += s;
+    }
+    form.add("scope", joined);
+    form.add("resource", resource);
+
+    // NOT retryable (rule 10, §16.2): the provider's token is single use across the whole
+    // deployment, so a retry presents a spent credential, and a transport failure after the
+    // request left is indeterminate. The failure is raised from here without a second send.
+    const std::string body = token_grant(*p_, config, tenant, form, /*retryable=*/false,
+                                         "provider id token sign-in failed");
+    // §37.2 rule 8: an `id_token` in the response is validated under §12.4 with the RAW
+    // nonce as the expected nonce -- it is AXIAM's token and carries the raw value, not
+    // the hash. All-or-nothing (rule 7), as for oidc_exchange.
+    //
+    // Nothing below touches client state: the adoption posture of
+    // login_client_credentials() and device_login() (rule 9), which is none.
+    return parse_token_set(*p_, body, config, detail::reveal(nonce));
 }
 
 OidcTokenSet Client::oidc_refresh(const Sensitive<std::string>& refresh_token,
@@ -1970,6 +2124,21 @@ PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
                                             std::optional<std::string> scope,
                                             std::optional<std::string> tenant_id,
                                             std::optional<std::string> dpop_jkt) {
+    return oidc_par(config, request, redirect_uri, std::move(scope), std::move(tenant_id),
+                    std::move(dpop_jkt), std::nullopt);
+}
+
+PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
+                                            const AuthorizationRequest& request,
+                                            const std::string& redirect_uri,
+                                            std::optional<std::string> scope,
+                                            std::optional<std::string> tenant_id,
+                                            std::optional<std::string> dpop_jkt,
+                                            std::optional<std::string> idp_hint) {
+    // §26.2 rule 8 (D-N36): when the argument is unset, the hint the begin URL carries is
+    // pushed; the argument wins when both are set.
+    if (!idp_hint) idp_hint = begin_url_idp_hint(request.url);
+    check_idp_hint(idp_hint, "oidc_par");
     p_->ensure_open();
     if (redirect_uri.empty()) throw AuthError("oidc_par needs a redirect_uri");
     // §21.3 rule 2: prefer the mTLS alias when this call presents a client
@@ -2022,6 +2191,10 @@ PushedAuthorizationRequest Client::oidc_par(const OidcConfiguration& config,
     // so it can refuse it. A client able to send it is a client able to chain
     // one pushed request into another.
     form.add("dpop_jkt", dpop_jkt);
+    // Contract 1.65, §26.2 rule 8: the hint rides the PUSHED body, exactly once, and
+    // never the redirect (par_redirect_url below stays `client_id` + `request_uri`).
+    // Absent when unset; the server trims and bounds it on its side.
+    form.add("axiam_idp_hint", idp_hint);
     add_client_auth(*p_, form, client_id);
 
     HttpRequest req;

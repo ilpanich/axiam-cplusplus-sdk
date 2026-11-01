@@ -77,6 +77,8 @@ json federation_body(const json& extra = json::object()) {
                   {{"accepted_audiences", json::array()}, {"enabled", false},
                    {"max_lifetime_secs", 300}, {"max_token_age_secs", 300},
                    {"scope_map", json::object()}, {"subject_mapping", "email"}}},
+                 {"native_login",
+                  {{"client_ids", json::array()}, {"enabled", false}, {"max_token_age_secs", 300}}},
                  {"provider_kind", "generic_saml"},
                  {"allow_tenant_inheritance", false},
                  {"scopes", json::array()},
