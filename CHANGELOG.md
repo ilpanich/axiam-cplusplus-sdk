@@ -30,6 +30,11 @@ contract 1.65 with §37. The release number is the maintainer's.
   the `axiam_idp_hint` that `request.url` carries is pushed in the body; the argument wins when both are set.
   Tests: `par_idp_hint_from_begin_url_pushed`, `par_idp_hint_argument_wins` (`tests/test_native_signin.cpp`).
 
+- **A `3xx` from an `/oauth2/*` POST is a `NetworkError`** (C165-25, §12.1 rule 3): the shared OAuth2
+  response mapping (`raise_grant_error`) and the UMA ticket exchange now read the status before the body, so a
+  `3xx` carrying an `error` member is no longer an `OAuthProtocolError`. No redirect was ever followed.
+  Tests: `tests/test_oidc_errors.cpp` (3xx on exchange and device authorization).
+
 ### Binary compatibility
 
 The shared library's ABI version is now 5 (`libaxiam_cpp.so.5`) (C165-03, D-N32): the regenerated model

@@ -471,6 +471,13 @@ std::int64_t now_seconds() {
 /// that is not an OAuth2ErrorResponse at all (a proxy's HTML 502) falls back to
 /// the §2 status mapping.
 [[noreturn]] void raise_grant_error(const HttpResponse& resp, const std::string& context) {
+    // §12.1 rule 3 (C165-25): no redirect is followed and a `3xx` is a NetworkError. The status
+    // is read BEFORE the body, so an intermediary's `3xx` that happens to carry an `error` member
+    // is not mistaken for an authorization-server answer. The Location header is never read.
+    if (resp.status >= 300 && resp.status < 400) {
+        throw NetworkError(context + " (HTTP " + std::to_string(resp.status) + ")",
+                           "http_" + std::to_string(resp.status));
+    }
     const json j = parse_or_object(resp.body);
     if (j.contains("error") && j["error"].is_string() &&
         !j["error"].get<std::string>().empty()) {

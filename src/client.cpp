@@ -1513,6 +1513,8 @@ RequestingPartyToken Client::uma_exchange_ticket(const UmaExchangeTicketParams& 
         // §20.4: dispatch on the `error` field at ANY status before the §2
         // status mapping. access_denied answers 403 here where RFC 8628's is a
         // 400, and the field is what stays correct if either moves.
+        // §12.1 rule 3 (C165-25): a `3xx` is a NetworkError whatever its body says.
+        if (resp.status >= 300 && resp.status < 400) Client::Impl::raise_for_status(resp);
         const json j = parse_or_object(resp.body);
         if (j.contains("error") && j["error"].is_string() &&
             !j["error"].get<std::string>().empty()) {
