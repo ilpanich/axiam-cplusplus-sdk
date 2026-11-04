@@ -6,6 +6,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-04
+
 Contract 1.66 (§34.10; no new operation, **no API change**). `CONTRACT.md`, `openapi.json` and
 `management-registry.json` are re-vendored byte for byte from ilpanich/axiam (`openapi.json` spec digest
 `sha256:09419a6e…656e`; the registry changes only in that digest, and `scripts/gen_management.py --check`
@@ -44,6 +46,8 @@ contract 1.65 with §37. The release number is the maintainer's.
   `3xx` carrying an `error` member is no longer an `OAuthProtocolError`. No redirect was ever followed.
   Tests: `tests/test_oidc_errors.cpp` (3xx on exchange and device authorization).
 
+- Native sign-in with a provider ID token and idp_hint (contract 1.65 §37)
+
 ### Binary compatibility
 
 The shared library's ABI version is now 5 (`libaxiam_cpp.so.5`) (C165-03, D-N32): the regenerated model
@@ -66,6 +70,18 @@ unchanged.
 - Informative, no code change: a replayed refresh token now ends the session server-side by default
   (tenant setting `oauth2.refresh_reuse_response = revoke_session`); `invalid_grant` on `oidc_refresh`
   means the session is over and is never retried (§9).
+
+- re-vendor CONTRACT.md 1.66 as amended at ilpanich/axiam 5f9d079
+
+- re-sync contract 1.66 and openapi.json; confirm the federated sign-in cookie binding (§12.1 rule 12b)
+
+- re-vendor openapi.json and the management registry (logout/reset-mfa 500, D-N44)
+
+- re-vendor openapi.json and the management registry (end_session 500, D-N42)
+
+- Build the stub JWT header from its JSON in raw_nonce_sent_not_hash
+
+- re-vendor contract 1.65, openapi 1.2.0 and the management registry
 
 ### Fixed
 
@@ -90,6 +106,12 @@ unchanged.
   `MSG_NOSIGNAL`. CI: the g++-16 leg runs the suite five times under gdb
   (`scripts/run-tests-under-gdb.sh`), which prints every thread's backtrace on a crash or on a
   hang interrupted at 300 s, and still fails on an ordinary test failure.
+
+- Guard libcurl 8.11-8.15 shared-cookie-jar race; gdb diagnostics in CI
+
+- Contract 1.65 review sweep 2 (C165-25)
+
+- Contract 1.65 review findings (C165-03, C165-04, C165-11)
 
 ## [1.1.3] - 2026-10-29
 
