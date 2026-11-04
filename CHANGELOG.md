@@ -6,6 +6,11 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+Contract 1.66 (§34.10; no new operation, **no API change**). `CONTRACT.md`, `openapi.json` and
+`management-registry.json` are re-vendored byte for byte from ilpanich/axiam (`openapi.json` spec digest
+`sha256:09419a6e…656e`; the registry changes only in that digest, and `scripts/gen_management.py --check`
+reports the committed §27 surface current). The README states conformance at contract 1.66.
+
 Contract 1.65 (§34.9). `CONTRACT.md`, `openapi.json` (info.version 1.2.0) and
 `management-registry.json` are re-vendored byte for byte from ilpanich/axiam `d93976b` (`CONTRACT.md` as amended 2026-10-31; the other two unchanged) (this SDK
 vendors no `proto/`); `scripts/gen_management.py` was re-run. The README states conformance at
@@ -13,6 +18,10 @@ contract 1.65 with §37. The release number is the maintainer's.
 
 ### Added
 
+- Test (§12.1 rule 12b's required confirmation, contract 1.66): against the real libcurl transport, the
+  `Set-Cookie: axiam_fed_bind=…` of an `sso_start` response is presented on the following `sso_complete`
+  from the same `Client`, and absent from a second `Client`'s (`tests/test_integration_curl.cpp`). It
+  passed with no SDK change: the §4 jar already carries the browser-binding cookie.
 - **Native sign-in with a provider ID token** (§37): `Client::login_with_provider_id_token(provider,
   id_token, nonce, scopes = {}, resource = nullopt, tenant_id = nullopt)`, the free function
   `native_nonce()` and the `ProviderNonce` type (`raw` is `Sensitive<std::string>`, `hashed` is a

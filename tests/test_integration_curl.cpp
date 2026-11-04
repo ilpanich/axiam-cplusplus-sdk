@@ -23,6 +23,9 @@ using namespace axiam;
 
 namespace {
 
+/// 43 characters: the base64url form of 32 random bytes, as the server mints the binding.
+constexpr const char* kFedBind = "Zm9vYmFyYmF6cXV4LWZlZC1iaW5kLXZhbHVlLTQzY2g";
+
 struct SeenRequest {
     std::string method;
     std::string path;
@@ -169,6 +172,17 @@ struct MiniServer {
                 R"("expires_in":600,"interval":1})";
         } else if (path.find("/oauth2/token") != std::string::npos) {
             body = R"({"access_token":"at","token_type":"Bearer","expires_in":900})";
+        } else if (path.find("/auth/federation/oidc/start") != std::string::npos) {
+            // §12.1 rule 12b (contract 1.66): the start sets the browser-binding cookie. Plain
+            // http, so the cookie_secure-off spelling `axiam_fed_bind`, without `Secure`.
+            body = R"({"authorize_url":"https://idp.test/authorize?state=st-1","state":"st-1",)"
+                   R"("expires_in_secs":600})";
+            extra_headers = "Set-Cookie: axiam_fed_bind=" + std::string(kFedBind) +
+                            "; Path=/; HttpOnly; SameSite=Strict\r\n";
+        } else if (path.find("/auth/federation/oidc/callback") != std::string::npos) {
+            body = R"({"user_id":"u","session_id":"s","expires_in":900,)"
+                   R"("redirect_uri":"https://app.test/cb"})";
+            extra_headers = "Set-Cookie: axiam_access=sso_token; Path=/\r\n";
         } else if (path.find("/auth/login") != std::string::npos) {
             body =
                 R"({"session_id":"s","expires_in":900,)"
@@ -371,6 +385,38 @@ static const std::string kIntCaPem = "-----BEGIN CERTIFICATE-----\nMIIBfake\n---
 static const std::string kIntCert = "-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----\n";
 static const std::string kIntKey =
     std::string("-----BEGIN ") + "PRIVATE" + " KEY-----\nMIIBfake\n-----END KEY-----\n";
+
+// CONTRACT.md §12.1 rule 12b (contract 1.66, #837): a federated sign-in is completed through the
+// cookie jar that started it. The `Set-Cookie: axiam_fed_bind=...` of an `sso_start` response is
+// presented on the following `sso_complete` from the SAME client, and is absent from a SECOND,
+// separate client's -- each Client owns its own transport and so its own jar.
+AXIAM_TEST("§12.1 rule 12b (1.66): sso_complete presents the binding cookie of its own client's sso_start only") {
+    MiniServer server;
+    AXIAM_REQUIRE(server.start());
+    const std::string base = "http://127.0.0.1:" + std::to_string(server.port);
+
+    Client a = Client::builder().base_url(base).tenant_slug("acme").build();
+    Client b = Client::builder().base_url(base).tenant_slug("acme").build();
+
+    SsoStartResult started = a.sso_start("fed-1", "https://app.test/cb");
+    AXIAM_CHECK(started.state == "st-1");
+    SsoCompleteResult done_a = a.sso_complete("the-code", started.state);
+    AXIAM_CHECK(done_a.session_id == "s");
+    SsoCompleteResult done_b = b.sso_complete("the-code", started.state);
+    AXIAM_CHECK(done_b.session_id == "s");
+
+    server.shutdown();
+
+    AXIAM_REQUIRE(server.seen.size() == 3);
+    AXIAM_CHECK(server.seen[0].path == "/api/v1/auth/federation/oidc/start");
+    AXIAM_CHECK(server.seen[1].path == "/api/v1/auth/federation/oidc/callback");
+    AXIAM_CHECK(server.seen[2].path == "/api/v1/auth/federation/oidc/callback");
+    const std::string want = std::string("axiam_fed_bind=") + kFedBind;
+    // The starting client's completion carries it ...
+    AXIAM_CHECK(server.seen[1].cookie_header.find(want) != std::string::npos);
+    // ... and a second client's does not carry it at all.
+    AXIAM_CHECK(server.seen[2].cookie_header.find("axiam_fed_bind") == std::string::npos);
+}
 
 AXIAM_TEST("libcurl transport wires custom CA + client-cert blobs and a GET (jwks)") {
     MiniServer server;

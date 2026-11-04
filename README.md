@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34, §36 and §37 at contract 1.65, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34, §36 and §37 at contract 1.66, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
 Manifest pruning: not offered in any namespace (§27.10) — a manifest's `apply` never deletes, so a
 resource omitted from it is left alone, `network` included.
@@ -28,6 +28,13 @@ strings (P12.2), the RFC 7592 update sends only what the read carried (P12.4), t
 replacement inputs cannot be built without their required members, `Sensitive<T>::expose()`
 is the public accessor (§7 rule 3), and management reads follow §16 (`408`, `429`,
 `Retry-After`).
+
+Contract 1.66 (§34.10) adds no operation and changes no API. A federated sign-in is bound to the client
+that started it (§12.1 rule 12b): `sso_start` and `sso_start_oauth2` (and the server's SAML start) answer with an
+`axiam_fed_bind` browser-binding cookie, and `sso_complete`, `sso_complete_oauth2` and
+`sso_complete_handoff` are refused `401` without it. This SDK's §4 jar carries it with no change; start and
+complete one sign-in on the **same** `Client`. The optional `reauthenticate` input (§12.1 rule 12c) is not
+exposed.
 
 Contract 1.65 (§34.9, the AXIAM 1.2.0 platform release) adds **native sign-in with a provider ID token**
 (§37: `Client::login_with_provider_id_token` and `native_nonce()`, see
