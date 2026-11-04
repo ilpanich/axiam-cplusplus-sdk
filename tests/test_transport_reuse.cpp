@@ -156,7 +156,7 @@ struct KeepAliveServer {
                 resp += "Content-Length: " + std::to_string(body.size()) + "\r\n";
                 resp += "Connection: keep-alive\r\n\r\n";  // NO `Connection: close`
                 resp += body;
-                if (::send(fd, resp.data(), resp.size(), 0) < 0) return;
+                if (::send(fd, resp.data(), resp.size(), MSG_NOSIGNAL) < 0) return;
 
                 pending.erase(0, header_end + 4 + want);
             }

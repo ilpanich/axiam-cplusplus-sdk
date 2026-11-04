@@ -58,10 +58,17 @@ struct MiniServer {
         return true;
     }
 
+    /// Idempotent, and also run from the destructor: an AXIAM_REQUIRE failure
+    /// (or an exception out of the client) unwinds past shutdown(), and a
+    /// joinable std::thread in a destructor std::terminate()s the whole run,
+    /// hiding the assertion that actually failed behind a SIGABRT (issue #83).
+    ~MiniServer() { shutdown(); }
+
     void shutdown() {
         stop.store(true);
         if (thr.joinable()) thr.join();
         if (listen_fd >= 0) ::close(listen_fd);
+        listen_fd = -1;
     }
 
     static std::string header_value(const std::string& req, const std::string& name) {
@@ -195,7 +202,8 @@ struct MiniServer {
         resp += "Content-Length: " + std::to_string(body.size()) + "\r\n";
         resp += "Connection: close\r\n\r\n";
         resp += body;
-        ::send(fd, resp.data(), resp.size(), 0);
+        // MSG_NOSIGNAL: a client that already gave up must not SIGPIPE the suite.
+        ::send(fd, resp.data(), resp.size(), MSG_NOSIGNAL);
     }
 };
 

@@ -58,6 +58,30 @@ unchanged.
   (tenant setting `oauth2.refresh_reuse_response = revoke_session`); `invalid_grant` on `oidc_refresh`
   means the session is over and is never retried (§9).
 
+### Fixed
+
+- **Crash or hang of concurrent requests on libcurl 8.11.0 - 8.15.x** (#83). From 8.11.0,
+  libcurl builds the `Cookie:` request header from a list that links the shared jar's own cookie
+  objects through a node embedded in each cookie, and walks that list after releasing the share's
+  cookie lock, so two pooled handles sending the session cookie at once corrupt each other's list:
+  a `SIGSEGV` in `http_cookies()` or a thread spinning forever in `Curl_llist_destroy()`. Fixed
+  upstream in 8.16.0 ("http: do the cookie list access under lock"); Debian trixie ships 8.14.1,
+  which is how the g++-16 CI leg found it. `CurlTransport` now holds the cookie lock (a recursive
+  mutex) across that window itself, from `CURLOPT_PREREQFUNCTION` until the request header has gone
+  out, only when the runtime libcurl is in the affected range. Reproduced in the `gcc:16` image
+  (5 failures in about 180 runs of the libcurl tests, 4 in parallel; 0 in 600 with the fix).
+- **`CURLOPT_NOSIGNAL` is set on every handle** (#83 audit). Without it each transfer, on every
+  thread, saved and restored the process-wide `SIGPIPE` disposition, racing with the others and
+  with the application; libcurl avoids `SIGPIPE` itself with `MSG_NOSIGNAL` / `SO_NOSIGPIPE`.
+- Tests: the runner prints and flushes `[ .. ] <case>` before each case, so a crash or a timeout
+  names the case that was running instead of stopping at a 4 KiB stdout boundary;
+  `AXIAM_TEST_FILTER=a|b` runs only matching cases. The loopback servers of
+  `test_integration_curl.cpp` and `test_transport_concurrency.cpp` join their threads on
+  destruction (a failed assertion was a `std::terminate`), and every test server sends with
+  `MSG_NOSIGNAL`. CI: the g++-16 leg runs the suite five times under gdb
+  (`scripts/run-tests-under-gdb.sh`), which prints every thread's backtrace on a crash or on a
+  hang interrupted at 300 s, and still fails on an ordinary test failure.
+
 ## [1.1.3] - 2026-10-29
 
 ### Changed

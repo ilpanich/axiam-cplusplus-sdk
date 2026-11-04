@@ -69,6 +69,11 @@ struct ConcurrentMiniServer {
         return true;
     }
 
+    /// Idempotent, and also run from the destructor: a client call that throws
+    /// unwinds past shutdown(), and joinable std::threads in a destructor
+    /// std::terminate() the whole run, hiding the real failure (issue #83).
+    ~ConcurrentMiniServer() { shutdown(); }
+
     void shutdown() {
         stop.store(true);
         if (acceptor.joinable()) acceptor.join();
@@ -80,6 +85,7 @@ struct ConcurrentMiniServer {
             workers.clear();
         }
         if (listen_fd >= 0) ::close(listen_fd);
+        listen_fd = -1;
     }
 
     void run() {
@@ -177,7 +183,7 @@ struct ConcurrentMiniServer {
             // connection hot, so the server must not close after one request.
             resp += "Connection: keep-alive\r\n\r\n";
             resp += body;
-            if (::send(fd, resp.data(), resp.size(), 0) <= 0) return;
+            if (::send(fd, resp.data(), resp.size(), MSG_NOSIGNAL) <= 0) return;
 
             data.erase(0, body_start + want);
         }

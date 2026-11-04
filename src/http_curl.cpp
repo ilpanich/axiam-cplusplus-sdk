@@ -44,6 +44,51 @@ size_t header_cb(char* buffer, size_t size, size_t nitems, void* userdata) {
     return len;
 }
 
+/// Holds Impl::cookie_lock across the window in which libcurl builds and sends
+/// a request's header -- the window lib/http.c leaves unlocked on libcurl
+/// 8.11.0 - 8.15.x (see Impl::cookie_lock). Engaged only on those versions.
+///
+/// libcurl offers no callback at the end of that window, so its edges are
+/// taken from two that do exist and are ordered around it:
+///   * CURLOPT_PREREQFUNCTION runs immediately before the protocol's DO phase,
+///     i.e. before http_cookies() calls Curl_cookie_getlist();
+///   * the first non-TEXT CURLOPT_DEBUGFUNCTION event (CURLINFO_HEADER_OUT,
+///     emitted once the header bytes are written) comes after http_cookies()
+///     has walked and destroyed its list.
+/// The lock is recursive because libcurl's own lock_cb(COOKIE) calls nest
+/// inside the window on the same thread. Anything left held when the transfer
+/// ends (an error before the header went out) is released by the destructor.
+struct CookieWindow {
+    std::recursive_mutex* lock = nullptr;
+    bool held = false;
+
+    void enter() {
+        if (lock != nullptr && !held) {  // a retried request re-runs PREREQ
+            lock->lock();
+            held = true;
+        }
+    }
+    void leave() {
+        if (held) {
+            held = false;
+            lock->unlock();
+        }
+    }
+    ~CookieWindow() { leave(); }
+
+    static int prereq_cb(void* self, char*, char*, int, int) {
+        static_cast<CookieWindow*>(self)->enter();
+        return CURL_PREREQFUNC_OK;
+    }
+    static int debug_cb(CURL*, curl_infotype type, char*, size_t, void* self) {
+        // Every byte libcurl reports here is discarded: VERBOSE is on only so
+        // this callback runs, and nothing (headers, cookies, credentials) is
+        // logged or kept.
+        if (type != CURLINFO_TEXT) static_cast<CookieWindow*>(self)->leave();
+        return 0;
+    }
+};
+
 }  // namespace
 
 struct CurlTransport::Impl {
@@ -81,6 +126,31 @@ struct CurlTransport::Impl {
     CURLSH* share = nullptr;
     std::mutex share_locks[CURL_LOCK_DATA_LAST];
 
+    // ---- Issue #83: libcurl 8.11.0 - 8.15.x race on a SHARED cookie jar. ----
+    //
+    // CURL_LOCK_DATA_COOKIE gets a RECURSIVE mutex of its own, not a slot in
+    // share_locks, so transfer() can hold it across the whole window in which
+    // libcurl builds the `Cookie:` request header (CookieWindow, above).
+    //
+    // Why: from 8.11.0, Curl_cookie_getlist() links the jar's OWN `struct
+    // Cookie` objects into the caller's list through a node embedded in each
+    // cookie (`co->getnode`), and lib/http.c then releases the share's cookie
+    // lock BEFORE it walks and destroys that list. Two pooled handles sending
+    // the same session cookie at once re-link the same embedded nodes into
+    // two lists concurrently, so one thread walks pointers the other is
+    // rewriting. Seen on the g++-16 CI leg (Debian trixie, libcurl 8.14.1) as
+    // a SIGSEGV in http_cookies() (`co->value` through a NULL node element)
+    // and, when the corruption forms a cycle, as a thread spinning forever in
+    // Curl_llist_destroy() -- the 120 s ctest timeout. Both reproduced in the
+    // gcc:16 image and captured with all-thread backtraces; neither occurs on
+    // 8.5 (pre-8.11 getlist returned copies) or on 8.16.0+, where upstream
+    // fixed it ("http: do the cookie list access under lock"). TSan never saw
+    // it because libcurl itself is not instrumented.
+    std::recursive_mutex cookie_lock;
+    // Whether the RUNTIME libcurl (not the headers this was compiled against)
+    // has the race, so the window guard below costs nothing on a fixed one.
+    bool cookie_list_race = false;
+
     std::mutex pool_mtx;
     std::condition_variable pool_cv;
     std::vector<CURL*> idle;      // handles available for reuse
@@ -102,6 +172,9 @@ struct CurlTransport::Impl {
     explicit Impl(TlsConfig c) : cfg(std::move(c)) {
         ensure_curl_global_init();
         if (cfg.max_concurrent_requests == 0) cfg.max_concurrent_requests = 1;
+        if (const curl_version_info_data* v = curl_version_info(CURLVERSION_NOW)) {
+            cookie_list_race = v->version_num >= 0x080b00 && v->version_num < 0x081000;
+        }
         share = curl_share_init();
         if (share != nullptr) {
             curl_share_setopt(share, CURLSHOPT_LOCKFUNC, &Impl::lock_cb);
@@ -122,10 +195,20 @@ struct CurlTransport::Impl {
     }
 
     static void lock_cb(CURL*, curl_lock_data data, curl_lock_access, void* user) {
-        static_cast<Impl*>(user)->share_locks[data].lock();
+        Impl* self = static_cast<Impl*>(user);
+        if (data == CURL_LOCK_DATA_COOKIE) {
+            self->cookie_lock.lock();
+        } else {
+            self->share_locks[data].lock();
+        }
     }
     static void unlock_cb(CURL*, curl_lock_data data, void* user) {
-        static_cast<Impl*>(user)->share_locks[data].unlock();
+        Impl* self = static_cast<Impl*>(user);
+        if (data == CURL_LOCK_DATA_COOKIE) {
+            self->cookie_lock.unlock();
+        } else {
+            self->share_locks[data].unlock();
+        }
     }
 
     /// Take a handle from the pool, creating one if the pool is below its
@@ -230,6 +313,20 @@ struct CurlTransport::Impl {
     // else, so keep-alive still serves every GET and every request the SDK repeats.
     static void apply_connection_reuse_options(CURL* h) {
         if (h == nullptr) return;
+
+        // Issue #83 audit: a multi-threaded libcurl user MUST set NOSIGNAL
+        // (libcurl's own docs). Without it every transfer, on every thread,
+        // saves, replaces and restores the PROCESS-WIDE SIGPIPE disposition
+        // (lib/sigpipe.h), so concurrent transfers race on it and can leave
+        // SIGPIPE at SIG_DFL while another thread is mid-transfer -- or at
+        // SIG_IGN forever, behind the application's back. It also enables the
+        // SIGALRM + siglongjmp DNS timeout on a build with the synchronous
+        // resolver, which is undefined behaviour with more than one thread.
+        // libcurl does not need signals to avoid SIGPIPE itself: it sends with
+        // MSG_NOSIGNAL (or SO_NOSIGPIPE), TLS included. Not the cause of #83's
+        // crash (that is the cookie race above), but a real defect of the same
+        // kind.
+        curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L);
 
         curl_easy_setopt(h, CURLOPT_FORBID_REUSE, 0L);
         curl_easy_setopt(h, CURLOPT_FRESH_CONNECT, 0L);
@@ -479,7 +576,36 @@ HttpResponse CurlTransport::transfer(void* curl_handle, const HttpRequest& req) 
     curl_easy_setopt(h, CURLOPT_TIMEOUT_MS, impl_->cfg.request_timeout_ms);
     curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 0L);
 
+    // Issue #83: see CookieWindow. Declared before perform and reset right
+    // after it, so no handle ever keeps a pointer to this stack object -- a
+    // later curl_easy_cleanup() that reports "closing connection" through the
+    // debug callback must not reach a dead CookieWindow.
+    CookieWindow window;
+#if LIBCURL_VERSION_NUM >= 0x075000  // 7.80.0: CURLOPT_PREREQFUNCTION
+    const bool guard_cookie_window = impl_->cookie_list_race;
+    if (guard_cookie_window) {
+        window.lock = &impl_->cookie_lock;
+        curl_easy_setopt(h, CURLOPT_PREREQFUNCTION, &CookieWindow::prereq_cb);
+        curl_easy_setopt(h, CURLOPT_PREREQDATA, &window);
+        curl_easy_setopt(h, CURLOPT_DEBUGFUNCTION, &CookieWindow::debug_cb);
+        curl_easy_setopt(h, CURLOPT_DEBUGDATA, &window);
+        curl_easy_setopt(h, CURLOPT_VERBOSE, 1L);
+    }
+#endif
+
     const CURLcode rc = curl_easy_perform(h);
+
+#if LIBCURL_VERSION_NUM >= 0x075000
+    if (guard_cookie_window) {
+        curl_easy_setopt(h, CURLOPT_VERBOSE, 0L);
+        curl_easy_setopt(h, CURLOPT_DEBUGFUNCTION, nullptr);
+        curl_easy_setopt(h, CURLOPT_DEBUGDATA, nullptr);
+        curl_easy_setopt(h, CURLOPT_PREREQFUNCTION, nullptr);
+        curl_easy_setopt(h, CURLOPT_PREREQDATA, nullptr);
+    }
+#endif
+    window.leave();
+
     if (rc == CURLE_OK) {
         long status = 0;
         curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &status);
