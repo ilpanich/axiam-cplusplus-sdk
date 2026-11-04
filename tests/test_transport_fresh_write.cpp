@@ -137,7 +137,7 @@ struct DropWriteServer {
                     const std::string resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
                                              "Content-Length: " + std::to_string(body.size()) +
                                              "\r\nConnection: keep-alive\r\n\r\n" + body;
-                    if (::send(fd, resp.data(), resp.size(), 0) < 0) return;
+                    if (::send(fd, resp.data(), resp.size(), MSG_NOSIGNAL) < 0) return;
                 } else {
                     // The write was read in full. Drop the connection: no status line, no FIN
                     // before the request is counted -- exactly the "applied, answer lost" case.

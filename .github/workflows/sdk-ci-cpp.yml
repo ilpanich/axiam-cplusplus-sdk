@@ -58,10 +58,12 @@ jobs:
         # `pkgs` is what apt installs on top of the common packages; `llvm`, when
         # set, is the apt.llvm.org release line to add first; `container`, when
         # set, runs the leg inside that image (as root, so without sudo).
+        # `gdb: true` runs the suite under gdb instead of bare ctest (issue #83,
+        # see the "Test (under gdb, repeated)" step).
         include:
           - { os: ubuntu-26.04, cc: gcc-14,   cxx: g++-14,     std: 17, pkgs: g++-14 }
           - { os: ubuntu-24.04, cc: clang-18, cxx: clang++-18, std: 17, pkgs: clang-18 }
-          - { os: ubuntu-24.04, cc: gcc,      cxx: g++,        std: 23, pkgs: openssl, container: "gcc:16", name: g++-16 }
+          - { os: ubuntu-24.04, cc: gcc,      cxx: g++,        std: 23, pkgs: "openssl gdb", container: "gcc:16", name: g++-16, gdb: true }
           - { os: ubuntu-24.04, cc: clang-23, cxx: clang++-23, std: 23, pkgs: "", llvm: 23 }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
@@ -92,7 +94,22 @@ jobs:
         run: cmake --build build -j
 
       - name: Test
+        if: ${{ !matrix.gdb }}
         run: ctest --test-dir build --output-on-failure
+
+      # Issue #83: this leg (Debian trixie, libcurl 8.14.1) crashed and hung in
+      # the threaded libcurl tests, and ctest's log showed neither where nor
+      # why -- only a 4 KiB-aligned stop in buffered stdout and "(SEGFAULT)" or
+      # "(Timeout)". The root cause (a libcurl 8.11-8.15 race on a shared cookie
+      # jar) is worked around in src/http_curl.cpp; this step stays so that a
+      # recurrence, or anything like it, arrives with every thread's backtrace.
+      # The binary runs under gdb several times (the failure was intermittent);
+      # a crash or a hang -- interrupted at 300 s, before anything else kills
+      # the job -- prints `thread apply all bt` and fails the step, and an
+      # ordinary test failure fails it with the suite's own exit code.
+      - name: Test (under gdb, repeated)
+        if: ${{ matrix.gdb }}
+        run: sh scripts/run-tests-under-gdb.sh build/tests/axiam_cpp_tests 5 300
 
       # CONTRACT.md §22.11/§22.13: the sample drives the LIBRARY's reactor
       # runtime over a transport that replays the committed §22.13 reference
