@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 # Plain MAJOR.MINOR.PATCH in CMake; the full version (any pre-release suffix
 # included) lives in vcpkg.json / conanfile.py / README per the packaging
 # conventions.
-project(axiam_cpp_sdk VERSION 1.2.5 LANGUAGES CXX)
+project(axiam_cpp_sdk VERSION 1.3.0 LANGUAGES CXX)
 
 # C++17 is the DECLARED FLOOR: the standard the SDK promises to compile under, and
 # what every consumer inherits by default. It is deliberately not the newest —
@@ -109,7 +109,7 @@ endif()
 # The ABI version of the shared library, kept apart from the package's SemVer: bump it whenever
 # a public type the caller allocates or the library fills changes size or layout (1.1.0 grew
 # ApplyReport, PlannedChange, ManifestEntity, ConflictError and the models, so it is 2; 1.1.1 grew
-# PageRequest (`site`), so it is 3; 1.2.5 grew OAuthProtocolError (`retry_after`, `http_status`) and
+# PageRequest (`site`), so it is 3; 1.3.0 grew OAuthProtocolError (`retry_after`, `http_status`) and
 # NetworkReplyProfile (the two `*_wire` members), so it is 4; contract 1.65 grew the generated management
 # structs (FederationConfigResponse and seven more), so it is 5 while the package is still 1.x). The file is
 # libaxiam_cpp.so.${PROJECT_VERSION} with SONAME

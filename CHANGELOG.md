@@ -6,6 +6,12 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-08
+
+### Changed
+
+- Maintenance release — no notable changes since v1.2.5.
+
 ## [1.2.5] - 2026-11-06
 
 ### Changed
