@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege for every job; a job that needs more declares it itself.
+permissions:
+  contents: read
+
 jobs:
   coverage:
     name: llvm-cov coverage → Coveralls
