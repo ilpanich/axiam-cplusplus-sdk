@@ -66,7 +66,7 @@ jobs:
           - { os: ubuntu-24.04, cc: gcc,      cxx: g++,        std: 23, pkgs: "openssl gdb", container: "gcc:16", name: g++-16, gdb: true }
           - { os: ubuntu-24.04, cc: clang-23, cxx: clang++-23, std: 23, pkgs: "", llvm: 23 }
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Add the apt.llvm.org release line
         if: matrix.llvm
@@ -131,7 +131,7 @@ jobs:
     name: ASan+UBSan & valgrind
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install dependencies
         run: |
@@ -175,7 +175,7 @@ jobs:
     name: §27 management surface drift-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       # The §27 surface — the model structs, 24 namespace handles over 158
       # operations, the nlohmann ADL hooks and a generated conformance suite,
@@ -204,7 +204,7 @@ jobs:
     name: TLS-bypass lint gate (§6)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Grep for TLS-verification bypass patterns
         run: |
           set -e
@@ -224,7 +224,7 @@ jobs:
     name: no committed private keys
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Grep for private key material
         run: |
           if git grep -nE 'BEGIN (RSA |EC )?PRIVATE KEY' -- .; then
@@ -237,7 +237,7 @@ jobs:
     name: validate vcpkg + conan recipes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Validate vcpkg manifests (JSON well-formed)
         run: |
           python3 -c "import json; json.load(open('vcpkg.json'))"
@@ -254,7 +254,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
       - name: Ensure the tag commit is contained in main
@@ -280,7 +280,7 @@ jobs:
       id-token: write        # mint the Sigstore OIDC identity for provenance
       attestations: write    # write the attestation to this repo's store
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install dependencies
         run: |
           sudo apt-get update
