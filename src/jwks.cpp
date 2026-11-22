@@ -181,7 +181,7 @@ JwtVerification JwksVerifier::verify_with_reason(const std::string& jwt) {
     return verify_impl(jwt, /*access_token=*/false);
 }
 
-JwtVerification JwksVerifier::verify_access_token_with_reason(const std::string& jwt) {
+JwtVerification JwksVerifier::verify_access_token_signature_unchecked(const std::string& jwt) {
     return verify_impl(jwt, /*access_token=*/true);
 }
 
@@ -203,6 +203,12 @@ JwtVerification JwksVerifier::verify_impl_unguarded(const std::string& jwt, bool
     const auto fail = [](const char* reason) {
         JwtVerification v;
         v.reason = reason;
+        return v;
+    };
+
+    const auto fail_typ = [&fail]() {
+        JwtVerification v = fail(OidcValidationReason::kInvalidAlg);
+        v.detail = JwtVerification::kDetailTypNotAccessToken;
         return v;
     };
 
@@ -242,19 +248,23 @@ JwtVerification JwksVerifier::verify_impl_unguarded(const std::string& jwt, bool
         // (RFC 7515 §4.1.9). A non-string `typ` is not "absent" -- fail closed.
         const auto typ_it = header.find("typ");
         if (typ_it != header.end()) {
-            if (!typ_it->is_string()) return fail(OidcValidationReason::kInvalidAlg);
+            if (!typ_it->is_string()) return fail_typ();
             std::string typ = typ_it->get<std::string>();
             for (char& c : typ) {
                 if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
             }
             static const std::string kPrefix = "application/";
             if (typ.compare(0, kPrefix.size(), kPrefix) == 0) typ.erase(0, kPrefix.size());
-            if (typ != "at+jwt") return fail(OidcValidationReason::kInvalidAlg);
+            if (typ != "at+jwt") return fail_typ();
         }
         // §10.1 rule 12: a `kid` is REQUIRED and selects the key. No fallback to
         // "the only key in the set" -- the MFA challenge and WebAuthn state tokens
         // carry none. Refused before any key lookup or JWKS fetch.
-        if (kid.empty()) return fail(OidcValidationReason::kUnknownKid);
+        if (kid.empty()) {
+            JwtVerification v = fail(OidcValidationReason::kUnknownKid);
+            v.detail = JwtVerification::kDetailNoKid;
+            return v;
+        }
     }
 
     Ed25519Jwk jwk;

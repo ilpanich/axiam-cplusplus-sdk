@@ -53,6 +53,15 @@ struct JwtVerification {
     /// signature-layer codes appear here — `invalid_alg`, `unknown_kid`,
     /// `invalid_signature`; §12.4 rules 3 to 6 are the caller's to apply.
     std::string reason;
+    /// A fixed diagnostic that refines `reason` for the access-token rules only
+    /// (CONTRACT.md §10.1 rules 10 and 12): empty, or one of the `kDetail*`
+    /// constants below. Never carries token material.
+    std::string detail;
+
+    /// Rule 10: the header's `typ` is present and is not `at+jwt`.
+    static constexpr const char* kDetailTypNotAccessToken = "typ_not_access_token";
+    /// Rule 12: the header has no (or an empty) `kid`.
+    static constexpr const char* kDetailNoKid = "no_kid";
 };
 
 /// Base64url decode (unpadded or padded). Returns nullopt on malformed input.
@@ -146,16 +155,20 @@ public:
     /// the amplification vector.
     JwtVerification verify_with_reason(const std::string& jwt);
 
-    /// As verify_with_reason(), for a token the caller will treat as an ACCESS
-    /// token: additionally applies CONTRACT.md §10.1 rules 10 and 12 (contract
-    /// 1.68, N14) to the JOSE header -- `typ`, when present, must be `at+jwt`
-    /// (refused as `invalid_alg`), and a `kid` is required (refused as
-    /// `unknown_kid`) with no single-key fallback. Rule 11 (`purpose`) is a claim
-    /// rule and is applied by TokenAuthenticator on the decoded payload.
+    /// EXPERT PRIMITIVE -- performs NO claim validation (no `exp`, `nbf`,
+    /// `tenant_id`, `purpose` (rule 11) or `cnf` (rule 9)); it is NOT a guard and
+    /// its `ok` is not a verified identity. Use TokenAuthenticator.
+    ///
+    /// Signature check as verify_with_reason(), plus the two header rules of
+    /// CONTRACT.md §10.1 for an ACCESS token (contract 1.68, N14): `typ`, when
+    /// present, must be `at+jwt` (refused as `invalid_alg`, detail
+    /// `typ_not_access_token`), and a `kid` is required (refused as `unknown_kid`,
+    /// detail `no_kid`) with no single-key fallback. TokenAuthenticator calls this
+    /// and applies every claim rule on the decoded payload.
     ///
     /// Do NOT use it for an ID token, a logout token or a Security Event Token:
     /// those carry other `typ` values and, for the logout token, no `kid`.
-    JwtVerification verify_access_token_with_reason(const std::string& jwt);
+    JwtVerification verify_access_token_signature_unchecked(const std::string& jwt);
 
     /// Force-refresh the cached key set (also called lazily by verify()).
     void refresh_keys();

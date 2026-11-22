@@ -663,8 +663,23 @@ AXIAM_TEST("opaque: a password with an embedded NUL is refused rather than trunc
                             std::invalid_argument);
     AXIAM_REQUIRE_THROWS_AS((void)axiam::opaque::start_login(with_nul), std::invalid_argument);
 
-    // And at the finish step, where the state is still intact afterwards.
-    auto login = axiam::opaque::start_login(mint("ok-"));
-    AXIAM_REQUIRE_THROWS_AS((void)login.finish(with_nul, kPeerKe2, argon2id()),
-                            std::invalid_argument);
+    // And at the finish step: the refusal precedes the native call, so the state is
+    // still intact and the same exchange finishes with a NUL-free password.
+    {
+        auto login = axiam::opaque::start_login(mint("ok-"));
+        AXIAM_REQUIRE_THROWS_AS((void)login.finish(with_nul, kPeerKe2, argon2id()),
+                                std::invalid_argument);
+        const std::string password = mint("ok-");
+        AXIAM_CHECK_FALSE(login.finish(password, kPeerKe2, argon2id()).empty());
+    }
+    {
+        auto registration = axiam::opaque::start_registration(mint("ok-"));
+        AXIAM_REQUIRE_THROWS_AS(
+            (void)registration.finish(with_nul, kPeerRegistrationResponse, argon2id()),
+            std::invalid_argument);
+        const std::string password = mint("ok-");
+        AXIAM_CHECK_FALSE(
+            registration.finish(password, kPeerRegistrationResponse, argon2id()).empty());
+    }
+    AXIAM_CHECK_FALSE(fake.leaked());
 }

@@ -22,8 +22,11 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
   access tokens (CONTRACT §10.1 rules 10–12, contract 1.68).** `TokenAuthenticator`
   now refuses a token whose `typ` header is present and is not `at+jwt`, a token with a
   `purpose` claim, and a token with no `kid`. New
-  `JwksVerifier::verify_access_token_with_reason()` applies the header rules; the ID-token
-  and logout-token paths are unchanged.
+  `JwksVerifier::verify_access_token_signature_unchecked()` applies the header rules (an
+  expert primitive: it validates no claim and is not a guard; use `TokenAuthenticator`);
+  the ID-token and logout-token paths do not apply rules 10–12. A refusal under rule 10 or
+  12 now reports `token typ is not at+jwt` / `token has no kid` (new
+  `JwtVerification::detail`) instead of a signature error.
 - OPAQUE: `opaque::start_registration`, `start_login` and both `finish` calls reject a
   password with an embedded NUL (`std::invalid_argument`) instead of silently truncating it
   at the C ABI.
@@ -35,12 +38,19 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
     refused by `authenticate()` / the guard; their holders refresh and receive an
     `at+jwt` token (at most one access-token lifetime, 15 minutes by default). Roll the
     server upgrade out before, or together with, this SDK.
-  - A token with no `kid`, and a JWKS entry with no string `kid`, are no longer accepted
-    on the access-token path.
+  - A token with no `kid` is no longer accepted on the access-token path, and a JWKS
+    member without a string `kid` is skipped on every path.
   - A password containing a NUL byte now fails fast instead of authenticating as its
     truncated prefix; re-enrol users whose passwords were set that way.
-- Re-vendored `CONTRACT.md` (1.68), `openapi.json`, `management-registry.json` and
-  `opaque-test-vectors.json` from `ilpanich/axiam`; regenerated the §27 management surface.
+- Re-vendored `CONTRACT.md` (1.68), `openapi.json`, `management-registry.json`
+  from `ilpanich/axiam` (`opaque-test-vectors.json` was already identical); regenerated the §27 management surface.
+
+### Binary compatibility
+
+- **`AXIAM_SOVERSION` is now 6 (`libaxiam_cpp.so.6`).** `AuditLogEntry` gained
+  `organization_id` in the middle of the struct and `JwtVerification` gained `detail`, so
+  both change size and layout. Rebuild anything compiled against 1.3.x or earlier; code that
+  aggregate-initialises `AuditLogEntry` by position must now name the new member.
 
 ## [1.3.1] - 2026-11-11
 

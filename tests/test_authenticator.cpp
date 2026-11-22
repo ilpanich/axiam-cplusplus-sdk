@@ -859,6 +859,51 @@ AXIAM_TEST("N14 rule 12: a kid-less token is refused even against a one-key JWKS
     AXIAM_CHECK_FALSE(auth2.try_authenticate(jwt).has_value());
 }
 
+AXIAM_TEST("N14 rule 12: a JWKS entry whose kid is the empty string never matches a kid-less token") {
+    // `load_from_json` loads a member whose `kid` is "" (it is a string), so only the
+    // header-side rule 12 guard stands between a kid-less MFA-challenge token and it.
+    N14Fixture f;
+    const std::string empty_kid_jwks =
+        std::string("{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"kid\":\"\",\"x\":\"") +
+        axtest::b64url_encode(f.key.raw_public()) + "\"}]}";
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, empty_kid_jwks), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+    const std::string no_kid = f.key.make_jwt_with_header(
+        f.header(",\"typ\":\"at+jwt\"", /*with_kid=*/false), valid_claims());
+    const std::string blank_kid = f.key.make_jwt_with_header(
+        std::string("{\"alg\":\"EdDSA\",\"typ\":\"at+jwt\",\"kid\":\"\"}"), valid_claims());
+    for (const std::string* jwt : {&no_kid, &blank_kid}) {
+        AXIAM_REQUIRE_THROWS_AS(auth.authenticate(*jwt), AuthError);
+        AXIAM_CHECK_FALSE(auth.try_authenticate(*jwt).has_value());
+        const auto jv = v.verify_access_token_signature_unchecked(*jwt);
+        AXIAM_CHECK_FALSE(jv.ok);
+        AXIAM_CHECK(jv.reason == OidcValidationReason::kUnknownKid);
+    }
+}
+
+AXIAM_TEST("N14: rule 10 and rule 12 refusals carry their own diagnosable message") {
+    N14Fixture f;
+    const auto message = [&](const std::string& jwt) {
+        try {
+            (void)f.auth.authenticate(jwt);
+        } catch (const AuthError& e) {
+            return std::string(e.what());
+        }
+        return std::string();
+    };
+    const std::string typ_jwt =
+        f.key.make_jwt_with_header(f.header(",\"typ\":\"JWT\""), valid_claims());
+    const std::string no_kid = f.key.make_jwt_with_header(
+        f.header(",\"typ\":\"at+jwt\"", /*with_kid=*/false), valid_claims());
+    AXIAM_CHECK(message(typ_jwt).find("token typ is not at+jwt") != std::string::npos);
+    AXIAM_CHECK(message(no_kid).find("token has no kid") != std::string::npos);
+    // A genuinely bad signature keeps the signature message.
+    std::string bad = f.key.make_jwt_with_header(f.header(",\"typ\":\"at+jwt\""), valid_claims());
+    bad.back() = bad.back() == 'A' ? 'B' : 'A';
+    AXIAM_CHECK(message(bad).find("signature is not valid") != std::string::npos);
+}
+
 AXIAM_TEST("N14: a normal access token still passes") {
     N14Fixture f;
     const auto u = f.auth.try_authenticate(f.key.make_jwt("EdDSA", valid_claims()));
