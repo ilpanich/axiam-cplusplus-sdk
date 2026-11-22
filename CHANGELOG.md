@@ -27,6 +27,9 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
   the ID-token and logout-token paths do not apply rules 10–12. A refusal under rule 10 or
   12 now reports `token typ is not at+jwt` / `token has no kid` (new
   `JwtVerification::detail`) instead of a signature error.
+- Test fix: the N14 "own diagnosable message" regression test tampered only the base64url padding bits of
+  the signature's last character, so it passed a bad token through about 25% of runs; it now flips a
+  significant character. No library change.
 - OPAQUE: `opaque::start_registration`, `start_login` and both `finish` calls reject a
   password with an embedded NUL (`std::invalid_argument`) instead of silently truncating it
   at the C ABI.

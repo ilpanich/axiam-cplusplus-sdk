@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34, §36 and §37 at contract 1.68, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13 (except §11.2 rule 11(b)'s malformed-`roles` refusal and present-versus-empty distinction, and 11(d)'s `require_scope`, not yet implemented), §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34, §36 and §37 at contract 1.68, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
 Manifest pruning: not offered in any namespace (§27.10) — a manifest's `apply` never deletes, so a
 resource omitted from it is left alone, `network` included.
@@ -48,13 +48,13 @@ never retried. The rest of 1.65 is informative.
 `update_config`) of this 1.2-line SDK need an AXIAM server **1.2.0 or later**:
 `FederationConfigResponse.native_login` is required from 1.2.0, and a response from an older server fails to
 decode. `oidc_par` also pushes the `axiam_idp_hint` its begin URL carries when its own `idp_hint` argument is
-unset (the argument wins when both are set; §26.2 rule 8). The shared library's ABI version is now 5
-(`libaxiam_cpp.so.5` in 1.1.x, `.so.6` from 1.4.0); see the CHANGELOG.
+unset (the argument wins when both are set; §26.2 rule 8). The shared library's ABI version was 5
+(`libaxiam_cpp.so.5`) from 1.2.2 to 1.3.x, and is 6 from 1.4.0; see the CHANGELOG.
 
-Contracts 1.67 and 1.68 (§34.11, §34.12) are the **1.4.0** release: it takes §10.1 rules 10–12 (N14, above),
-regenerates the §27 management surface (`AuditLogEntry.organization_id`, so the ABI is 6) and declines two
-parts of §11.2 rule 11 (the `roles`-must-be-an-array-of-strings refusal with a present-versus-empty
-distinction, and `require_scope`), which are not yet implemented; `require_role` already reads only `roles`.
+Contracts 1.67 and 1.68 (§34.11, §34.12) are the **1.4.0** release: it takes §10.1 rules 10–12 (N14, described under [Authenticating a request](#authenticating-a-request-§10) below),
+regenerates the §27 management surface (`AuditLogEntry.organization_id`, so the ABI is 6) and does not yet implement two
+parts of §11.2 rule 11: 11(b)'s `roles`-must-be-an-array-of-strings refusal with its present-versus-empty
+distinction (a MUST, outstanding) and 11(d)'s `require_scope` (a SHOULD, declined); `require_role` already reads only `roles`.
 A resource server relying on `require_role` must request the `roles` scope (SA-18) for the server to emit
 the claim.
 

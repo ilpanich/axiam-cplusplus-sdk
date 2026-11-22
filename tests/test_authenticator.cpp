@@ -900,7 +900,11 @@ AXIAM_TEST("N14: rule 10 and rule 12 refusals carry their own diagnosable messag
     AXIAM_CHECK(message(no_kid).find("token has no kid") != std::string::npos);
     // A genuinely bad signature keeps the signature message.
     std::string bad = f.key.make_jwt_with_header(f.header(",\"typ\":\"at+jwt\""), valid_claims());
-    bad.back() = bad.back() == 'A' ? 'B' : 'A';
+    // Flip the FIRST character of the signature segment: it carries 6 significant bits. The last
+    // character of an unpadded 64-byte signature carries only 2 (the other 4 are padding that the
+    // decoder ignores), so flipping it is a no-op about a quarter of the time.
+    const std::size_t sig_at = bad.rfind('.') + 1;
+    bad[sig_at] = bad[sig_at] == 'A' ? 'B' : 'A';
     AXIAM_CHECK(message(bad).find("signature is not valid") != std::string::npos);
 }
 
