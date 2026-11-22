@@ -6,6 +6,42 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-22
+
+### Security
+
+- **C4 — a hostile token header or JWKS member can no longer throw a vendored
+  exception.** `JwksVerifier::verify_with_reason` (and so `verify_signature_only_unchecked`,
+  `Client::verify_logout_token` and ID-token validation) now requires the JOSE header to be
+  a JSON object, reads `alg` and `kid` only when they are strings, and maps any
+  `nlohmann::json::exception` to `invalid_alg`. `TokenAuthenticator::try_authenticate`
+  now also catches `std::exception` and returns `nullopt`, as documented. A JWKS member
+  whose `kty`, `crv`, `kid` or `x` is not a string is skipped, so `{"keys":[{"kty":1}]}`
+  yields zero keys instead of throwing from `refresh_keys()`.
+- **N14 — the guard no longer accepts AXIAM's MFA-challenge and WebAuthn-state JWTs as
+  access tokens (CONTRACT §10.1 rules 10–12, contract 1.68).** `TokenAuthenticator`
+  now refuses a token whose `typ` header is present and is not `at+jwt`, a token with a
+  `purpose` claim, and a token with no `kid`. New
+  `JwksVerifier::verify_access_token_with_reason()` applies the header rules; the ID-token
+  and logout-token paths are unchanged.
+- OPAQUE: `opaque::start_registration`, `start_login` and both `finish` calls reject a
+  password with an embedded NUL (`std::invalid_argument`) instead of silently truncating it
+  at the C ABI.
+
+### Changed
+
+- **Behaviour change for integrators (migration note).**
+  - Access tokens minted by a server older than contract 1.67 carry `typ: JWT` and are now
+    refused by `authenticate()` / the guard; their holders refresh and receive an
+    `at+jwt` token (at most one access-token lifetime, 15 minutes by default). Roll the
+    server upgrade out before, or together with, this SDK.
+  - A token with no `kid`, and a JWKS entry with no string `kid`, are no longer accepted
+    on the access-token path.
+  - A password containing a NUL byte now fails fast instead of authenticating as its
+    truncated prefix; re-enrol users whose passwords were set that way.
+- Re-vendored `CONTRACT.md` (1.68), `openapi.json`, `management-registry.json` and
+  `opaque-test-vectors.json` from `ilpanich/axiam`; regenerated the §27 management surface.
+
 ## [1.3.1] - 2026-11-11
 
 ### Changed

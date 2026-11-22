@@ -749,3 +749,119 @@ AXIAM_TEST("§10.1 rule 9: the same bound token authenticate() refuses is accept
     AxiamUser user = auth.authenticate_sender_constrained(jwt, kThumb);
     AXIAM_CHECK(user.user_id == "user-1");
 }
+
+// ---------------------------------------------------------------------------
+// C4 -- try_authenticate is documented non-throwing.
+// ---------------------------------------------------------------------------
+
+AXIAM_TEST("C4: try_authenticate returns nullopt, and never throws, for a hostile JOSE header") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+
+    const char* hostile[] = {R"({"alg":1})", R"({"alg":"EdDSA","kid":7})", "[1]", "\"x\""};
+    for (const char* h : hostile) {
+        const std::string jwt = axtest::b64url_encode(std::string(h)) + "." +
+                                axtest::b64url_encode(std::string("{}")) + "." +
+                                axtest::b64url_encode(std::string("sig"));
+        bool threw = false;
+        std::optional<AxiamUser> u;
+        try {
+            u = auth.try_authenticate(jwt);
+        } catch (...) {
+            threw = true;
+        }
+        AXIAM_CHECK_FALSE(threw);
+        AXIAM_CHECK_FALSE(u.has_value());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// N14 -- CONTRACT §10.1 rules 10-12: the token must be an ACCESS token.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::string valid_claims() { return claims("\"exp\":" + std::to_string(kNow + 900)); }
+
+/// Verifier configured with NO expected audience -- rule 6's default, which is the
+/// configuration the purpose tokens slipped through.
+struct N14Fixture {
+    TestKey key;
+    std::shared_ptr<FakeState> st = std::make_shared<FakeState>();
+    JwksVerifier v{jwks_transport(st, key.jwks_json()), "https://api.example.test"};
+    TokenAuthenticator auth{v, kTenant, fixed_clock()};
+
+    std::string header(const std::string& typ_member, bool with_kid = true) const {
+        return std::string("{\"alg\":\"EdDSA\"") + typ_member +
+               (with_kid ? ",\"kid\":\"" + key.kid + "\"" : "") + "}";
+    }
+};
+
+}  // namespace
+
+AXIAM_TEST("N14 rule 10: a token whose typ is not at+jwt is refused") {
+    N14Fixture f;
+    for (const char* typ : {"JWT", "axiam-mfa-challenge+jwt", "axiam-webauthn-state+jwt",
+                            "logout+jwt", "secevent+jwt"}) {
+        const std::string jwt = f.key.make_jwt_with_header(
+            f.header(std::string(",\"typ\":\"") + typ + "\""), valid_claims());
+        AXIAM_REQUIRE_THROWS_AS(f.auth.authenticate(jwt), AuthError);
+        AXIAM_CHECK_FALSE(f.auth.try_authenticate(jwt).has_value());
+    }
+}
+
+AXIAM_TEST("N14 rule 10: at+jwt in any RFC 7515 spelling, or no typ at all, passes") {
+    N14Fixture f;
+    for (const char* typ : {",\"typ\":\"at+jwt\"", ",\"typ\":\"AT+JWT\"",
+                            ",\"typ\":\"application/at+jwt\"", ""}) {
+        const std::string jwt = f.key.make_jwt_with_header(f.header(typ), valid_claims());
+        AXIAM_CHECK(f.auth.try_authenticate(jwt).has_value());
+    }
+    // A non-string typ is not "absent": fail closed.
+    const std::string numeric =
+        f.key.make_jwt_with_header(f.header(",\"typ\":5"), valid_claims());
+    AXIAM_CHECK_FALSE(f.auth.try_authenticate(numeric).has_value());
+}
+
+AXIAM_TEST("N14 rule 11: a token carrying a purpose claim is refused, whatever typ says") {
+    N14Fixture f;
+    const std::string hdr = f.header(",\"typ\":\"at+jwt\"");
+    for (const char* purpose : {"\"mfa_challenge\"", "\"webauthn_authenticate_discoverable\"", "null"}) {
+        const std::string jwt = f.key.make_jwt_with_header(
+            hdr, claims("\"exp\":" + std::to_string(kNow + 900) + ",\"purpose\":" + purpose));
+        AXIAM_REQUIRE_THROWS_AS(f.auth.authenticate(jwt), AuthError);
+        AXIAM_CHECK_FALSE(f.auth.try_authenticate(jwt).has_value());
+    }
+    // The WebAuthn shape: nil-UUID subject.
+    const std::string nil = std::string("{\"sub\":\"00000000-0000-0000-0000-000000000000\","
+                                        "\"tenant_id\":\"") + kTenant +
+                            "\",\"exp\":" + std::to_string(kNow + 300) +
+                            ",\"purpose\":\"webauthn_authenticate_discoverable\"}";
+    AXIAM_CHECK_FALSE(
+        f.auth.try_authenticate(f.key.make_jwt_with_header(hdr, nil)).has_value());
+}
+
+AXIAM_TEST("N14 rule 12: a kid-less token is refused even against a one-key JWKS") {
+    N14Fixture f;
+    const std::string jwt = f.key.make_jwt_with_header(
+        f.header(",\"typ\":\"at+jwt\"", /*with_kid=*/false), valid_claims());
+    AXIAM_REQUIRE_THROWS_AS(f.auth.authenticate(jwt), AuthError);
+    AXIAM_CHECK_FALSE(f.auth.try_authenticate(jwt).has_value());
+    // ... and the same holds when the lone JWKS entry itself has no kid.
+    const std::string kidless_jwks =
+        std::string("{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"") +
+        axtest::b64url_encode(f.key.raw_public()) + "\"}]}";
+    auto st2 = std::make_shared<FakeState>();
+    JwksVerifier v2(jwks_transport(st2, kidless_jwks), "https://api.example.test");
+    TokenAuthenticator auth2(v2, kTenant, fixed_clock());
+    AXIAM_CHECK_FALSE(auth2.try_authenticate(jwt).has_value());
+}
+
+AXIAM_TEST("N14: a normal access token still passes") {
+    N14Fixture f;
+    const auto u = f.auth.try_authenticate(f.key.make_jwt("EdDSA", valid_claims()));
+    AXIAM_REQUIRE(u.has_value());
+    AXIAM_CHECK(u->user_id == "user-1");
+}

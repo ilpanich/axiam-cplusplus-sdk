@@ -146,6 +146,17 @@ public:
     /// the amplification vector.
     JwtVerification verify_with_reason(const std::string& jwt);
 
+    /// As verify_with_reason(), for a token the caller will treat as an ACCESS
+    /// token: additionally applies CONTRACT.md §10.1 rules 10 and 12 (contract
+    /// 1.68, N14) to the JOSE header -- `typ`, when present, must be `at+jwt`
+    /// (refused as `invalid_alg`), and a `kid` is required (refused as
+    /// `unknown_kid`) with no single-key fallback. Rule 11 (`purpose`) is a claim
+    /// rule and is applied by TokenAuthenticator on the decoded payload.
+    ///
+    /// Do NOT use it for an ID token, a logout token or a Security Event Token:
+    /// those carry other `typ` values and, for the logout token, no `kid`.
+    JwtVerification verify_access_token_with_reason(const std::string& jwt);
+
     /// Force-refresh the cached key set (also called lazily by verify()).
     void refresh_keys();
 
@@ -153,6 +164,8 @@ public:
     std::size_t cached_key_count();
 
 private:
+    JwtVerification verify_impl(const std::string& jwt, bool access_token);
+    JwtVerification verify_impl_unguarded(const std::string& jwt, bool access_token);
     void ensure_keys_locked();
     void load_from_json(const std::string& body);
 

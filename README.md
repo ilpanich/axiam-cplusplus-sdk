@@ -142,7 +142,7 @@ This one is.
 - Public headers under `include/axiam/`; umbrella header `#include <axiam/axiam.hpp>`.
 - Dependencies: **libcurl** (HTTP + strict TLS + mTLS), **OpenSSL** (Ed25519 JWKS
   verification), vendored single-header **nlohmann/json** (`third_party/nlohmann/json.hpp`).
-- Version: `1.3.1`.
+- Version: `1.4.0`.
 
 ---
 
@@ -204,7 +204,7 @@ build when `CMakeLists.txt`, the header constants and the CI matrix stop agreein
 include(FetchContent)
 FetchContent_Declare(axiam_cpp_sdk
   GIT_REPOSITORY https://github.com/ilpanich/axiam-cplusplus-sdk.git
-  GIT_TAG        v1.3.1)
+  GIT_TAG        v1.4.0)
 FetchContent_MakeAvailable(axiam_cpp_sdk)
 
 target_link_libraries(my_app PRIVATE axiam::axiam_cpp)
@@ -229,7 +229,7 @@ vcpkg install axiam-cpp-sdk --overlay-ports=./ports
 ### Conan
 
 ```bash
-conan create . --version=1.3.1
+conan create . --version=1.4.0
 ```
 
 The [`conanfile.py`](conanfile.py) requires `libcurl`, `openssl`, and `nlohmann_json`.
@@ -329,6 +329,17 @@ passing the peer certificate's thumbprint from its own TLS layer (never from
 a caller-supplied header) — see
 [Sender-constrained tokens and DPoP](#sender-constrained-tokens-and-dpop-§101-rule-9-§2173)
 below.
+
+**Rules 10–12, the token must be an access token (contract 1.68, N14).** AXIAM signs
+its MFA challenge, MFA setup and WebAuthn-state tokens with the access-token key, and
+they carry `sub`, `tenant_id`, `iss` and `exp`. `authenticate()` therefore refuses a
+token whose JOSE `typ` is present and is not `at+jwt` (ASCII case-insensitive, with or
+without `application/`), a token whose claim set contains a `purpose` member (whatever
+its value), and a token with no `kid` — there is no "only key in the set" fallback. A
+token with no `typ` is not refused by rule 10. These apply to the access-token path
+only: `Client::verify_logout_token` and ID-token validation are unchanged. **Behaviour
+change:** access tokens minted by a pre-1.67 server carry `typ: JWT` and are refused
+until the holder refreshes — see `CHANGELOG.md`.
 
 Optional `iss` / `aud` pinning and the clock skew live on
 `axiam::AuthenticatorOptions`; `AuthenticatorOptions::now` is the injection seam

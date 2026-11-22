@@ -144,7 +144,7 @@ AXIAM_TEST("management model AttributeMapping round-trips without losing a field
 
 AXIAM_TEST("management model AuditLogEntry round-trips without losing a field") {
     const auto wire = nlohmann::json::parse(
-        R"json({"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"})json");
+        R"json({"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "organization_id": "11111111-1111-4111-8111-111111111111", "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"})json");
 
     const auto value = wire.get<AuditLogEntry>();
     const nlohmann::json encoded = value;
@@ -4294,8 +4294,8 @@ AXIAM_TEST("management webauthn_policy: re-scoping returns a new handle (§27.4 
 }
 
 AXIAM_TEST("management audit: re-scoping returns a new handle (§27.4 rule 3)") {
-    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
-                                              200, R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "organization_id": "11111111-1111-4111-8111-111111111111", "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "organization_id": "11111111-1111-4111-8111-111111111111", "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
     auto mgmt = fixture.client.management();
     auto handle = mgmt.audit();
 
@@ -4796,8 +4796,8 @@ AXIAM_TEST("management webauthn_policy: client.webauthn_policy() and management(
 }
 
 AXIAM_TEST("management audit: client.audit() and management().audit() are equivalent (§27.2 rule 4)") {
-    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
-                                              200, R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+    auto fixture = axtest::mgmt::signed_in_two(200, R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "organization_id": "11111111-1111-4111-8111-111111111111", "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json",
+                                              200, R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "organization_id": "11111111-1111-4111-8111-111111111111", "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
 
     // §27.2 rule 4: "where an SDK offers both, the two MUST return equivalent handles".
     // Equivalent means the same request, not merely the same type -- so this compares the

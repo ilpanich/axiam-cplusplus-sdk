@@ -1922,6 +1922,9 @@ void to_json(nlohmann::json& j, const AuditLogEntry& value) {
         j["ip_address"] = *value.ip_address;
     }
     { auto parsed = nlohmann::json::parse(value.metadata, nullptr, false); if (!parsed.is_discarded()) j["metadata"] = parsed; }
+    if (value.organization_id) {
+        j["organization_id"] = *value.organization_id;
+    }
     j["outcome"] = send_wire(value.outcome);
     if (value.resource_id) {
         j["resource_id"] = *value.resource_id;
@@ -1939,6 +1942,9 @@ void from_json(const nlohmann::json& j, AuditLogEntry& value) {
         value.ip_address = it->get<std::string>();
     }
     value.metadata = j.at("metadata").dump();
+    if (auto it = j.find("organization_id"); it != j.end() && !it->is_null()) {
+        value.organization_id = it->get<std::string>();
+    }
     value.outcome = audit_outcome_from_wire(j.at("outcome").get<std::string>());
     if (auto it = j.find("resource_id"); it != j.end() && !it->is_null()) {
         value.resource_id = it->get<std::string>();
