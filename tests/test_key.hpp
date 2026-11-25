@@ -83,9 +83,21 @@ struct TestKey {
                "\",\"x\":\"" + b64url_encode(raw_public()) + "\"}]}";
     }
 
+    /// An ACCESS token as the server mints it (CONTRACT §10.1 rule 10: `typ: at+jwt`,
+    /// rule 12: a `kid`). The ID-token and logout-token tests share this helper;
+    /// rules 10-12 do not apply on those paths, so the `typ` is harmless there.
     std::string make_jwt(const std::string& alg, const std::string& payload) const {
-        std::string header = "{\"alg\":\"" + alg + "\",\"typ\":\"JWT\",\"kid\":\"" + kid + "\"}";
+        std::string header = "{\"alg\":\"" + alg + "\",\"typ\":\"at+jwt\",\"kid\":\"" + kid + "\"}";
         std::string signing_input = b64url_encode(header) + "." + b64url_encode(payload);
+        std::string sig = sign(signing_input);
+        return signing_input + "." + b64url_encode(sig);
+    }
+
+    /// A correctly signed token whose JOSE header is exactly `header_json` — for the
+    /// hostile-header and rule 10/12 cases, which `make_jwt` cannot express.
+    std::string make_jwt_with_header(const std::string& header_json,
+                                     const std::string& payload) const {
+        std::string signing_input = b64url_encode(header_json) + "." + b64url_encode(payload);
         std::string sig = sign(signing_input);
         return signing_input + "." + b64url_encode(sig);
     }

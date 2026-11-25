@@ -1,5 +1,7 @@
 #include "axiam/authenticator.hpp"
 
+#include <exception>
+
 #include <nlohmann/json.hpp>
 
 namespace axiam {
@@ -130,14 +132,32 @@ AxiamUser TokenAuthenticator::authenticate_checked(
 
     // (1)(2) signature + alg. The expert primitive stops here; everything below
     // is the part a guard must not be left to hand-add.
-    const auto verified = jwks_->verify_signature_only_unchecked(token);
-    if (!verified.has_value()) {
+    // This is the ACCESS-token path, so §10.1 rules 10 (`typ`) and 12 (`kid`
+    // required, no single-key fallback) apply to the header (contract 1.68, N14).
+    const JwtVerification jv = jwks_->verify_access_token_signature_unchecked(token);
+    if (!jv.ok) {
+        // Rules 10 and 12 get their own fixed messages so an operator rolling the SDK
+        // out ahead of the server sees the typ change, not a phantom key problem.
+        if (jv.detail == JwtVerification::kDetailTypNotAccessToken) {
+            throw AuthError("authentication_failed: token typ is not at+jwt");
+        }
+        if (jv.detail == JwtVerification::kDetailNoKid) {
+            throw AuthError("authentication_failed: token has no kid");
+        }
         throw AuthError("authentication_failed: token signature is not valid");
     }
 
-    const auto payload = json::parse(verified->payload_json, nullptr, /*allow_exceptions=*/false);
+    const auto payload = json::parse(jv.payload_json, nullptr, /*allow_exceptions=*/false);
     if (payload.is_discarded() || !payload.is_object()) {
         throw AuthError("authentication_failed: token payload is not a JSON object");
+    }
+
+    // §10.1 rule 11 (contract 1.68, N14): a token whose claim set contains a
+    // `purpose` member is an MFA challenge, an MFA setup token or a WebAuthn
+    // ceremony state -- signed with the access-token key, never an access token.
+    // Whatever the value (`null` included) and whatever `typ` says.
+    if (payload.contains("purpose")) {
+        throw AuthError("authentication_failed: token is a purpose token, not an access token");
     }
 
     const std::int64_t now = options_.now ? options_.now() : system_now_seconds();
@@ -221,7 +241,7 @@ AxiamUser TokenAuthenticator::authenticate_checked(
     // PRESENT `cnf` needs a thumbprint that matches it exactly, so `nullopt`
     // here refuses every bound token rather than silently downgrading it to a
     // bearer token.
-    if (!verify_certificate_binding(verified->payload_json, presented_thumbprint)) {
+    if (!verify_certificate_binding(jv.payload_json, presented_thumbprint)) {
         throw AuthError("authentication_failed: token sender constraint (cnf) not satisfied — "
                         "this is a certificate- or DPoP-bound token and was not accepted "
                         "as a bearer token (CONTRACT.md §10.1 rule 9); a resource server "
@@ -247,6 +267,11 @@ std::optional<AxiamUser> TokenAuthenticator::try_authenticate(const std::string&
     try {
         return authenticate(token);
     } catch (const AxiamError&) {
+        return std::nullopt;
+    } catch (const std::exception&) {
+        // Documented non-throwing (C4): whatever else escapes the verification
+        // path -- a vendored JSON exception, bad_alloc from a hostile token --
+        // is a refusal, never a throw into the host's request handler.
         return std::nullopt;
     }
 }

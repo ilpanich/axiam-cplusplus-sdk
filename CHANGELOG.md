@@ -6,6 +6,55 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-22
+
+### Security
+
+- **C4 — a hostile token header or JWKS member can no longer throw a vendored
+  exception.** `JwksVerifier::verify_with_reason` (and so `verify_signature_only_unchecked`,
+  `Client::verify_logout_token` and ID-token validation) now requires the JOSE header to be
+  a JSON object, reads `alg` and `kid` only when they are strings, and maps any
+  `nlohmann::json::exception` to `invalid_alg`. `TokenAuthenticator::try_authenticate`
+  now also catches `std::exception` and returns `nullopt`, as documented. A JWKS member
+  whose `kty`, `crv`, `kid` or `x` is not a string is skipped, so `{"keys":[{"kty":1}]}`
+  yields zero keys instead of throwing from `refresh_keys()`.
+- **N14 — the guard no longer accepts AXIAM's MFA-challenge and WebAuthn-state JWTs as
+  access tokens (CONTRACT §10.1 rules 10–12, contract 1.68).** `TokenAuthenticator`
+  now refuses a token whose `typ` header is present and is not `at+jwt`, a token with a
+  `purpose` claim, and a token with no `kid`. New
+  `JwksVerifier::verify_access_token_signature_unchecked()` applies the header rules (an
+  expert primitive: it validates no claim and is not a guard; use `TokenAuthenticator`);
+  the ID-token and logout-token paths do not apply rules 10–12. A refusal under rule 10 or
+  12 now reports `token typ is not at+jwt` / `token has no kid` (new
+  `JwtVerification::detail`) instead of a signature error.
+- Test fix: the N14 "own diagnosable message" regression test tampered only the base64url padding bits of
+  the signature's last character, so it passed a bad token through about 25% of runs; it now flips a
+  significant character. No library change.
+- OPAQUE: `opaque::start_registration`, `start_login` and both `finish` calls reject a
+  password with an embedded NUL (`std::invalid_argument`) instead of silently truncating it
+  at the C ABI.
+
+### Changed
+
+- **Behaviour change for integrators (migration note).**
+  - Access tokens minted by a server older than contract 1.67 carry `typ: JWT` and are now
+    refused by `authenticate()` / the guard; their holders refresh and receive an
+    `at+jwt` token (at most one access-token lifetime, 15 minutes by default). Roll the
+    server upgrade out before, or together with, this SDK.
+  - A token with no `kid` is no longer accepted on the access-token path, and a JWKS
+    member without a string `kid` is skipped on every path.
+  - A password containing a NUL byte now fails fast instead of authenticating as its
+    truncated prefix; re-enrol users whose passwords were set that way.
+- Re-vendored `CONTRACT.md` (1.68), `openapi.json`, `management-registry.json`
+  from `ilpanich/axiam` (`opaque-test-vectors.json` was already identical); regenerated the §27 management surface.
+
+### Binary compatibility
+
+- **`AXIAM_SOVERSION` is now 6 (`libaxiam_cpp.so.6`).** `AuditLogEntry` gained
+  `organization_id` in the middle of the struct and `JwtVerification` gained `detail`, so
+  both change size and layout. Rebuild anything compiled against 1.3.x or earlier; code that
+  aggregate-initialises `AuditLogEntry` by position must now name the new member.
+
 ## [1.3.1] - 2026-11-11
 
 ### Changed

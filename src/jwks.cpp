@@ -115,12 +115,25 @@ void JwksVerifier::load_from_json(const std::string& body) {
         // input, and one the caller cannot name to catch. Skipping the member is
         // the same treatment the loop already gives a key with the wrong `kty`.
         if (!k.is_object()) continue;
-        const std::string kty = k.value("kty", "");
-        const std::string crv = k.value("crv", "");
-        if (kty != "OKP" || crv != "Ed25519") continue;  // Ed25519 only
+        // The same applies one level down (C4): `k.value("kty", "")` throws
+        // `type_error.302` when the member holds a non-string, so `{"kty":1}`
+        // escaped `refresh_keys()` as a vendored exception. Read each member with
+        // `find()` and skip the key unless all four are strings.
+        const auto kty_it = k.find("kty");
+        const auto crv_it = k.find("crv");
+        const auto kid_it = k.find("kid");
+        const auto x_it = k.find("x");
+        if (kty_it == k.end() || !kty_it->is_string() || crv_it == k.end() ||
+            !crv_it->is_string() || kid_it == k.end() || !kid_it->is_string() ||
+            x_it == k.end() || !x_it->is_string()) {
+            continue;
+        }
+        if (kty_it->get<std::string>() != "OKP" || crv_it->get<std::string>() != "Ed25519") {
+            continue;  // Ed25519 only
+        }
         Ed25519Jwk jwk;
-        jwk.kid = k.value("kid", "");
-        jwk.x_b64url = k.value("x", "");
+        jwk.kid = kid_it->get<std::string>();
+        jwk.x_b64url = x_it->get<std::string>();
         if (jwk.x_b64url.empty()) continue;
         keys_[jwk.kid] = jwk;
     }
@@ -165,9 +178,37 @@ std::optional<VerifiedToken> JwksVerifier::verify_signature_only_unchecked(
 }
 
 JwtVerification JwksVerifier::verify_with_reason(const std::string& jwt) {
+    return verify_impl(jwt, /*access_token=*/false);
+}
+
+JwtVerification JwksVerifier::verify_access_token_signature_unchecked(const std::string& jwt) {
+    return verify_impl(jwt, /*access_token=*/true);
+}
+
+JwtVerification JwksVerifier::verify_impl(const std::string& jwt, bool access_token) {
+    // C4: the header is attacker-controlled and is read before any key lookup. Every
+    // nlohmann accessor that can throw on a type mismatch is guarded below, and this
+    // is the backstop for the one that is not: no vendored exception type leaves
+    // the verification path, whatever shape the header takes.
+    try {
+        return verify_impl_unguarded(jwt, access_token);
+    } catch (const nlohmann::json::exception&) {
+        JwtVerification v;
+        v.reason = OidcValidationReason::kInvalidAlg;
+        return v;
+    }
+}
+
+JwtVerification JwksVerifier::verify_impl_unguarded(const std::string& jwt, bool access_token) {
     const auto fail = [](const char* reason) {
         JwtVerification v;
         v.reason = reason;
+        return v;
+    };
+
+    const auto fail_typ = [&fail]() {
+        JwtVerification v = fail(OidcValidationReason::kInvalidAlg);
+        v.detail = JwtVerification::kDetailTypNotAccessToken;
         return v;
     };
 
@@ -182,14 +223,49 @@ JwtVerification JwksVerifier::verify_with_reason(const std::string& jwt) {
     const auto header_json = base64url_decode(header_b64);
     if (!header_json) return fail(OidcValidationReason::kInvalidAlg);
     auto header = nlohmann::json::parse(*header_json, nullptr, /*allow_exceptions=*/false);
-    if (header.is_discarded()) return fail(OidcValidationReason::kInvalidAlg);
+    if (header.is_discarded() || !header.is_object()) {
+        return fail(OidcValidationReason::kInvalidAlg);
+    }
 
     // §12.4 rule 1: read `alg` from the header and check it BEFORE any signature
     // work. An SDK must not let the token select its own verification
     // algorithm, and the discovery document's advertised list cannot widen this
-    // either.
-    if (header.value("alg", "") != "EdDSA") return fail(OidcValidationReason::kInvalidAlg);
-    const std::string kid = header.value("kid", "");
+    // either. `find()` plus `is_string()`: `value()` throws on a non-string.
+    const auto alg_it = header.find("alg");
+    if (alg_it == header.end() || !alg_it->is_string() ||
+        alg_it->get<std::string>() != "EdDSA") {
+        return fail(OidcValidationReason::kInvalidAlg);
+    }
+    const auto kid_it = header.find("kid");
+    if (kid_it != header.end() && !kid_it->is_string()) {
+        return fail(OidcValidationReason::kInvalidAlg);
+    }
+    const std::string kid = kid_it != header.end() ? kid_it->get<std::string>() : std::string();
+
+    if (access_token) {
+        // §10.1 rule 10 (contract 1.68; N14): when `typ` is present it must be
+        // `at+jwt`, ASCII case-insensitively, with or without `application/`
+        // (RFC 7515 §4.1.9). A non-string `typ` is not "absent" -- fail closed.
+        const auto typ_it = header.find("typ");
+        if (typ_it != header.end()) {
+            if (!typ_it->is_string()) return fail_typ();
+            std::string typ = typ_it->get<std::string>();
+            for (char& c : typ) {
+                if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+            }
+            static const std::string kPrefix = "application/";
+            if (typ.compare(0, kPrefix.size(), kPrefix) == 0) typ.erase(0, kPrefix.size());
+            if (typ != "at+jwt") return fail_typ();
+        }
+        // §10.1 rule 12: a `kid` is REQUIRED and selects the key. No fallback to
+        // "the only key in the set" -- the MFA challenge and WebAuthn state tokens
+        // carry none. Refused before any key lookup or JWKS fetch.
+        if (kid.empty()) {
+            JwtVerification v = fail(OidcValidationReason::kUnknownKid);
+            v.detail = JwtVerification::kDetailNoKid;
+            return v;
+        }
+    }
 
     Ed25519Jwk jwk;
     {

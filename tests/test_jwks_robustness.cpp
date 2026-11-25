@@ -392,3 +392,67 @@ AXIAM_TEST("certificate_thumbprint_s256 is unpadded base64url of 43 characters")
     AXIAM_CHECK(certificate_thumbprint_s256(der + "x") != t);
     AXIAM_CHECK(verify_certificate_binding(R"({"cnf":{"x5t#S256":")" + t + R"("}})", t));
 }
+
+// ---------------------------------------------------------------------------
+// C4 -- a hostile JOSE header, or a hostile JWKS member, must not leak a vendored
+// nlohmann exception out of a documented no-throw / OidcValidationError path.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// An unsigned token whose header is `header_json`. The header is read before any key
+/// lookup or signature work, so the signature segment is irrelevant.
+std::string token_with_header(const std::string& header_json) {
+    return b64url_encode(header_json) + "." + b64url_encode("{}") + "." + b64url_encode("sig");
+}
+
+}  // namespace
+
+AXIAM_TEST("C4: a non-object or wrong-typed JOSE header is invalid_alg, never an exception") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    auto v = verifier_serving(st, key.jwks_json());
+
+    const char* hostile[] = {
+        R"({"alg":1})",                    // non-string alg      (was type_error.302)
+        R"({"alg":"EdDSA","kid":7})",      // non-string kid      (was type_error.302)
+        "[1]",                             // array header        (was type_error.306)
+        "\"x\"",                           // string header       (was type_error.306)
+    };
+    for (const char* h : hostile) {
+        JwtVerification r;
+        bool threw = false;
+        try {
+            r = v.verify_with_reason(token_with_header(h));
+        } catch (...) {
+            threw = true;
+        }
+        AXIAM_CHECK_FALSE(threw);
+        AXIAM_CHECK_FALSE(r.ok);
+        AXIAM_CHECK(r.reason == OidcValidationReason::kInvalidAlg);
+        AXIAM_CHECK_FALSE(v.verify_signature_only_unchecked(token_with_header(h)).has_value());
+    }
+}
+
+AXIAM_TEST("C4: a JWKS member with a non-string kty/crv/kid/x is skipped without throwing") {
+    TestKey key;
+    const std::string x = b64url_encode(key.raw_public());
+    const std::string docs[] = {
+        R"({"keys":[{"kty":1}]})",
+        R"({"keys":[{"kty":"OKP","crv":2,"kid":"a","x":"AAAA"}]})",
+        R"({"keys":[{"kty":"OKP","crv":"Ed25519","kid":3,"x":")" + x + R"("}]})",
+        R"({"keys":[{"kty":"OKP","crv":"Ed25519","kid":"a","x":4}]})",
+    };
+    for (const auto& doc : docs) {
+        auto st = std::make_shared<FakeState>();
+        auto v = verifier_serving(st, doc);
+        bool threw = false;
+        try {
+            v.refresh_keys();
+        } catch (...) {
+            threw = true;
+        }
+        AXIAM_CHECK_FALSE(threw);
+        AXIAM_CHECK(v.cached_key_count() == 0u);
+    }
+}

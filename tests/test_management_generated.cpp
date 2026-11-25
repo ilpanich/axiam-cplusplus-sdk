@@ -1902,7 +1902,7 @@ AXIAM_TEST("management webauthn_policy.compliance_report reaches its route") {
 
 AXIAM_TEST("management audit.list reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+        R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "organization_id": "11111111-1111-4111-8111-111111111111", "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
     const auto result = fixture.client.management().audit().list();
     (void) result;
 
@@ -1912,7 +1912,7 @@ AXIAM_TEST("management audit.list reaches its route") {
 
 AXIAM_TEST("management audit.list_system reaches its route") {
     auto fixture = axtest::mgmt::signed_in(200,
-        R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
+        R"json({"items": [{"action": "example", "actor_id": "11111111-1111-4111-8111-111111111111", "actor_type": "User", "id": "11111111-1111-4111-8111-111111111111", "ip_address": "example", "metadata": {}, "organization_id": "11111111-1111-4111-8111-111111111111", "outcome": "Success", "resource_id": "11111111-1111-4111-8111-111111111111", "tenant_id": "11111111-1111-4111-8111-111111111111", "timestamp": "2026-08-26T00:00:00Z"}], "total": 1, "offset": 0, "limit": 50})json");
     const auto result = fixture.client.management().audit().list_system();
     (void) result;
 

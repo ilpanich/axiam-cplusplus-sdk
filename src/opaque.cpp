@@ -29,6 +29,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <stdexcept>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -311,6 +312,17 @@ void wipe(std::string& value) {
     value.clear();
 }
 
+/// The C ABI takes the password as a NUL-terminated `const char*`, so a
+/// `std::string` with an embedded NUL would be silently TRUNCATED at it: the user
+/// would register and later log in under a different, shorter secret than the one
+/// they typed, with no error from either side. Refuse it instead.
+void require_no_embedded_nul(const std::string& password) {
+    if (password.find('\0') != std::string::npos) {
+        throw std::invalid_argument("OPAQUE: the password contains an embedded NUL byte");
+    }
+}
+
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -461,6 +473,7 @@ RegistrationExchange::RegistrationExchange(Native& lib, Native::Handle state, st
 std::string RegistrationExchange::finish(const std::string& password,
                                          const std::string& registration_response,
                                          const OpaqueKsfParams& ksf) {
+    require_no_embedded_nul(password);
     // The key-stretching handle is built BEFORE the state is spent, and the
     // order is load-bearing. build_ksf refuses an unrecognised function or an
     // out-of-band cost, and if the state had already been taken out of its
@@ -485,6 +498,7 @@ LoginExchange::LoginExchange(Native& lib, Native::Handle state, std::string ke1)
 
 std::string LoginExchange::finish(const std::string& password, const std::string& ke2,
                                   const OpaqueKsfParams& ksf) {
+    require_no_embedded_nul(password);
     // Built before the state is spent -- see RegistrationExchange::finish.
     KsfHandle handle = build_ksf(*lib_, ksf);
 
@@ -505,6 +519,7 @@ std::string LoginExchange::finish(const std::string& password, const std::string
 }
 
 RegistrationExchange start_registration(const std::string& password) {
+    require_no_embedded_nul(password);
     Native& lib = require_native();
 
     std::string request;
@@ -518,6 +533,7 @@ RegistrationExchange start_registration(const std::string& password) {
 }
 
 LoginExchange start_login(const std::string& password) {
+    require_no_embedded_nul(password);
     Native& lib = require_native();
 
     std::string ke1;
