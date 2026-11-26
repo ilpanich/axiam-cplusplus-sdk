@@ -450,8 +450,9 @@ registered for it is refused `invalid_scope`. Without it the server issues no `r
 `require_role` is a 403. The claim is a sorted array of role **names** (roles assigned with no
 resource), a snapshot taken when the token is minted and recomputed on each refresh, so it is stale
 for at most one access-token lifetime (15 minutes by default); it never appears in an ID token, a
-UserInfo response or the token of an mTLS device login (`authenticate_device()`), where
-`require_role` fails closed.
+UserInfo response, an RPT (§20), a console sign-in's session token (§5.1 `login`) or the token of an
+mTLS device login (`authenticate_device()`), where `require_role` fails closed; an OAuth2 client's own
+client-credentials token always carries `[]`, since a client holds no roles.
 
 ### Decision reason codes (§11 rule 9)
 

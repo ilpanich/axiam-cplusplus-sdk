@@ -108,7 +108,9 @@ inline const AxiamUser& require_auth(const std::optional<AxiamUser>& user) {
 /// a snapshot taken when the token was minted (stale for at most one access-token
 /// lifetime, 15 minutes by default). It is a sorted array of role names, limited
 /// to roles assigned with no resource; it is never in an ID token, a UserInfo
-/// response or an mTLS device token. See docs/api/roles-claim.md in the server
+/// response, an RPT (§20), a console sign-in's session token (§5.1 `login`) or an
+/// mTLS device token, and an OAuth2 client's own client-credentials token always
+/// carries `[]` (a client holds no roles). See docs/api/roles-claim.md in the server
 /// repository.
 /// @throws AuthError (401) when unauthenticated, AuthzError (403) when no role matches.
 inline void require_role(const std::optional<AxiamUser>& user,

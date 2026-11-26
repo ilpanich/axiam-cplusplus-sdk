@@ -33,8 +33,8 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
   `roles_claim_present`, so an absent or malformed claim (`false`) stays distinct from `[]`
   (`true`, empty `roles`), and `scope`, the token's `scope` claim. New `require_scope` (rule 11(d))
   splits `scope` on single spaces and compares whole entries (`administrator` does not satisfy
-  `admin`); `has_scope` is its predicate. Rule 11(e) is documented on `require_role` and in the
-  README: the application must request the `roles` scope. The README no longer carves §11.2 rule 11
+  `admin`); `has_scope` is its predicate. Rules 11(e) and 11(f) are documented on `require_role` and in the
+  README: the claim's shape and lifetime, and that the application must request the `roles` scope. The README no longer carves §11.2 rule 11
   out of its conformance statement. A hand-built `AxiamUser{id, tenant, {roles}}` keeps working
   and counts as having a `roles` claim.
 - **Contract 1.69 (axiam#880): the logout-token `kid`.** `Client::verify_logout_token` already

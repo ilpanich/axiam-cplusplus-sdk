@@ -271,7 +271,17 @@ AXIAM_TEST("§6.1 rule 6: authenticate_device() over a REAL TLS connection sends
                         .with_client_cert(pki.client_cert_pem, pki.client_key_pem)
                         .build();
 
-    DeviceAuth result = client.authenticate_device();
+    // Join the server thread even if authenticate_device() throws: a joinable
+    // std::thread destroyed during unwinding is std::terminate, not a test failure.
+    DeviceAuth result;
+    try {
+        result = client.authenticate_device();
+    } catch (...) {
+        ::shutdown(fd, SHUT_RDWR);
+        server.join();
+        ::close(fd);
+        throw;
+    }
 
     server.join();
     ::close(fd);

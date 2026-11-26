@@ -1687,4 +1687,23 @@ AXIAM_TEST("§10.1 rules 10 and 11 stay off the logout-token and ID-token paths"
     const auto logout_as_access = verifier.verify_access_token_signature_unchecked(logout);
     AXIAM_REQUIRE_FALSE(logout_as_access.ok);
     AXIAM_REQUIRE(logout_as_access.detail == axiam::JwtVerification::kDetailTypNotAccessToken);
+
+    // Rule 11 (`purpose` claim) stays off these paths too: both tokens still verify
+    // with a `purpose` member in their claims...
+    const std::string logout_p = key.make_jwt_with_header(
+        server_logout_header(key.kid), logout_claims(R"(,"purpose":"x")"));
+    AXIAM_REQUIRE_NOTHROW(client.verify_logout_token(logout_p));
+    AXIAM_REQUIRE(verifier.verify_with_reason(logout_p).ok);
+    std::string id_claims_p = id_claims;
+    id_claims_p.insert(id_claims_p.size() - 1, R"(,"purpose":"x")");
+    const std::string id_token_p = key.make_jwt_with_header(
+        std::string("{\"alg\":\"EdDSA\",\"typ\":\"JWT\",\"kid\":\"") + key.kid + "\"}",
+        id_claims_p);
+    AXIAM_REQUIRE(verifier.verify_with_reason(id_token_p).ok);
+
+    // ...while the access-token guard refuses all of them.
+    axiam::TokenAuthenticator auth(verifier, "11111111-1111-1111-1111-111111111111");
+    for (const std::string* t : {&logout, &id_token, &logout_p, &id_token_p}) {
+        AXIAM_REQUIRE_FALSE(auth.try_authenticate(*t).has_value());
+    }
 }
