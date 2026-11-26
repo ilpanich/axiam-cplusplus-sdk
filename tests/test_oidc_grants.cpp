@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "assert.hpp"
+#include "axiam/authenticator.hpp"
 #include "axiam/client.hpp"
 #include "fake_transport.hpp"
 #include "test_key.hpp"
@@ -1577,4 +1578,113 @@ AXIAM_TEST("§12.7.3 rule 1 a bad signature is rejected through the same §12.4 
         // would.
         AXIAM_REQUIRE(e.reason() == axiam::OidcValidationReason::kInvalidSignature);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Contract 1.69 (#880): the logout token carries its JWKS `kid`; the key is
+// selected by it, exactly as §12.4 rule 2 does for every other token.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A JWKS holding both keys, the one that SIGNS second: a verifier that takes the
+// first (or the only) key fails the server-shaped test below.
+std::string two_key_jwks(const axtest::TestKey& first, const axtest::TestKey& second) {
+    const auto member = [](const axtest::TestKey& k) {
+        return std::string("{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"kid\":\"") + k.kid +
+               "\",\"x\":\"" + axtest::b64url_encode(k.raw_public()) + "\"}";
+    };
+    return "{\"keys\":[" + member(first) + "," + member(second) + "]}";
+}
+
+// The claims the server puts in a logout token: iss, aud, iat, exp, jti, sid, sub, events.
+std::string server_logout_claims() { return logout_claims(); }
+
+// The header exactly as the server signs it from contract 1.69. The fixture adds nothing.
+std::string server_logout_header(const std::string& kid) {
+    return std::string("{\"alg\":\"EdDSA\",\"typ\":\"logout+jwt\",\"kid\":\"") + kid + "\"}";
+}
+
+}  // namespace
+
+AXIAM_TEST("§12.7.3 rule 1 (1.69): a server-shaped logout token verifies against a two-key JWKS") {
+    Fixture f;
+    axtest::TestKey rotated_out;
+    rotated_out.kid = "old-key";
+    axtest::TestKey signer;
+    signer.kid = "new-key";
+    f.replies->jwks_body = two_key_jwks(rotated_out, signer);
+    auto client = make_client(f);
+
+    const std::string token =
+        signer.make_jwt_with_header(server_logout_header(signer.kid), server_logout_claims());
+    const auto t = client.verify_logout_token(token);
+    AXIAM_REQUIRE(t.sid.value_or("") == "session-1");
+    AXIAM_REQUIRE(t.subject.value_or("") == "user-1");
+    AXIAM_REQUIRE(t.jwt_id.value_or("") == "jti-1");
+}
+
+AXIAM_TEST("§12.7.3 rule 1 (1.69): a kid-less logout token is refused as unknown_kid, even from a one-key JWKS") {
+    Fixture f;
+    axtest::TestKey key;  // the ONLY key of the set, and it did sign the token
+    f.replies->jwks_body = key.jwks_json();
+    auto client = make_client(f);
+
+    const std::string token = key.make_jwt_with_header(
+        R"({"alg":"EdDSA","typ":"logout+jwt"})", server_logout_claims());
+    try {
+        client.verify_logout_token(token);
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OidcValidationError& e) {
+        AXIAM_REQUIRE(e.reason() == axiam::OidcValidationReason::kUnknownKid);
+        AXIAM_REQUIRE(std::string(e.what()).find(token) == std::string::npos);
+    }
+}
+
+AXIAM_TEST("§12.7.3 rule 1 (1.69): an unknown kid on a logout token is refused as unknown_kid") {
+    Fixture f;
+    axtest::TestKey key;
+    f.replies->jwks_body = key.jwks_json();
+    auto client = make_client(f);
+
+    const std::string token =
+        key.make_jwt_with_header(server_logout_header("not-published"), server_logout_claims());
+    try {
+        client.verify_logout_token(token);
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OidcValidationError& e) {
+        AXIAM_REQUIRE(e.reason() == axiam::OidcValidationReason::kUnknownKid);
+    }
+}
+
+AXIAM_TEST("§10.1 rules 10 and 11 stay off the logout-token and ID-token paths") {
+    Fixture f;
+    axtest::TestKey key;
+    f.replies->jwks_body = key.jwks_json();
+    auto client = make_client(f);
+
+    // Logout token: `typ: logout+jwt` is not `at+jwt`, and the verifier still takes it.
+    const std::string logout =
+        key.make_jwt_with_header(server_logout_header(key.kid), server_logout_claims());
+    AXIAM_REQUIRE_NOTHROW(client.verify_logout_token(logout));
+
+    // ID token (`typ: JWT`), through the verifier the access-token guard shares.
+    auto st = std::make_shared<axtest::FakeState>();
+    axiam::JwksVerifier verifier(axtest::jwks_transport(st, key.jwks_json()),
+                                 "https://api.example.test");
+    const std::string id_claims = std::string("{\"iss\":\"") + kIssuer + "\",\"aud\":\"" +
+                                  kClientId + "\",\"sub\":\"user-1\",\"exp\":" +
+                                  std::to_string(now() + 300) + "}";
+    const std::string id_token = key.make_jwt_with_header(
+        std::string("{\"alg\":\"EdDSA\",\"typ\":\"JWT\",\"kid\":\"") + key.kid + "\"}", id_claims);
+    AXIAM_REQUIRE(verifier.verify_with_reason(id_token).ok);
+    AXIAM_REQUIRE(verifier.verify_with_reason(logout).ok);
+
+    // ...while the access-token entry point refuses both (rule 10, by header alone).
+    const auto id_as_access = verifier.verify_access_token_signature_unchecked(id_token);
+    AXIAM_REQUIRE_FALSE(id_as_access.ok);
+    AXIAM_REQUIRE(id_as_access.detail == axiam::JwtVerification::kDetailTypNotAccessToken);
+    const auto logout_as_access = verifier.verify_access_token_signature_unchecked(logout);
+    AXIAM_REQUIRE_FALSE(logout_as_access.ok);
+    AXIAM_REQUIRE(logout_as_access.detail == axiam::JwtVerification::kDetailTypNotAccessToken);
 }

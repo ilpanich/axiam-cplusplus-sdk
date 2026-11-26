@@ -914,3 +914,125 @@ AXIAM_TEST("N14: a normal access token still passes") {
     AXIAM_REQUIRE(u.has_value());
     AXIAM_CHECK(u->user_id == "user-1");
 }
+
+// ---------------------------------------------------------------------------
+// CONTRACT §11.2 rule 11 (b), (g): require_role reads only a well-formed `roles`
+// claim, and an absent claim stays distinguishable from `[]`.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Authenticate a token whose claims carry `extra`, then run `require_role` for "admin".
+// Returns true when the guard let the caller through.
+bool role_guard_passes(const std::string& extra) {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+    const std::string jwt =
+        key.make_jwt("EdDSA", claims("\"exp\":" + std::to_string(kNow + 900) + extra));
+    std::optional<AxiamUser> user = auth.try_authenticate(jwt);
+    AXIAM_REQUIRE(user.has_value());  // authentication itself succeeds in every case
+    try {
+        require_role(user, {"admin"});
+        return true;
+    } catch (const AuthzError&) {
+        return false;
+    }
+}
+
+}  // namespace
+
+AXIAM_TEST("§11.2 rule 11(b): a roles claim that is not an array of strings fails require_role") {
+    AXIAM_CHECK(role_guard_passes(",\"roles\":[\"admin\"]"));
+    // One non-string member spoils the whole claim: the well-formed "admin" beside it
+    // must not pass.
+    AXIAM_CHECK_FALSE(role_guard_passes(",\"roles\":[\"admin\",7]"));
+    AXIAM_CHECK_FALSE(role_guard_passes(",\"roles\":[\"admin\",null]"));
+    AXIAM_CHECK_FALSE(role_guard_passes(",\"roles\":[7,\"admin\"]"));
+    AXIAM_CHECK_FALSE(role_guard_passes(",\"roles\":\"admin\""));
+    AXIAM_CHECK_FALSE(role_guard_passes(",\"roles\":{\"admin\":true}"));
+    AXIAM_CHECK_FALSE(role_guard_passes(",\"roles\":null"));
+}
+
+AXIAM_TEST("§11.2 rule 11(a)/(b): absent roles, [] and a scope named admin all fail; case is exact") {
+    // The N15 bypass: no `roles`, a scope that spells the role.
+    AXIAM_CHECK_FALSE(role_guard_passes(",\"scope\":\"openid admin\""));
+    AXIAM_CHECK_FALSE(role_guard_passes(",\"roles\":[]"));
+    AXIAM_CHECK_FALSE(role_guard_passes(",\"roles\":[\"Admin\"]"));
+    // roles passes without any scope claim; scope plays no part.
+    AXIAM_CHECK(role_guard_passes(",\"roles\":[\"admin\"],\"scope\":\"openid\""));
+}
+
+AXIAM_TEST("§11.2 rule 11(b): the identity keeps an absent roles claim apart from []") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+    const auto user_for = [&](const std::string& extra) {
+        return auth.authenticate(
+            key.make_jwt("EdDSA", claims("\"exp\":" + std::to_string(kNow + 900) + extra)));
+    };
+
+    const AxiamUser absent = user_for("");
+    AXIAM_CHECK_FALSE(absent.roles_claim_present);
+    AXIAM_CHECK(absent.roles.empty());
+
+    const AxiamUser empty = user_for(",\"roles\":[]");
+    AXIAM_CHECK(empty.roles_claim_present);
+    AXIAM_CHECK(empty.roles.empty());
+
+    // A malformed claim is "says nothing about roles", and keeps no partial list.
+    const AxiamUser malformed = user_for(",\"roles\":[\"admin\",7]");
+    AXIAM_CHECK_FALSE(malformed.roles_claim_present);
+    AXIAM_CHECK(malformed.roles.empty());
+
+    const AxiamUser good = user_for(",\"roles\":[\"admin\",\"ops\"]");
+    AXIAM_CHECK(good.roles_claim_present);
+    AXIAM_CHECK(good.roles.size() == 2);
+}
+
+namespace {
+
+// Authenticate a token with the claim members `extra`, then run `require_scope` for `wanted`.
+bool scope_guard_passes(const std::string& extra, const char* wanted = "admin") {
+    TestKey key;
+    auto st = std::make_shared<FakeState>();
+    JwksVerifier v(jwks_transport(st, key.jwks_json()), "https://api.example.test");
+    TokenAuthenticator auth(v, kTenant, fixed_clock());
+    const std::string jwt =
+        key.make_jwt("EdDSA", claims("\"exp\":" + std::to_string(kNow + 900) + extra));
+    std::optional<AxiamUser> user = auth.try_authenticate(jwt);
+    AXIAM_REQUIRE(user.has_value());
+    try {
+        require_scope(user, {wanted});
+        return true;
+    } catch (const AuthzError&) {
+        return false;
+    }
+}
+
+}  // namespace
+
+AXIAM_TEST("§11.2 rule 11(d), (g): require_scope reads only the scope claim, whole entries") {
+    AXIAM_CHECK(scope_guard_passes(",\"scope\":\"openid admin\""));
+    AXIAM_CHECK(scope_guard_passes(",\"scope\":\"admin\""));
+    AXIAM_CHECK(scope_guard_passes(",\"scope\":\"openid admin profile\""));
+    // The two claims never stand in for each other.
+    AXIAM_CHECK_FALSE(scope_guard_passes(",\"roles\":[\"admin\"],\"scope\":\"openid\""));
+    // No scope claim, or one that is not a string.
+    AXIAM_CHECK_FALSE(scope_guard_passes(""));
+    AXIAM_CHECK_FALSE(scope_guard_passes(",\"scope\":[\"admin\"]"));
+    AXIAM_CHECK_FALSE(scope_guard_passes(",\"scope\":null"));
+    // Whole entries, not substrings; exact case.
+    AXIAM_CHECK_FALSE(scope_guard_passes(",\"scope\":\"administrator\""));
+    AXIAM_CHECK_FALSE(scope_guard_passes(",\"scope\":\"superadmin admins\""));
+    AXIAM_CHECK_FALSE(scope_guard_passes(",\"scope\":\"Admin\""));
+    // Single-space split: other whitespace does not separate entries.
+    AXIAM_CHECK_FALSE(scope_guard_passes(",\"scope\":\"openid\\tadmin\""));
+    // An empty required scope never matches, even an empty scope string.
+    AXIAM_CHECK_FALSE(scope_guard_passes(",\"scope\":\"\"", ""));
+    AXIAM_CHECK_FALSE(scope_guard_passes(",\"scope\":\"openid  admin\"", ""));
+    // Any-of semantics.
+    AXIAM_CHECK(scope_guard_passes(",\"scope\":\"read\"", "read"));
+}

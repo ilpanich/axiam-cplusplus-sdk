@@ -28,14 +28,56 @@
 namespace axiam {
 
 /// Authenticated identity injected by the §10 guard into the request context.
+///
+/// `roles` and `scope` come from two different claims and never stand in for each
+/// other (§11.2 rule 11). `roles` is the token's `roles` claim; it is present only
+/// when the application requested the `roles` scope (§11.2 rule 11(f)). `scope` is
+/// the token's space-separated `scope` string.
+///
+/// The members after `roles` are appended, so an aggregate initialiser that names
+/// only `{user_id, tenant_id, roles}` keeps working: it describes an identity whose
+/// `roles` claim was present.
 struct AxiamUser {
     std::string user_id;
     std::string tenant_id;
+    /// The role names of a well-formed `roles` claim, in the token's order.
     std::vector<std::string> roles;
+    /// Whether the token carried a well-formed `roles` claim (a JSON array of
+    /// strings). `false` keeps "the token says nothing about roles" (absent, or a
+    /// claim that is not an array of strings) apart from `roles_claim_present &&
+    /// roles.empty()` ("the token says the holder has none"): the first means ask
+    /// for the `roles` scope, the second means the user holds no role (§11.2 rule
+    /// 11(b)). Both fail every require_role. TokenAuthenticator sets it; it is
+    /// `true` for a hand-built identity, which lists its roles itself.
+    bool roles_claim_present = true;
+    /// The token's `scope` claim verbatim, or `std::nullopt` when it carried none
+    /// or one that is not a string.
+    std::optional<std::string> scope;
 
+    /// Exact, case-sensitive membership in `roles`. Never consults `scope`.
     bool has_role(const std::string& role) const {
+        if (!roles_claim_present) return false;
         for (const auto& r : roles) {
             if (r == role) return true;
+        }
+        return false;
+    }
+
+    /// Exact, case-sensitive membership in `scope`, split on single spaces
+    /// (RFC 6749 §3.3): `administrator` does not contain `admin`. Never consults
+    /// `roles`.
+    bool has_scope(const std::string& wanted) const {
+        if (!scope.has_value() || wanted.empty()) return false;
+        const std::string& s = *scope;
+        std::size_t pos = 0;
+        while (pos <= s.size()) {
+            const std::size_t end = s.find(' ', pos);
+            const std::size_t stop = end == std::string::npos ? s.size() : end;
+            if (s.compare(pos, stop - pos, wanted) == 0 && stop - pos == wanted.size()) {
+                return true;
+            }
+            if (end == std::string::npos) break;
+            pos = end + 1;
         }
         return false;
     }
@@ -50,8 +92,24 @@ inline const AxiamUser& require_auth(const std::optional<AxiamUser>& user) {
     return *user;
 }
 
-/// §11 require_role — local check against the verified token's roles. No server
-/// round-trip. Coarser than require_access; not a substitute for it.
+/// §11 require_role — local check against the verified token's `roles` claim. No
+/// server round-trip. Coarser than require_access (the authoritative check, which
+/// evaluates the engine live); not a substitute for it. Role names are
+/// tenant-defined.
+///
+/// Reads only `roles` (§11.2 rule 11(a)): never `scope`. A token with no `roles`
+/// claim, one that is not an array of strings, or `[]` fails every call.
+///
+/// **The application must request the `roles` scope** (§11.2 rule 11(e), (f)): add
+/// `roles` to the scope it passes to the authorization request or to
+/// `login_client_credentials`, and have its administrator add `roles` to the
+/// client's registered scopes. This SDK never adds it on its own, and without it
+/// the server issues no `roles` claim, so every require_role is a 403. The claim is
+/// a snapshot taken when the token was minted (stale for at most one access-token
+/// lifetime, 15 minutes by default). It is a sorted array of role names, limited
+/// to roles assigned with no resource; it is never in an ID token, a UserInfo
+/// response or an mTLS device token. See docs/api/roles-claim.md in the server
+/// repository.
 /// @throws AuthError (401) when unauthenticated, AuthzError (403) when no role matches.
 inline void require_role(const std::optional<AxiamUser>& user,
                          std::initializer_list<std::string> any_of) {
@@ -60,6 +118,22 @@ inline void require_role(const std::optional<AxiamUser>& user,
         if (u.has_role(role)) return;
     }
     throw AuthzError("authorization_denied: missing required role");
+}
+
+/// §11 require_scope (§11.2 rule 11(d)) — local check against the verified
+/// token's `scope` claim: passes when the space-separated scopes contain at least
+/// one of `any_of`, each compared whole and case-sensitively. No `scope` claim
+/// (or one that is not a string) fails. A route that needs several scopes stacks
+/// the call. Local like require_role, and just as coarse; reads only `scope`,
+/// never `roles`.
+/// @throws AuthError (401) when unauthenticated, AuthzError (403) when no scope matches.
+inline void require_scope(const std::optional<AxiamUser>& user,
+                          std::initializer_list<std::string> any_of) {
+    const AxiamUser& u = require_auth(user);
+    for (const auto& wanted : any_of) {
+        if (u.has_scope(wanted)) return;
+    }
+    throw AuthzError("authorization_denied: missing required scope");
 }
 
 /// §11 require_access — authorize the REQUEST's user (subject propagation:

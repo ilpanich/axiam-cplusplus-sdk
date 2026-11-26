@@ -42,6 +42,29 @@ AXIAM_TEST("require_role on unauthenticated user is AuthError (401)") {
     AXIAM_REQUIRE_THROWS_AS(require_role(none, {"admin"}), AuthError);
 }
 
+AXIAM_TEST("require_role fails closed for an identity whose roles claim was absent") {
+    AxiamUser absent{"u-1", "t-1", {"admin"}};
+    absent.roles_claim_present = false;  // what TokenAuthenticator sets for an absent claim
+    std::optional<AxiamUser> u = absent;
+    AXIAM_REQUIRE_THROWS_AS(require_role(u, {"admin"}), AuthzError);
+}
+
+AXIAM_TEST("require_scope: 401 unauthenticated, 403 on a miss, pass on a whole-entry match") {
+    std::optional<AxiamUser> none;
+    AXIAM_REQUIRE_THROWS_AS(require_scope(none, {"admin"}), AuthError);
+
+    AxiamUser with_scope{"u-1", "t-1", {}};
+    with_scope.scope = "openid admin";
+    std::optional<AxiamUser> u = with_scope;
+    AXIAM_REQUIRE_NOTHROW(require_scope(u, {"admin"}));
+    AXIAM_REQUIRE_NOTHROW(require_scope(u, {"missing", "openid"}));
+    AXIAM_REQUIRE_THROWS_AS(require_scope(u, {"adm"}), AuthzError);
+
+    // `roles` never stands in for `scope`.
+    std::optional<AxiamUser> roles_only = AxiamUser{"u-1", "t-1", {"admin"}};
+    AXIAM_REQUIRE_THROWS_AS(require_scope(roles_only, {"admin"}), AuthzError);
+}
+
 AXIAM_TEST("require_access propagates subject_id = authenticated user and allows") {
     auto st = std::make_shared<FakeState>();
     st->router = [](const HttpRequest& req, FakeState&) {
