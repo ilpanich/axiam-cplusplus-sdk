@@ -45,6 +45,14 @@ namespace detail {
 /// inside it, and mfa_setup_confirm is the completion of a login (§25.2 rule 2) — a
 /// second hand-rolled reader there is a second place for that rule to be forgotten.
 UserInfo parse_user(const nlohmann::json& u);
+
+/// Visible-for-testing seam for the §9 rule 6a window in `oidc_refresh`: called
+/// after the outcome is published and before the slot is vacated, with no lock
+/// held. Empty in production; tests install and then clear it.
+inline std::function<void()>& oidc_refresh_published_hook() {
+    static std::function<void()> hook;
+    return hook;
+}
 }  // namespace detail
 
 using json = nlohmann::json;
@@ -574,5 +582,17 @@ struct Client::Impl {
         return tp;
     }
 };
+
+namespace detail {
+/// Vacates an `oidc_refresh` flight slot (§9 rule 6c): removes `key` only if it
+/// still maps to `flight`, so a lagging attempt never erases a newer leader's
+/// entry. The caller holds `oidc_refresh_mtx`.
+inline void vacate_oidc_refresh_flight(
+    std::map<std::string, std::shared_ptr<Client::Impl::OidcRefreshFlight>>& flights,
+    const std::string& key, const std::shared_ptr<Client::Impl::OidcRefreshFlight>& flight) {
+    const auto it = flights.find(key);
+    if (it != flights.end() && it->second == flight) flights.erase(it);
+}
+}  // namespace detail
 
 }  // namespace axiam

@@ -65,6 +65,12 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 - OPAQUE: `opaque::start_registration`, `start_login` and both `finish` calls reject a
   password with an embedded NUL (`std::invalid_argument`) instead of silently truncating it
   at the C ABI.
+- **`oidc_refresh` publishes its outcome before vacating its single-flight slot (CONTRACT.md §9
+  rule 6a; #93).** The flight used to be erased before the result was set, so a caller
+  presenting the same refresh token in that gap started a second wire call: a replay of a
+  rotated token, which from contract 1.65 ends the session. The slot is now vacated after
+  publication, identity-checked (rule 6c) so a lagging attempt never erases a newer leader's
+  entry; a caller arriving after the slot is vacated still refreshes for itself (rule 6d).
 
 ### Changed
 

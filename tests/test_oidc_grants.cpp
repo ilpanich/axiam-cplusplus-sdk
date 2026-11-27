@@ -20,6 +20,8 @@
 
 #include <cctype>
 #include <chrono>
+#include <condition_variable>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -29,6 +31,7 @@
 #include "assert.hpp"
 #include "axiam/authenticator.hpp"
 #include "axiam/client.hpp"
+#include "client_impl.hpp"
 #include "fake_transport.hpp"
 #include "test_key.hpp"
 
@@ -1368,6 +1371,86 @@ AXIAM_TEST("§9 rule 2 distinct refresh tokens do not contend, and a burst is no
     client.oidc_refresh(axiam::Sensitive<std::string>("token-0"));
     client.oidc_refresh(axiam::Sensitive<std::string>("token-0"));
     AXIAM_REQUIRE(f.replies->token_calls == before + 2);
+}
+
+AXIAM_TEST("§9 rule 6a a same-token caller between publish and vacate joins, not re-presents") {
+    // CONTRACT §9 rule 6a / contract-1.6 test requirement: a caller landing after
+    // the outcome is published but before the slot is vacated MUST join that
+    // outcome. A second wire call would present a rotated (spent) refresh token,
+    // which from contract 1.65 is a replay that ends the session.
+    Fixture f;
+    f.replies->token_script = {
+        {200,
+         R"({"access_token":"first-access","token_type":"Bearer","expires_in":900,)"
+         R"("refresh_token":"rotated-refresh"})"},
+        {200,
+         R"({"access_token":"second-access","token_type":"Bearer","expires_in":900,)"
+         R"("refresh_token":"rotated-again"})"}};
+    auto client = make_client(f);
+    client.oidc_discover();
+
+    std::mutex m;
+    std::condition_variable cv;
+    bool window_open = false, release = false, pinned = false;
+    axiam::detail::oidc_refresh_published_hook() = [&] {
+        std::unique_lock<std::mutex> lk(m);
+        if (pinned) return;  // pin the leader only
+        pinned = true;
+        window_open = true;
+        cv.notify_all();
+        cv.wait_for(lk, std::chrono::seconds(10), [&] { return release; });
+    };
+
+    std::string leader_access;
+    std::thread leader([&] {
+        leader_access = axiam::detail::reveal(
+            client.oidc_refresh(axiam::Sensitive<std::string>("rot-token")).access_token);
+    });
+    {
+        std::unique_lock<std::mutex> lk(m);
+        AXIAM_REQUIRE(cv.wait_for(lk, std::chrono::seconds(10), [&] { return window_open; }));
+    }
+    // The leader's outcome is published and its slot is not yet vacated.
+    std::string late_access;
+    try {
+        late_access = axiam::detail::reveal(
+            client.oidc_refresh(axiam::Sensitive<std::string>("rot-token")).access_token);
+    } catch (...) {
+    }
+    {
+        std::lock_guard<std::mutex> lk(m);
+        release = true;
+    }
+    cv.notify_all();
+    leader.join();
+    axiam::detail::oidc_refresh_published_hook() = nullptr;
+
+    AXIAM_REQUIRE(f.replies->token_calls == 1);
+    AXIAM_REQUIRE(leader_access == "first-access");
+    AXIAM_REQUIRE(late_access == "first-access");
+
+    // Rule 6d still holds once the slot is vacated: a later caller refreshes itself.
+    const auto later = client.oidc_refresh(axiam::Sensitive<std::string>("rot-token"));
+    AXIAM_REQUIRE(f.replies->token_calls == 2);
+    AXIAM_REQUIRE(axiam::detail::reveal(later.access_token) == "second-access");
+}
+
+AXIAM_TEST("§9 rule 6c a lagging attempt never vacates a newer leader's flight") {
+    using Flight = axiam::Client::Impl::OidcRefreshFlight;
+    std::map<std::string, std::shared_ptr<Flight>> flights;
+    auto lagging = std::make_shared<Flight>();
+    auto newer = std::make_shared<Flight>();
+    flights["k"] = newer;  // a new leader has since taken the key
+    flights["other"] = std::make_shared<Flight>();
+
+    axiam::detail::vacate_oidc_refresh_flight(flights, "k", lagging);
+    AXIAM_REQUIRE(flights.count("k") == 1);
+    AXIAM_REQUIRE(flights["k"] == newer);
+
+    // The owner of the entry does vacate it, and only it.
+    axiam::detail::vacate_oidc_refresh_flight(flights, "k", newer);
+    AXIAM_REQUIRE(flights.count("k") == 0);
+    AXIAM_REQUIRE(flights.count("other") == 1);
 }
 
 AXIAM_TEST("§9 rule 2 a failing flight shares its failure with every waiter") {
