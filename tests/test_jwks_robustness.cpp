@@ -267,9 +267,14 @@ AXIAM_TEST("JWKS keeps previously cached keys when a refresh fails") {
         return r;
     };
     JwksVerifier v(axtest::make_fake(st), "https://api.example.test", std::chrono::seconds(0));
+    // Every refresh respects the 60 s window (§12.4 rule 2), so the retry is forced by moving
+    // an injected clock past it rather than by the zero TTL alone.
+    auto clk = std::make_shared<std::chrono::steady_clock::time_point>(std::chrono::steady_clock::now());
+    v._set_clock_test_seam([clk] { return *clk; });
     const std::string jwt = key.make_jwt("EdDSA", R"({"sub":"u"})");
 
     AXIAM_REQUIRE(v.verify_signature_only_unchecked(jwt).has_value());
+    *clk += std::chrono::seconds(61);
     // The issuer is down; the keys it already published have not stopped being its keys.
     // Clearing them would turn an issuer outage into a total authentication outage.
     AXIAM_CHECK(v.verify_signature_only_unchecked(jwt).has_value());
@@ -292,9 +297,14 @@ AXIAM_TEST("JWKS keeps previously cached keys when the transport itself fails") 
         return r;
     };
     JwksVerifier v(axtest::make_fake(st), "https://api.example.test", std::chrono::seconds(0));
+    // Every refresh respects the 60 s window (§12.4 rule 2), so the retry is forced by moving
+    // an injected clock past it rather than by the zero TTL alone.
+    auto clk = std::make_shared<std::chrono::steady_clock::time_point>(std::chrono::steady_clock::now());
+    v._set_clock_test_seam([clk] { return *clk; });
     const std::string jwt = key.make_jwt("EdDSA", R"({"sub":"u"})");
 
     AXIAM_REQUIRE(v.verify_signature_only_unchecked(jwt).has_value());
+    *clk += std::chrono::seconds(61);
     AXIAM_CHECK(v.verify_signature_only_unchecked(jwt).has_value());
 }
 

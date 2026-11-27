@@ -128,12 +128,22 @@ long parse_max_age(const std::string& cc) {
 }  // namespace
 
 JwksVerifier::JwksVerifier(Transport transport, std::string base_url,
-                           std::chrono::seconds cache_ttl)
-    : transport_(std::move(transport)),
-      base_url_(std::move(base_url)),
-      cache_ttl_(clamp_ttl(cache_ttl)) {
+                           std::optional<std::chrono::seconds> cache_ttl, TelemetryHook telemetry)
+    : transport_(std::move(transport)), base_url_(std::move(base_url)) {
     while (!base_url_.empty() && base_url_.back() == '/') base_url_.pop_back();
-    effective_ttl_ = cache_ttl_;
+    if (cache_ttl) {
+        configured_ttl_ = clamp_ttl(*cache_ttl);
+        effective_ttl_ = *configured_ttl_;
+        if (*configured_ttl_ != *cache_ttl && telemetry) {
+            // §19.2 rule 2: a throwing hook cannot fail construction.
+            try {
+                telemetry(ConfigClampedEvent{"jwks_cache_ttl", std::to_string(cache_ttl->count()) + "s",
+                                             std::to_string(configured_ttl_->count()) + "s",
+                                             "\u00a712.4 rule 2"});
+            } catch (...) {
+            }
+        }
+    }
 }
 
 bool JwksVerifier::load_from_json(const std::string& body) {
@@ -197,20 +207,38 @@ void JwksVerifier::_set_clock_test_seam(
     clock_ = std::move(clock);
 }
 
-bool JwksVerifier::fetch_locked() {
-    const auto now = clock_();
+void JwksVerifier::wait_idle(Lock& lk) {
+    idle_cv_.wait(lk, [this] { return !in_flight_; });
+}
+
+bool JwksVerifier::fetch_unlocked(Lock& lk) {
+    const auto started = clock_();
+    in_flight_ = true;
+    ttl_window_until_ = started + std::chrono::seconds(kOidcJwksRefetchCooldownSeconds);
+    const bool conditional = have_keys_ && !etag_.empty();
     HttpRequest req;
     req.method = "GET";
     req.url = base_url_ + "/oauth2/jwks";
     req.headers["Accept"] = "application/json";
-    if (have_keys_ && !etag_.empty()) req.headers["If-None-Match"] = etag_;
+    if (conditional) req.headers["If-None-Match"] = etag_;
     req.sessionless = true;  // §6.1 rule 11: no session cookie on /oauth2/*
-    const HttpResponse resp = transport_(req);
+
+    // The network call runs with the state lock RELEASED: a verification whose held set is
+    // usable must never queue behind a slow or hung JWKS endpoint.
+    lk.unlock();
+    HttpResponse resp;
+    try {
+        resp = transport_(req);
+    } catch (...) {
+        resp = HttpResponse{};
+        resp.transport_error = "transport threw";
+    }
+    lk.lock();
 
     bool ok = false;
     if (resp.transport_error.empty()) {
-        if (resp.status == 304 && have_keys_) {
-            ok = true;  // re-confirms the held set
+        if (resp.status == 304) {
+            ok = conditional && have_keys_;  // only a 304 to a conditional request counts
         } else if (resp.status == 200) {
             ok = load_from_json(resp.body);
         }
@@ -219,34 +247,40 @@ bool JwksVerifier::fetch_locked() {
         // A failed refresh keeps the held keys and never moves the anchor; it counts toward
         // the unknown-kid window so a failing endpoint costs one fetch per window.
         last_fetch_failed_ = true;
-        refetch_cooldown_until_ = now + std::chrono::seconds(kOidcJwksRefetchCooldownSeconds);
-        return false;
-    }
-    if (resp.status == 200) {
-        // An ETag is echoed back in a request header: refuse one with a control character
-        // (header injection) or longer than 256 bytes, and revalidate unconditionally instead.
-        etag_.clear();
-        const auto etag = resp.headers.find("ETag");
-        if (etag != resp.headers.end() && etag->second.size() <= 256) {
-            bool clean = true;
-            for (unsigned char c : etag->second) {
-                if (c < 0x20 || c == 0x7f) clean = false;
+        refetch_cooldown_until_ = started + std::chrono::seconds(kOidcJwksRefetchCooldownSeconds);
+    } else {
+        if (resp.status == 200) {
+            // An ETag is echoed back in a request header: refuse one with a control character
+            // (header injection) or longer than 256 bytes, and revalidate unconditionally.
+            etag_.clear();
+            const auto etag = resp.headers.find("ETag");
+            if (etag != resp.headers.end() && etag->second.size() <= 256) {
+                bool clean = true;
+                for (unsigned char c : etag->second) {
+                    if (c < 0x20 || c == 0x7f) clean = false;
+                }
+                if (clean) etag_ = etag->second;
             }
-            if (clean) etag_ = etag->second;
         }
+        // A 200 and a 304 both (re)state the lifetime. A configured TTL wins; otherwise the
+        // advertised max-age (clamped), otherwise 300 s.
+        effective_ttl_ = std::chrono::seconds(kJwksMaxTtlSeconds);
+        if (configured_ttl_) {
+            effective_ttl_ = *configured_ttl_;
+        } else {
+            const auto cc = resp.headers.find("Cache-Control");
+            if (cc != resp.headers.end()) {
+                const long max_age = parse_max_age(cc->second);
+                if (max_age >= 0) effective_ttl_ = clamp_ttl(std::chrono::seconds(max_age));
+            }
+        }
+        last_fetch_failed_ = false;
+        fetched_at_ = started;
+        have_keys_ = true;
     }
-    // A 200 and a 304 both (re)state the freshness lifetime; absent a max-age the configured
-    // TTL stands.
-    effective_ttl_ = cache_ttl_;
-    const auto cc = resp.headers.find("Cache-Control");
-    if (cc != resp.headers.end()) {
-        const long max_age = parse_max_age(cc->second);
-        if (max_age >= 0) effective_ttl_ = clamp_ttl(std::chrono::seconds(max_age));
-    }
-    last_fetch_failed_ = false;
-    fetched_at_ = now;
-    have_keys_ = true;
-    return true;
+    in_flight_ = false;
+    idle_cv_.notify_all();
+    return ok;
 }
 
 bool JwksVerifier::held_keys_usable_locked() const {
@@ -257,20 +291,36 @@ bool JwksVerifier::held_keys_usable_locked() const {
     return age <= effective_ttl_ + std::chrono::seconds(kJwksMaxStaleSeconds);
 }
 
-void JwksVerifier::ensure_keys_locked() {
-    const auto now = clock_();
+bool JwksVerifier::cooldown_active_locked(std::chrono::steady_clock::time_point now) const {
+    // A deadline more than one window ahead can only come from a clock that stepped
+    // backwards: treat it as expired rather than wait out an arbitrary span.
+    return now < refetch_cooldown_until_ &&
+           refetch_cooldown_until_ <= now + std::chrono::seconds(kOidcJwksRefetchCooldownSeconds);
+}
+
+bool JwksVerifier::refresh_due_locked(std::chrono::steady_clock::time_point now) const {
     // A clock that moved backwards (negative age) means a refresh is due, never "fresh".
     const auto age = now - fetched_at_;
-    if (have_keys_ && age >= std::chrono::seconds(0) && age < effective_ttl_) return;
+    if (have_keys_ && age >= std::chrono::seconds(0) && age < effective_ttl_) return false;
+    // Whatever the TTL says, an attempt (successful or not) holds off the next TTL-driven
+    // refresh for one window. A deadline more than a window ahead (clock stepped back) is over.
+    if (now < ttl_window_until_ &&
+        ttl_window_until_ <= now + std::chrono::seconds(kOidcJwksRefetchCooldownSeconds)) {
+        return false;
+    }
     // A refresh already failed inside the current window: do not fetch again per token, with
     // or without a held set (a failing endpoint costs one fetch per window).
-    if (last_fetch_failed_ && now < refetch_cooldown_until_) return;
-    fetch_locked();
+    if (last_fetch_failed_ && cooldown_active_locked(now)) return false;
+    return true;
 }
 
 void JwksVerifier::refresh_keys() {
-    std::lock_guard<std::mutex> lock(mtx_);
-    fetch_locked();
+    Lock lk(mtx_);
+    if (in_flight_) {
+        wait_idle(lk);
+        return;
+    }
+    fetch_unlocked(lk);
 }
 
 std::size_t JwksVerifier::cached_key_count() {
@@ -379,27 +429,33 @@ JwtVerification JwksVerifier::verify_impl_unguarded(const std::string& jwt, bool
 
     Ed25519Jwk jwk;
     {
-        std::lock_guard<std::mutex> lock(mtx_);
-        ensure_keys_locked();
+        Lock lk(mtx_);
+        if (in_flight_) {
+            // Nothing usable to answer with: wait for the in-flight fetch. A usable held set
+            // answers now, without waiting for it.
+            if (!held_keys_usable_locked()) wait_idle(lk);
+        } else if (refresh_due_locked(clock_())) {
+            fetch_unlocked(lk);
+        }
         // Past TTL + 300 s with no successful fetch every token is refused (§12.4 rule 2).
         if (!held_keys_usable_locked()) return fail(OidcValidationReason::kUnknownKid);
         auto it = keys_.find(kid);
         if (it == keys_.end()) {
-            // §12.4 rule 2, per WINDOW rather than per token. The first unknown
-            // `kid` costs one re-fetch and opens the cooldown; a further unknown
-            // `kid` inside it re-consults the cached set with no network call.
-            // Before this, an attacker presenting arbitrary `kid` values drove
-            // one JWKS fetch per forged token — the amplification the rule
-            // exists to bound.
+            // §12.4 rule 2, per WINDOW rather than per token. The first unknown `kid` costs one
+            // re-fetch and opens the cooldown; a further unknown `kid` inside it re-consults
+            // the cached set with no network call. A fetch already in flight is waited for
+            // (this token has no key without it) and its result used, not repeated.
             const auto now = clock_();
-            if (now >= refetch_cooldown_until_) {
+            if (in_flight_) {
+                wait_idle(lk);
+            } else if (!cooldown_active_locked(now)) {
                 refetch_cooldown_until_ =
                     now + std::chrono::seconds(kOidcJwksRefetchCooldownSeconds);
-                fetch_locked();  // a failure keeps the held set and counts toward this window
-                it = keys_.find(kid);
+                fetch_unlocked(lk);  // a failure keeps the held set and counts toward the window
             }
-            // Covers "no kid in the header at all" as well as "no key matches
-            // it", which §12.3 rule 3 folds into one code deliberately.
+            it = keys_.find(kid);
+            // Covers "no kid in the header at all" as well as "no key matches it", which
+            // §12.3 rule 3 folds into one code deliberately.
             if (!held_keys_usable_locked() || it == keys_.end()) {
                 return fail(OidcValidationReason::kUnknownKid);
             }

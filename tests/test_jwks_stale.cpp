@@ -4,11 +4,17 @@
 // test names (TTL + 1 s, + 250 s, + 301 s) are exact and nothing sleeps.
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <chrono>
+#include <atomic>
+#include <condition_variable>
+#include <future>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -44,7 +50,7 @@ struct Rig {
     std::shared_ptr<Clock::time_point> now = std::make_shared<Clock::time_point>(Clock::now());
     std::unique_ptr<JwksVerifier> v;
 
-    explicit Rig(std::chrono::seconds ttl = std::chrono::seconds(300)) {
+    explicit Rig(std::optional<std::chrono::seconds> ttl = std::nullopt) {
         other.kid = "unknown-kid";
         mode->doc = key.jwks_json();
         auto m = mode;
@@ -199,9 +205,9 @@ AXIAM_TEST("§12.4 rule 2 TTL is clamped to 300 s, configured or advertised") {
     {
         // A smaller advertised max-age is honoured.
         Rig r;
-        r.mode->cache_control = "max-age=30";
+        r.mode->cache_control = "max-age=90";
         AXIAM_REQUIRE(r.accepts(r.key));
-        r.advance(31);
+        r.advance(91);
         AXIAM_CHECK(r.accepts(r.key));
         AXIAM_CHECK(r.fetches() == 2);
     }
@@ -256,7 +262,7 @@ AXIAM_TEST("§12.4 rule 2 a 304 re-reads max-age; an ETag with a control charact
         r.advance(301);
         AXIAM_CHECK(r.accepts(r.key));
         AXIAM_CHECK(r.fetches() == 2);
-        r.advance(11);  // the 304's max-age=10 now governs
+        r.advance(61);  // the 304's max-age=10 now governs (a refresh is due; the 60 s window passed)
         AXIAM_CHECK(r.accepts(r.key));
         AXIAM_CHECK(r.fetches() == 3);
     }
@@ -293,8 +299,13 @@ AXIAM_TEST("§12.4 rule 2 the REAL transport exposes ETag and Cache-Control: 200
     const std::string doc = key.jwks_json();
     std::thread server([&] {
         for (int i = 0; i < 2; ++i) {
+            // Bounded waits: a run that delivers fewer than two connections must fail, not hang.
+            pollfd pfd{lfd, POLLIN, 0};
+            if (::poll(&pfd, 1, 5000) <= 0) return;
             const int fd = ::accept(lfd, nullptr, nullptr);
             if (fd < 0) return;
+            timeval rcv{5, 0};
+            ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcv, sizeof(rcv));
             std::string data;
             char buf[2048];
             while (data.find("\r\n\r\n") == std::string::npos) {
@@ -333,4 +344,146 @@ AXIAM_TEST("§12.4 rule 2 the REAL transport exposes ETag and Cache-Control: 200
     AXIAM_REQUIRE(seen.size() == 2);
     AXIAM_CHECK(seen[0].find("If-None-Match") == std::string::npos);
     AXIAM_CHECK(seen[1].find("If-None-Match: \"real-1\"") != std::string::npos);
+}
+
+AXIAM_TEST("§12.4 rule 2 a CONFIGURED TTL wins over an advertised max-age") {
+    Rig r(std::chrono::seconds(60));
+    r.mode->cache_control = "max-age=300";
+    AXIAM_REQUIRE(r.accepts(r.key));
+    r.advance(61);
+    AXIAM_CHECK(r.accepts(r.key));
+    AXIAM_CHECK(r.fetches() == 2);  // refreshed at t0 + 61 s: the configured 60 s governs
+}
+
+AXIAM_TEST("§12.4 rule 2 a 304 is only a success to a CONDITIONAL request") {
+    Rig r;
+    r.mode->etag = "";  // no validator, so the next refresh is unconditional
+    AXIAM_REQUIRE(r.accepts(r.key));
+    r.mode->kind = Mode::kNotModified;
+    r.advance(301);
+    AXIAM_CHECK(r.accepts(r.key));
+    AXIAM_CHECK(r.st->last().headers.count("If-None-Match") == 0);
+    r.advance(300);  // the unconditional 304 did not move the anchor: TTL + 301 s
+    AXIAM_CHECK_FALSE(r.accepts(r.key));
+}
+
+AXIAM_TEST("§12.4 rule 2 a clamped configured TTL emits one config_clamped event at construction") {
+    std::vector<ConfigClampedEvent> seen;
+    TelemetryHook hook = [&](const TelemetryEvent& e) {
+        if (const auto* c = std::get_if<ConfigClampedEvent>(&e)) seen.push_back(*c);
+    };
+    auto st = std::make_shared<FakeState>();
+    st->router = [](const HttpRequest&, FakeState&) { return HttpResponse{}; };
+    JwksVerifier clamped(axtest::make_fake(st), "https://api.example.test",
+                         std::chrono::seconds(3600), hook);
+    AXIAM_REQUIRE(seen.size() == 1);
+    AXIAM_CHECK(seen[0].setting == "jwks_cache_ttl");
+    AXIAM_CHECK(seen[0].requested == "3600s");
+    AXIAM_CHECK(seen[0].effective == "300s");
+    AXIAM_CHECK(seen[0].contract_reference == "\u00a712.4 rule 2");
+    // In range, or not configured: nothing is emitted.
+    JwksVerifier ok(axtest::make_fake(st), "https://api.example.test", std::chrono::seconds(60), hook);
+    JwksVerifier unset(axtest::make_fake(st), "https://api.example.test", std::nullopt, hook);
+    AXIAM_CHECK(seen.size() == 1);
+    // A throwing hook cannot fail construction (§19.2 rule 2).
+    TelemetryHook bad = [](const TelemetryEvent&) { throw std::runtime_error("sink down"); };
+    AXIAM_REQUIRE_NOTHROW(JwksVerifier(axtest::make_fake(st), "https://api.example.test",
+                                       std::chrono::seconds(3600), bad));
+}
+
+AXIAM_TEST("§12.4 rule 2 a cooldown deadline far in the future (clock stepped back) is expired") {
+    Rig r;
+    AXIAM_REQUIRE(r.accepts(r.key));
+    r.mode->kind = Mode::kFail503;
+    r.advance(301);
+    AXIAM_CHECK(r.accepts(r.key));  // failed refresh: cooldown opens at t0 + 301 + 60
+    AXIAM_CHECK(r.fetches() == 2);
+    r.advance(-200);                // clock steps back: the deadline is now > 60 s ahead
+    r.accepts(r.other);             // unknown kid: the stale deadline must not block the fetch
+    AXIAM_CHECK(r.fetches() == 3);
+}
+
+namespace {
+/// A transport whose JWKS answers after `delay`, or blocks on a gate from the second call on.
+struct SlowRig {
+    TestKey key;
+    TestKey other;
+    std::atomic<int> calls{0};
+    std::mutex m;
+    std::condition_variable cv;
+    bool gate_open = true;
+    bool block_after_first = false;
+    std::chrono::milliseconds delay{0};
+    std::unique_ptr<JwksVerifier> v;
+
+    SlowRig() {
+        other.kid = "unknown-kid";
+        v = std::make_unique<JwksVerifier>(
+            [this](const HttpRequest&) {
+                const int n = ++calls;
+                if (delay.count() > 0) std::this_thread::sleep_for(delay);
+                if (block_after_first && n >= 2) {
+                    std::unique_lock<std::mutex> lk(m);
+                    cv.wait_for(lk, std::chrono::seconds(10), [this] { return gate_open; });
+                }
+                HttpResponse r;
+                r.status = 200;
+                r.body = key.jwks_json();
+                return r;
+            },
+            "https://api.example.test");
+    }
+    bool accepts(const TestKey& k) {
+        return v->verify_with_reason(k.make_jwt("EdDSA", R"({"sub":"u"})")).ok;
+    }
+};
+}  // namespace
+
+AXIAM_TEST("§12.4 rule 2 concurrent callers on a cold cache cause ONE fetch") {
+    SlowRig r;
+    r.delay = std::chrono::milliseconds(150);
+    std::vector<std::future<bool>> fs;
+    for (int i = 0; i < 8; ++i) {
+        fs.push_back(std::async(std::launch::async, [&] { return r.accepts(r.key); }));
+    }
+    for (auto& f : fs) AXIAM_CHECK(f.get());
+    AXIAM_CHECK(r.calls.load() == 1);
+}
+
+AXIAM_TEST("§12.4 rule 2 a held-kid verification does not wait for a slow unknown-kid fetch") {
+    SlowRig r;
+    AXIAM_REQUIRE(r.accepts(r.key));  // fill, fast
+    r.block_after_first = true;
+    r.gate_open = false;
+    auto slow = std::async(std::launch::async, [&] { return r.accepts(r.other); });
+    // Wait until the unknown-kid refresh is actually blocked inside the transport.
+    for (int i = 0; i < 400 && r.calls.load() < 2; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    AXIAM_REQUIRE(r.calls.load() == 2);
+    auto held = std::async(std::launch::async, [&] { return r.accepts(r.key); });
+    const bool prompt = held.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+    {
+        std::lock_guard<std::mutex> lk(r.m);
+        r.gate_open = true;
+    }
+    r.cv.notify_all();
+    AXIAM_CHECK(prompt);
+    AXIAM_CHECK(held.get());
+    AXIAM_CHECK_FALSE(slow.get());
+}
+
+AXIAM_TEST("§12.4 rule 2 a TTL shorter than the window (max-age=0) is never one fetch per verification") {
+    Rig r;
+    r.mode->cache_control = "max-age=0";
+    for (int i = 0; i < 20; ++i) AXIAM_CHECK(r.accepts(r.key));
+    AXIAM_CHECK(r.fetches() == 1);
+    r.advance(61);
+    AXIAM_CHECK(r.accepts(r.key));
+    AXIAM_CHECK(r.fetches() == 2);
+    for (int i = 0; i < 20; ++i) AXIAM_CHECK(r.accepts(r.key));
+    AXIAM_CHECK(r.fetches() == 2);
+    Rig z(std::chrono::seconds(0));  // a configured zero TTL too
+    for (int i = 0; i < 20; ++i) AXIAM_CHECK(z.accepts(z.key));
+    AXIAM_CHECK(z.fetches() == 1);
 }

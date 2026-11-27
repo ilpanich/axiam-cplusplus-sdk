@@ -17,12 +17,14 @@
 #pragma once
 
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
 #include <string>
 
+#include "axiam/telemetry.hpp"
 #include "axiam/transport.hpp"
 
 namespace axiam {
@@ -128,10 +130,15 @@ class JwksVerifier {
 public:
     /// @param transport shared transport seam (same as the client's).
     /// @param base_url  server base URL (no trailing slash required).
-    /// @param cache_ttl key-set cache lifetime (default 300s; clamped to at most 300s, §12.4
-    ///                  rule 2). A `Cache-Control: max-age` on a response overrides it, clamped alike.
+    /// @param cache_ttl key-set cache lifetime. When set it WINS over any advertised
+    ///                  `Cache-Control: max-age` and is clamped to at most 300 s (§12.4 rule 2;
+    ///                  a clamp emits one `config_clamped` event through `telemetry`). When
+    ///                  not set, the response's `max-age` (clamped to 300 s) is used, else 300 s.
+    /// @param telemetry optional §19 sink, used only for that one construction-time event; a
+    ///                  throwing hook is swallowed (§19.2 rule 2).
     JwksVerifier(Transport transport, std::string base_url,
-                 std::chrono::seconds cache_ttl = std::chrono::seconds(300));
+                 std::optional<std::chrono::seconds> cache_ttl = std::nullopt,
+                 TelemetryHook telemetry = {});
 
     /// EXPERT PRIMITIVE — signature only. Verifies a compact JWS against the
     /// cached Ed25519 key set (EdDSA only) and returns the decoded payload.
@@ -191,16 +198,24 @@ public:
 private:
     JwtVerification verify_impl(const std::string& jwt, bool access_token);
     JwtVerification verify_impl_unguarded(const std::string& jwt, bool access_token);
-    void ensure_keys_locked();
-    bool fetch_locked();
+    using Lock = std::unique_lock<std::mutex>;
+    /// Single-flight fetch. Runs the transport call with `mtx_` RELEASED and re-takes it to
+    /// apply the result; the caller must hold `lk` and must not already have a fetch in flight.
+    bool fetch_unlocked(Lock& lk);
+    /// Waits (releasing `mtx_`) until no fetch is in flight.
+    void wait_idle(Lock& lk);
+    bool refresh_due_locked(std::chrono::steady_clock::time_point now) const;
+    bool cooldown_active_locked(std::chrono::steady_clock::time_point now) const;
     bool held_keys_usable_locked() const;
     bool load_from_json(const std::string& body);
 
     Transport transport_;
     std::string base_url_;
-    std::chrono::seconds cache_ttl_;
+    std::optional<std::chrono::seconds> configured_ttl_;  // clamped; wins over max-age
 
     std::mutex mtx_;
+    std::condition_variable idle_cv_;
+    bool in_flight_ = false;
     std::map<std::string, Ed25519Jwk> keys_;  // kid -> jwk
     std::function<std::chrono::steady_clock::time_point()> clock_ =
         [] { return std::chrono::steady_clock::now(); };
@@ -210,6 +225,9 @@ private:
     std::chrono::steady_clock::time_point refetch_cooldown_until_{};
     bool have_keys_ = false;
     bool last_fetch_failed_ = false;
+    /// End of the 60 s window every TTL-driven refresh (successful or not) opens, so a TTL
+    /// shorter than the window (max-age=0) never means one fetch per verification.
+    std::chrono::steady_clock::time_point ttl_window_until_{};
     std::chrono::seconds effective_ttl_{300};
     std::string etag_;
 };
