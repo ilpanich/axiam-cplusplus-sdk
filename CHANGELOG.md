@@ -71,6 +71,13 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
   rotated token, which from contract 1.65 ends the session. The slot is now vacated after
   publication, identity-checked (rule 6c) so a lagging attempt never erases a newer leader's
   entry; a caller arriving after the slot is vacated still refreshes for itself (rule 6d).
+- **`oidc_refresh` single-flight keyed on tenant and token (CONTRACT.md §9 rule 7; #94).** The
+  key was a digest of the refresh token alone, so the same token for a different tenant joined
+  another tenant's flight and took its outcome. It is now a SHA-256 digest of the resolved
+  tenant UUID (explicit argument or the client's default, resolved once before the lookup and
+  canonicalised to lower case, the same value then sent on the wire) and the token; the
+  default tenant passed explicitly, omitted or in upper case is still one flight and one wire
+  call, and `scope` is not part of the key.
 
 ### Changed
 

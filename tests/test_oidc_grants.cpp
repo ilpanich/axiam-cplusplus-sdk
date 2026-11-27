@@ -21,6 +21,7 @@
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -79,6 +80,16 @@ struct Replies {
     std::atomic<int> gate_arrived{0};
     int gate_expect = 0;
     std::mutex mtx;
+    // When set, answers every token request from the request itself, so a test can
+    // tell WHICH call each caller's outcome came from (concurrent calls reach the
+    // router in no fixed order).
+    std::function<std::pair<long, std::string>(const axiam::HttpRequest&)> token_by_request;
+    // Holds every token request on the transport until `wire_expect` of them are
+    // there at once (bounded), so a test can prove flights of different keys run
+    // concurrently rather than one after another.
+    std::atomic<int> wire_started{0};
+    int wire_expect = 0;
+    std::atomic<bool> wire_timed_out{false};
 };
 
 axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<Replies> r) {
@@ -117,6 +128,17 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
                 delay = r->token_delay;
                 expect = r->gate_expect;
             }
+            if (r->wire_expect > 0) {
+                r->wire_started.fetch_add(1, std::memory_order_acq_rel);
+                const auto limit = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+                while (r->wire_started.load(std::memory_order_acquire) < r->wire_expect) {
+                    if (std::chrono::steady_clock::now() >= limit) {
+                        r->wire_timed_out = true;
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
             if (expect > 0) {
                 // Bounded, so a genuine regression fails the assertion rather
                 // than hanging the suite until the job times out.
@@ -128,6 +150,10 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
             }
             if (delay.count() > 0) std::this_thread::sleep_for(delay);
             std::lock_guard<std::mutex> lock(r->mtx);
+            if (r->token_by_request) {
+                const auto answer = r->token_by_request(req);
+                return reply(answer.first, answer.second);
+            }
             if (r->token_script.empty()) return reply(200, "{}");
             const auto& answer = r->token_script[std::min(i, r->token_script.size() - 1)];
             return reply(answer.first, answer.second);
@@ -147,13 +173,13 @@ struct Fixture {
 };
 
 axiam::Client make_client(Fixture& f, const char* secret = kClientSecret,
-                          bool tenant_uuid = true) {
+                          bool tenant_uuid = true, const char* tenant_value = kTenantUuid) {
     auto builder = axiam::Client::builder()
                        .base_url("https://iam.example.com")
                        .tenant_slug("acme")
                        .oidc_client_id(kClientId)
                        .transport(routed(f.st, f.replies));
-    if (tenant_uuid) builder.tenant_id(kTenantUuid);
+    if (tenant_uuid) builder.tenant_id(tenant_value);
     if (secret != nullptr) builder.oidc_client_secret(secret);
     auto client = builder.build();
     auto sleeps = f.sleeps;
@@ -1451,6 +1477,165 @@ AXIAM_TEST("§9 rule 6c a lagging attempt never vacates a newer leader's flight"
     axiam::detail::vacate_oidc_refresh_flight(flights, "k", newer);
     AXIAM_REQUIRE(flights.count("k") == 0);
     AXIAM_REQUIRE(flights.count("other") == 1);
+}
+
+namespace {
+// The value of `name=` in a query string or form body, up to the next `&`.
+std::string field_of(const std::string& haystack, const std::string& name) {
+    const std::string needle = name + "=";
+    auto at = haystack.find(needle);
+    while (at != std::string::npos && at != 0 && haystack[at - 1] != '?' &&
+           haystack[at - 1] != '&') {
+        at = haystack.find(needle, at + 1);
+    }
+    if (at == std::string::npos) return {};
+    at += needle.size();
+    return haystack.substr(at, haystack.find('&', at) - at);
+}
+
+// Echoes the tenant and token a request carried, so each caller's outcome names its own call.
+std::pair<long, std::string> echo_tenant_and_token(const axiam::HttpRequest& req) {
+    return {200, R"({"access_token":"access-)" + field_of(req.url, "tenant_id") + "-" +
+                     field_of(req.body, "refresh_token") +
+                     R"(","token_type":"Bearer","expires_in":900})"};
+}
+
+const char* kTenantA = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const char* kTenantB = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+}  // namespace
+
+AXIAM_TEST("§9 rule 7 the same token for different tenants is two flights, each its own outcome") {
+    Fixture f;
+    f.replies->token_by_request = echo_tenant_and_token;
+    f.replies->token_delay = std::chrono::milliseconds(60);
+    auto client = make_client(f, kClientSecret, true, kTenantA);
+    client.oidc_discover();
+    f.replies->gate_expect = 2;
+
+    std::string a, b;
+    std::thread ta([&] {
+        f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
+        a = axiam::detail::reveal(client.oidc_refresh(axiam::Sensitive<std::string>("shared-rt"),
+                                                      std::nullopt, std::string(kTenantA))
+                                      .access_token);
+    });
+    std::thread tb([&] {
+        f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
+        b = axiam::detail::reveal(client.oidc_refresh(axiam::Sensitive<std::string>("shared-rt"),
+                                                      std::nullopt, std::string(kTenantB))
+                                      .access_token);
+    });
+    ta.join();
+    tb.join();
+
+    AXIAM_REQUIRE(f.replies->token_calls == 2);
+    AXIAM_REQUIRE(a == std::string("access-") + kTenantA + "-shared-rt");
+    AXIAM_REQUIRE(b == std::string("access-") + kTenantB + "-shared-rt");
+}
+
+AXIAM_TEST("§9 rule 7 the default tenant explicit, omitted or upper-case is one flight, one call") {
+    Fixture f;
+    f.replies->token_by_request = echo_tenant_and_token;
+    f.replies->token_delay = std::chrono::milliseconds(60);
+    auto client = make_client(f, kClientSecret, true, kTenantA);
+    client.oidc_discover();
+    f.replies->gate_expect = 4;
+
+    std::string upper = kTenantA;
+    for (char& ch : upper) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    AXIAM_REQUIRE(upper != std::string(kTenantA));
+
+    std::vector<std::string> got(4);
+    std::vector<std::thread> threads;
+    const std::vector<std::pair<std::optional<std::string>, std::optional<std::string>>> callers = {
+        {std::nullopt, std::nullopt},                     // tenant omitted
+        {std::nullopt, std::string(kTenantA)},            // default passed explicitly
+        {std::nullopt, upper},                            // the same tenant, upper case
+        {std::string("openid"), std::string(kTenantA)}};  // another scope: not part of the key
+    for (std::size_t i = 0; i < callers.size(); ++i) {
+        threads.emplace_back([&, i] {
+            f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
+            got[i] = axiam::detail::reveal(
+                client.oidc_refresh(axiam::Sensitive<std::string>("one-rt"), callers[i].first,
+                                    callers[i].second)
+                    .access_token);
+        });
+    }
+    for (auto& t : threads) t.join();
+
+    AXIAM_REQUIRE(f.replies->token_calls == 1);
+    // The one wire call carried the canonical lower-case tenant, whoever led.
+    for (const auto& g : got) AXIAM_REQUIRE(g == std::string("access-") + kTenantA + "-one-rt");
+}
+
+AXIAM_TEST("§9 rule 7 a different token during a live flight gets its own call") {
+    Fixture f;
+    f.replies->token_by_request = echo_tenant_and_token;
+    f.replies->token_delay = std::chrono::milliseconds(60);
+    auto client = make_client(f, kClientSecret, true, kTenantA);
+    client.oidc_discover();
+    f.replies->gate_expect = 3;
+
+    std::vector<std::string> got(3);
+    const char* tokens[] = {"rt-A", "rt-A", "rt-B"};
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 3; ++i) {
+        threads.emplace_back([&, i] {
+            f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
+            got[i] = axiam::detail::reveal(
+                client.oidc_refresh(axiam::Sensitive<std::string>(tokens[i])).access_token);
+        });
+    }
+    for (auto& t : threads) t.join();
+
+    AXIAM_REQUIRE(f.replies->token_calls == 2);  // A's two callers share one call; B has its own
+    AXIAM_REQUIRE(got[0] == std::string("access-") + kTenantA + "-rt-A");
+    AXIAM_REQUIRE(got[1] == got[0]);
+    AXIAM_REQUIRE(got[2] == std::string("access-") + kTenantA + "-rt-B");
+}
+
+AXIAM_TEST("§9 rule 7 flights of different tokens run concurrently on the wire") {
+    // No lock is held across an oidc_refresh wire call, so a different key's call
+    // STARTS while another's is held on the transport. 20 distinct tokens are all
+    // held at once (the transport releases them only when all 20 are there); a
+    // serialising guard would leave the wait to time out and one call at a time.
+    Fixture f;
+    f.replies->token_by_request = echo_tenant_and_token;
+    auto client = make_client(f);
+    client.oidc_discover();
+    f.replies->wire_expect = 20;
+
+    std::vector<std::string> got(20);
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 20; ++i) {
+        threads.emplace_back([&, i] {
+            got[i] = axiam::detail::reveal(
+                client.oidc_refresh(axiam::Sensitive<std::string>("rt-" + std::to_string(i)))
+                    .access_token);
+        });
+    }
+    for (auto& t : threads) t.join();
+
+    AXIAM_REQUIRE(!f.replies->wire_timed_out.load());
+    AXIAM_REQUIRE(f.replies->token_calls == 20);
+    for (int i = 0; i < 20; ++i) {
+        AXIAM_REQUIRE(got[i] == std::string("access-") + kTenantUuid + "-rt-" + std::to_string(i));
+    }
+}
+
+AXIAM_TEST("§9 rule 7 an invalid tenant fails before any slot, discovery or token call") {
+    Fixture f;
+    auto client = make_client(f);
+    bool threw = false;
+    try {
+        client.oidc_refresh(axiam::Sensitive<std::string>("rt"), std::nullopt,
+                            std::string("not-a-uuid"));
+    } catch (const axiam::AuthError&) {
+        threw = true;
+    }
+    AXIAM_REQUIRE(threw);
+    AXIAM_REQUIRE(f.replies->token_calls == 0);
+    AXIAM_REQUIRE(f.st->requests.empty());
 }
 
 AXIAM_TEST("§9 rule 2 a failing flight shares its failure with every waiter") {

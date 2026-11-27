@@ -1227,8 +1227,20 @@ OidcTokenSet Client::oidc_refresh(const Sensitive<std::string>& refresh_token,
     const std::string& raw = detail::reveal(refresh_token);
     if (raw.empty()) throw AuthError("oidc_refresh requires a refresh token");
     const std::string& client_id = require_client_id(*p_, "oidc_refresh");
-    const std::string tenant = require_tenant_uuid(*p_, tenant_id, "oidc_refresh");
-    const std::string key = digest_hex(raw);
+    // Resolved ONCE, here, before the flight lookup, and canonicalised to the
+    // lower-case hyphenated form. That one value is both the key's tenant and the
+    // wire request's `tenant_id`, so a caller spelling it in upper case, passing
+    // the client's default explicitly, or omitting it all land in one flight and
+    // one wire call — a second call with the same rotating token is a replay
+    // (contract 1.65). An invalid tenant fails here: no slot, no request.
+    std::string tenant = require_tenant_uuid(*p_, tenant_id, "oidc_refresh");
+    for (char& ch : tenant) {
+        if (ch >= 'A' && ch <= 'F') ch = static_cast<char>(ch - 'A' + 'a');
+    }
+    // §9 rule 7: digest of tenant + separator + token. A UUID is fixed-length and
+    // contains no newline, so the pair cannot be confused. `scope` is not part of
+    // the key: a caller asking for another scope joins the one flight.
+    const std::string key = digest_hex(tenant + "\n" + raw);
 
     std::shared_ptr<Client::Impl::OidcRefreshFlight> flight;
     bool leader = false;
