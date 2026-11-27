@@ -6,6 +6,19 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+### Security
+
+- **JWKS cache: bounded stale-if-error (CONTRACT.md §12.4 rule 2, contract 1.69, D-10;
+  axiam#883).** `JwksVerifier` measures cache age from the last *successful* fetch (a `200`
+  with at least one usable key, or a `304` to the conditional `If-None-Match` request). A
+  failed refresh (transport error, other status, non-JWKS body, or an empty key set) no longer
+  replaces or empties the held keys and never moves the anchor; held keys verify until exactly
+  TTL + 300 s after the anchor, after which every token is refused until a fetch succeeds. An
+  unknown-`kid` refresh that fails refuses that token, keeps the held set and counts toward the
+  re-fetch window. The TTL is clamped to at most 300 s (constructor argument or
+  `Cache-Control: max-age`). Previously an empty `{"keys":[]}` answer replaced the set and held
+  keys had no upper bound. A `keys` array with no JWK object (`[{}]`) is not a JWKS document and is a failed refresh too; the failure window also applies to a cold cache; an ETag with a control character or over 256 bytes is never echoed; a clock moving backwards makes a refresh due. New `kJwksMaxTtlSeconds` / `kJwksMaxStaleSeconds` constants.
+
 ## [1.4.0] - 2026-11-22
 
 ### Security

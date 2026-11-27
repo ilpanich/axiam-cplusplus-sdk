@@ -17,6 +17,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -118,11 +119,17 @@ bool verify_certificate_binding(const std::string& claims_json,
 /// the token. A well-formed value is exactly 43 characters.
 std::string certificate_thumbprint_s256(const std::string& der);
 
+/// §12.4 rule 2 (contract 1.69, D-10): the TTL ceiling and the extra time held keys verify
+/// for after a refresh has failed, both in seconds.
+inline constexpr int kJwksMaxTtlSeconds = 300;
+inline constexpr int kJwksMaxStaleSeconds = 300;
+
 class JwksVerifier {
 public:
     /// @param transport shared transport seam (same as the client's).
     /// @param base_url  server base URL (no trailing slash required).
-    /// @param cache_ttl key-set cache lifetime (default 300s).
+    /// @param cache_ttl key-set cache lifetime (default 300s; clamped to at most 300s, §12.4
+    ///                  rule 2). A `Cache-Control: max-age` on a response overrides it, clamped alike.
     JwksVerifier(Transport transport, std::string base_url,
                  std::chrono::seconds cache_ttl = std::chrono::seconds(300));
 
@@ -170,6 +177,11 @@ public:
     /// those carry other `typ` values and, for the logout token, no `kid`.
     JwtVerification verify_access_token_signature_unchecked(const std::string& jwt);
 
+    /// Test seam: replaces the monotonic clock every cache decision reads. Not part of the
+    /// supported API; it exists so the §12.4 rule 2 stale-if-error bound can be tested at
+    /// TTL + 1 s, + 250 s and + 301 s without sleeping.
+    void _set_clock_test_seam(std::function<std::chrono::steady_clock::time_point()> clock);
+
     /// Force-refresh the cached key set (also called lazily by verify()).
     void refresh_keys();
 
@@ -180,7 +192,9 @@ private:
     JwtVerification verify_impl(const std::string& jwt, bool access_token);
     JwtVerification verify_impl_unguarded(const std::string& jwt, bool access_token);
     void ensure_keys_locked();
-    void load_from_json(const std::string& body);
+    bool fetch_locked();
+    bool held_keys_usable_locked() const;
+    bool load_from_json(const std::string& body);
 
     Transport transport_;
     std::string base_url_;
@@ -188,11 +202,16 @@ private:
 
     std::mutex mtx_;
     std::map<std::string, Ed25519Jwk> keys_;  // kid -> jwk
+    std::function<std::chrono::steady_clock::time_point()> clock_ =
+        [] { return std::chrono::steady_clock::now(); };
     std::chrono::steady_clock::time_point fetched_at_{};
     /// When the §12.4 rule 2 unknown-`kid` cooldown window closes. Default-
     /// constructed (the epoch) means no window is open.
     std::chrono::steady_clock::time_point refetch_cooldown_until_{};
     bool have_keys_ = false;
+    bool last_fetch_failed_ = false;
+    std::chrono::seconds effective_ttl_{300};
+    std::string etag_;
 };
 
 }  // namespace axiam
