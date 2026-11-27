@@ -28,10 +28,6 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
   `Cache-Control: max-age`). Previously an empty `{"keys":[]}` answer replaced the set and held
   keys had no upper bound. A `keys` array with no JWK object (`[{}]`) is not a JWKS document and is a failed refresh too; the failure window also applies to a cold cache; an ETag with a control character or over 256 bytes is never echoed; a clock moving backwards makes a refresh due. New `kJwksMaxTtlSeconds` / `kJwksMaxStaleSeconds` constants.
 
-## [1.4.0] - 2026-11-22
-
-### Security
-
 - **C4 — a hostile token header or JWKS member can no longer throw a vendored
   exception.** `JwksVerifier::verify_with_reason` (and so `verify_signature_only_unchecked`,
   `Client::verify_logout_token` and ID-token validation) now requires the JOSE header to be
