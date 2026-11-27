@@ -214,6 +214,19 @@ void JwksVerifier::wait_idle(Lock& lk) {
 bool JwksVerifier::fetch_unlocked(Lock& lk) {
     const auto started = clock_();
     in_flight_ = true;
+    // Clears `in_flight_` and wakes the waiters however this function is left, including by an
+    // exception from building the request or from applying the result (the lock is re-taken
+    // first if the unwind starts in the unlocked section). Without it a throw leaves the flag
+    // set forever and every caller with no usable set blocks in wait_idle().
+    struct InFlightGuard {
+        JwksVerifier* self;
+        Lock& lk;
+        ~InFlightGuard() {
+            if (!lk.owns_lock()) lk.lock();
+            self->in_flight_ = false;
+            self->idle_cv_.notify_all();
+        }
+    } guard{this, lk};
     ttl_window_until_ = started + std::chrono::seconds(kOidcJwksRefetchCooldownSeconds);
     const bool conditional = have_keys_ && !etag_.empty();
     HttpRequest req;
@@ -278,8 +291,6 @@ bool JwksVerifier::fetch_unlocked(Lock& lk) {
         fetched_at_ = started;
         have_keys_ = true;
     }
-    in_flight_ = false;
-    idle_cv_.notify_all();
     return ok;
 }
 

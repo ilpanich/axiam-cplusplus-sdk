@@ -487,3 +487,35 @@ AXIAM_TEST("§12.4 rule 2 a TTL shorter than the window (max-age=0) is never one
     for (int i = 0; i < 20; ++i) AXIAM_CHECK(z.accepts(z.key));
     AXIAM_CHECK(z.fetches() == 1);
 }
+
+AXIAM_TEST("§12.4 rule 2 a transport that THROWS is a failed refresh and never wedges the verifier") {
+    TestKey key;
+    std::atomic<int> calls{0};
+    std::atomic<bool> throwing{false};
+    const std::string doc = key.jwks_json();
+    JwksVerifier v(
+        [&](const HttpRequest&) -> HttpResponse {
+            ++calls;
+            if (throwing) throw std::runtime_error("transport blew up");
+            HttpResponse r;
+            r.status = 200;
+            r.body = doc;
+            return r;
+        },
+        "https://api.example.test");
+    auto now = std::make_shared<Clock::time_point>(Clock::now());
+    v._set_clock_test_seam([now] { return *now; });
+    const std::string jwt = key.make_jwt("EdDSA", R"({"sub":"u"})");
+
+    throwing = true;
+    for (int i = 0; i < 5; ++i) {
+        JwtVerification res;
+        AXIAM_REQUIRE_NOTHROW(res = v.verify_with_reason(jwt));
+        AXIAM_CHECK_FALSE(res.ok);  // refused, not propagated
+    }
+    AXIAM_CHECK(calls.load() == 1);  // one fetch per window
+    *now += std::chrono::seconds(61);
+    throwing = false;
+    AXIAM_CHECK(v.verify_with_reason(jwt).ok);  // a later fetch past the window succeeds
+    AXIAM_CHECK(calls.load() == 2);
+}

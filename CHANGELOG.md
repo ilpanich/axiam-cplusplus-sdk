@@ -9,7 +9,7 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 ### Security
 
 - **JWKS cache review round (OI-40, axiam#883).** `JwksVerifier`'s `cache_ttl` is now
-  `std::optional<std::chrono::seconds>` (default unset): a configured TTL wins over an advertised
+  `std::optional<std::chrono::seconds>` (default unset; a source- but not ABI-compatible change to the constructor, which also gained a trailing `TelemetryHook` parameter): a configured TTL wins over an advertised
   `max-age` (both clamped to 300 s), and a clamped configured TTL emits one `config_clamped`
   event through the new optional `TelemetryHook` constructor parameter. The JWKS fetch is
   single-flight and runs with the state lock released, so a verification with a usable held set
