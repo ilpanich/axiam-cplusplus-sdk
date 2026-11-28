@@ -1,0 +1,10 @@
+var searchData=
+[
+  ['has_5fclient_5fcert_0',['has_client_cert',['../structaxiam_1_1TlsConfig.html#a88d6d890bd56b7230fdcc76bccf97fd2',1,'axiam::TlsConfig']]],
+  ['has_5fcustom_5fca_1',['has_custom_ca',['../structaxiam_1_1TlsConfig.html#a6b5ba99ac4317dcb9c2b35e2efbcb0cb',1,'axiam::TlsConfig']]],
+  ['has_5frole_2',['has_role',['../structaxiam_1_1AxiamUser.html#ab1fdc0e17380057836623e50a6cd36b6',1,'axiam::AxiamUser']]],
+  ['has_5fscope_3',['has_scope',['../structaxiam_1_1AxiamUser.html#a8e452fe2d42f0095bbb3ba912ecb9659',1,'axiam::AxiamUser']]],
+  ['has_5fsession_4',['has_session',['../classaxiam_1_1Client.html#aa668beec2acb73cf7b5e93d8eaa0cf9e',1,'axiam::Client']]],
+  ['health_5',['health',['../classaxiam_1_1management_1_1PlatformApi.html#a500dd6e2ff032c251f33198e24840fd8',1,'axiam::management::PlatformApi']]],
+  ['http_5fstatus_6',['http_status',['../classaxiam_1_1OAuthProtocolError.html#ad094e66e350d63aa7951033116aaac76',1,'axiam::OAuthProtocolError']]]
+];
