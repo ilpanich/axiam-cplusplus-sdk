@@ -1388,8 +1388,8 @@ AXIAM_TEST("§9 rule 2 distinct refresh tokens do not contend, and a burst is no
     for (auto& t : threads) t.join();
     AXIAM_REQUIRE(f.replies->token_calls == 4);
 
-    // A coalesce, not a cache. The flight is unlinked before its outcome is
-    // published, so a caller arriving after it completed starts a fresh one —
+    // A coalesce, not a cache. The flight is vacated after its outcome is
+    // published; a caller arriving after the vacate starts a fresh one —
     // anything else would hand out a token whose refresh token has already been
     // spent, with no TTL and no invalidation.
     f.replies->token_delay = std::chrono::milliseconds(0);
@@ -1432,32 +1432,53 @@ AXIAM_TEST("§9 rule 6a a same-token caller between publish and vacate joins, no
         leader_access = axiam::detail::reveal(
             client.oidc_refresh(axiam::Sensitive<std::string>("rot-token")).access_token);
     });
+    // However the test ends (a failed REQUIRE included): clear the hook, release the
+    // window and join, so a failure is reported rather than std::terminate.
+    struct Cleanup {
+        std::function<void()> fn;
+        ~Cleanup() { fn(); }
+    } cleanup{[&] {
+        {
+            std::lock_guard<std::mutex> lk(m);
+            release = true;
+        }
+        cv.notify_all();
+        if (leader.joinable()) leader.join();
+        axiam::detail::oidc_refresh_published_hook() = nullptr;
+    }};
     {
         std::unique_lock<std::mutex> lk(m);
         AXIAM_REQUIRE(cv.wait_for(lk, std::chrono::seconds(10), [&] { return window_open; }));
     }
     // The leader's outcome is published and its slot is not yet vacated.
-    std::string late_access;
+    std::string late_access, other_access;
     try {
         late_access = axiam::detail::reveal(
             client.oidc_refresh(axiam::Sensitive<std::string>("rot-token")).access_token);
     } catch (...) {
     }
-    {
-        std::lock_guard<std::mutex> lk(m);
-        release = true;
+    const std::size_t calls_same = f.replies->token_calls;
+    // A DIFFERENT token inside the same window never joins the published outcome: it
+    // gets its own wire call and its own result (contract 1.69, §9 rule 7).
+    try {
+        other_access = axiam::detail::reveal(
+            client.oidc_refresh(axiam::Sensitive<std::string>("other-token")).access_token);
+    } catch (...) {
     }
-    cv.notify_all();
-    leader.join();
-    axiam::detail::oidc_refresh_published_hook() = nullptr;
+    const std::size_t calls_other = f.replies->token_calls;
+    cleanup.fn();
+    cleanup.fn = [] {};
 
-    AXIAM_REQUIRE(f.replies->token_calls == 1);
+    AXIAM_REQUIRE(calls_same == 1);  // the same-token caller joined: no second wire call
+    AXIAM_REQUIRE(calls_other == 2);  // the different token made exactly one of its own
+    AXIAM_REQUIRE(f.replies->token_calls == 2);
     AXIAM_REQUIRE(leader_access == "first-access");
     AXIAM_REQUIRE(late_access == "first-access");
+    AXIAM_REQUIRE(other_access == "second-access");
 
     // Rule 6d still holds once the slot is vacated: a later caller refreshes itself.
     const auto later = client.oidc_refresh(axiam::Sensitive<std::string>("rot-token"));
-    AXIAM_REQUIRE(f.replies->token_calls == 2);
+    AXIAM_REQUIRE(f.replies->token_calls == 3);
     AXIAM_REQUIRE(axiam::detail::reveal(later.access_token) == "second-access");
 }
 
@@ -1540,6 +1561,7 @@ AXIAM_TEST("§9 rule 7 the default tenant explicit, omitted or upper-case is one
     auto client = make_client(f, kClientSecret, true, kTenantA);
     client.oidc_discover();
     f.replies->gate_expect = 4;
+    f.replies->wire_expect = 1;  // counts requests reaching the transport; releases at once
 
     std::string upper = kTenantA;
     for (char& ch : upper) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
@@ -1548,11 +1570,11 @@ AXIAM_TEST("§9 rule 7 the default tenant explicit, omitted or upper-case is one
     std::vector<std::string> got(4);
     std::vector<std::thread> threads;
     const std::vector<std::pair<std::optional<std::string>, std::optional<std::string>>> callers = {
+        {std::nullopt, upper},                            // the same tenant, upper case: LEADS
         {std::nullopt, std::nullopt},                     // tenant omitted
         {std::nullopt, std::string(kTenantA)},            // default passed explicitly
-        {std::nullopt, upper},                            // the same tenant, upper case
         {std::string("openid"), std::string(kTenantA)}};  // another scope: not part of the key
-    for (std::size_t i = 0; i < callers.size(); ++i) {
+    const auto start = [&](std::size_t i) {
         threads.emplace_back([&, i] {
             f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
             got[i] = axiam::detail::reveal(
@@ -1560,11 +1582,20 @@ AXIAM_TEST("§9 rule 7 the default tenant explicit, omitted or upper-case is one
                                     callers[i].second)
                     .access_token);
         });
+    };
+    // The upper-case caller is made the leader: start it first and wait until its
+    // request is on the wire, so the lower-case wire tenant is checked on every run.
+    start(0);
+    const auto limit = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (f.replies->wire_started.load(std::memory_order_acquire) < 1 &&
+           std::chrono::steady_clock::now() < limit) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    for (std::size_t i = 1; i < callers.size(); ++i) start(i);
     for (auto& t : threads) t.join();
 
     AXIAM_REQUIRE(f.replies->token_calls == 1);
-    // The one wire call carried the canonical lower-case tenant, whoever led.
+    // The one wire call, led by the upper-case caller, carried the canonical lower-case tenant.
     for (const auto& g : got) AXIAM_REQUIRE(g == std::string("access-") + kTenantA + "-one-rt");
 }
 
