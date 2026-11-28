@@ -6,6 +6,32 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-28
+
+### Fixed
+
+- Key the oidc_refresh single-flight on tenant and token (#94)
+
+- Publish oidc_refresh outcome before vacating its flight (#93)
+
+- OI-40 review round 2 (axiam#883)
+
+- OI-40 review round 1 (axiam#883)
+
+- Bounded JWKS stale-if-error (OI-40, axiam#883)
+
+- Build the client before starting the TLS test's server thread (OI wave B, round 2)
+
+- purpose-claim pin, rule 11(e)/(f) wording, roles-claim exclusions, TLS test join (OI wave B, round 1)
+
+- Implement CONTRACT §11.2 rule 11 in full, pin 1.69 logout-token kid (OI-18, #89, axiam#880)
+
+- Deterministic bad-signature test, accurate conformance line (wave 3, round 4)
+
+- SOVERSION 6, distinct rule 10/12 messages, unchecked primitive renamed, docs (wave 3, round 2)
+
+- non-throwing JWT parsing and access-token rules 10-12 (SA-28, C4/N14)
+
 ### Security
 
 - **JWKS cache review round (OI-40, axiam#883).** `JwksVerifier`'s `cache_ttl` is now
@@ -92,6 +118,20 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
     truncated prefix; re-enrol users whose passwords were set that way.
 - Re-vendored `CONTRACT.md` (1.69), `openapi.json`, `management-registry.json`
   from `ilpanich/axiam` (`opaque-test-vectors.json` was already identical); regenerated the §27 management surface.
+
+- re-vendor CONTRACT.md 1.69 (§9 rule 7: oidc_refresh single-flight per tenant and token)
+
+- A different token inside the publish-before-vacate window refreshes for itself (#93)
+
+- re-vendor CONTRACT.md after the server merged ilpanich/axiam#893
+
+- re-vendor CONTRACT.md 1.69 (typed consume, BOM refusal, bounded JWKS stale-if-error; axiam#883)
+
+- re-vendor CONTRACT.md 1.69 wire-form clarification (axiam#883)
+
+- re-vendor CONTRACT.md for the contract 1.69 §8 correction
+
+- re-vendor CONTRACT.md, openapi.json and the management registry
 
 ### Binary compatibility
 
