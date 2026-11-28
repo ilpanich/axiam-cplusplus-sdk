@@ -104,6 +104,8 @@ add_executable(axiam_cpp_tests
   # malformed key sets, non-Ed25519 JWKs, wrong-shaped compact tokens, and every
   # `cnf` shape that decides whether a sender-constrained token stays constrained.
   test_jwks_robustness.cpp
+  # §12.4 rule 2 stale-if-error bound (contract 1.69, D-10) on an injected clock.
+  test_jwks_stale.cpp
   test_authenticator.cpp
   test_webhook.cpp
   test_uma.cpp

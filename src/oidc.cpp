@@ -1227,8 +1227,20 @@ OidcTokenSet Client::oidc_refresh(const Sensitive<std::string>& refresh_token,
     const std::string& raw = detail::reveal(refresh_token);
     if (raw.empty()) throw AuthError("oidc_refresh requires a refresh token");
     const std::string& client_id = require_client_id(*p_, "oidc_refresh");
-    const std::string tenant = require_tenant_uuid(*p_, tenant_id, "oidc_refresh");
-    const std::string key = digest_hex(raw);
+    // Resolved ONCE, here, before the flight lookup, and canonicalised to the
+    // lower-case hyphenated form. That one value is both the key's tenant and the
+    // wire request's `tenant_id`, so a caller spelling it in upper case, passing
+    // the client's default explicitly, or omitting it all land in one flight and
+    // one wire call — a second call with the same rotating token is a replay
+    // (contract 1.65). An invalid tenant fails here: no slot, no request.
+    std::string tenant = require_tenant_uuid(*p_, tenant_id, "oidc_refresh");
+    for (char& ch : tenant) {
+        if (ch >= 'A' && ch <= 'F') ch = static_cast<char>(ch - 'A' + 'a');
+    }
+    // §9 rule 7: digest of tenant + separator + token. A UUID is fixed-length and
+    // contains no newline, so the pair cannot be confused. `scope` is not part of
+    // the key: a caller asking for another scope joins the one flight.
+    const std::string key = digest_hex(tenant + "\n" + raw);
 
     std::shared_ptr<Client::Impl::OidcRefreshFlight> flight;
     bool leader = false;
@@ -1252,18 +1264,36 @@ OidcTokenSet Client::oidc_refresh(const Sensitive<std::string>& refresh_token,
     (void)leader;
 
     const auto publish = [&](std::exception_ptr err, std::optional<OidcTokenSet> result) {
-        std::lock_guard<std::mutex> lock(p_->oidc_refresh_mtx);
-        // UNLINK BEFORE PUBLISHING. A caller arriving after this point must
-        // start a fresh flight rather than attach to a finished one: the token
-        // this flight redeemed is now spent, and handing its result to a later
-        // caller would be a cache, not a coalesce — with no TTL and no
-        // invalidation.
-        p_->oidc_refresh_flights.erase(key);
-        flight->error = std::move(err);
-        flight->result = std::move(result);
-        flight->done = true;
-        p_->oidc_refresh_count.fetch_add(1);
-        p_->oidc_refresh_cv.notify_all();
+        // PUBLISH BEFORE VACATE (§9 rule 6a). The outcome is made visible first;
+        // the slot is vacated after. A same-token caller landing between the two
+        // finds the published flight and joins it rather than starting a second
+        // wire call — which, once a rotated token is a replay (contract 1.65), is
+        // what ends the session.
+        {
+            std::lock_guard<std::mutex> lock(p_->oidc_refresh_mtx);
+            flight->error = std::move(err);
+            flight->result = std::move(result);
+            flight->done = true;
+            p_->oidc_refresh_count.fetch_add(1);
+            p_->oidc_refresh_cv.notify_all();
+        }
+        // Test seam only (never installed in production): holds the window open.
+        if (const auto& hook = detail::oidc_refresh_published_hook()) {
+            try {
+                hook();
+            } catch (...) {
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(p_->oidc_refresh_mtx);
+            // IDENTITY-CHECKED (§9 rule 6c): erase only the entry this attempt
+            // installed. A lagging attempt must never remove a newer leader's
+            // live flight that has since taken the same key. A caller arriving
+            // after this point starts a fresh flight (rule 6d): the token this
+            // flight redeemed is spent, and serving its outcome to a later caller
+            // would be a cache, not a coalesce.
+            detail::vacate_oidc_refresh_flight(p_->oidc_refresh_flights, key, flight);
+        }
     };
 
     try {

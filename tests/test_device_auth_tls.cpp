@@ -257,11 +257,6 @@ AXIAM_TEST("§6.1 rule 6: authenticate_device() over a REAL TLS connection sends
     bool srv_ok = false;
     bool srv_saw_cert = false;
     std::string raw_request;
-    std::thread server([&] {
-        handle_one(fd, pki.server_crt_path, pki.server_key_path, pki.ca_crt_path, &srv_ok,
-                  &srv_saw_cert, &raw_request);
-    });
-
     Client client = Client::builder()
                         .base_url("https://127.0.0.1:" + std::to_string(port))
                         .tenant_slug("acme")
@@ -271,7 +266,24 @@ AXIAM_TEST("§6.1 rule 6: authenticate_device() over a REAL TLS connection sends
                         .with_client_cert(pki.client_cert_pem, pki.client_key_pem)
                         .build();
 
-    DeviceAuth result = client.authenticate_device();
+    // Built before the server thread starts: a throwing build() must not leave a
+    // joinable thread behind.
+    std::thread server([&] {
+        handle_one(fd, pki.server_crt_path, pki.server_key_path, pki.ca_crt_path, &srv_ok,
+                  &srv_saw_cert, &raw_request);
+    });
+
+    // Join the server thread even if authenticate_device() throws: a joinable
+    // std::thread destroyed during unwinding is std::terminate, not a test failure.
+    DeviceAuth result;
+    try {
+        result = client.authenticate_device();
+    } catch (...) {
+        ::shutdown(fd, SHUT_RDWR);
+        server.join();
+        ::close(fd);
+        throw;
+    }
 
     server.join();
     ::close(fd);

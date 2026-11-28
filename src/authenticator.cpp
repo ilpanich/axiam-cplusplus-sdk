@@ -255,10 +255,31 @@ AxiamUser TokenAuthenticator::authenticate_checked(
     if (payload.contains("sub") && payload.at("sub").is_string()) {
         user.user_id = payload.at("sub").get<std::string>();
     }
-    if (payload.contains("roles") && payload.at("roles").is_array()) {
-        for (const auto& role : payload.at("roles")) {
-            if (role.is_string()) user.roles.push_back(role.get<std::string>());
+    // §11.2 rule 11(b): `roles` is usable only as a JSON array of strings. Absent and
+    // malformed are both "the token says nothing about roles" and keep no partial
+    // list -- `["admin", 7]` must not leave "admin" behind. An empty array is the
+    // distinct case ("the user holds none") and keeps `roles_claim_present`.
+    user.roles_claim_present = false;
+    const auto roles_it = payload.find("roles");
+    if (roles_it != payload.end() && roles_it->is_array()) {
+        std::vector<std::string> roles;
+        bool well_formed = true;
+        for (const auto& role : *roles_it) {
+            if (!role.is_string()) {
+                well_formed = false;
+                break;
+            }
+            roles.push_back(role.get<std::string>());
         }
+        if (well_formed) {
+            user.roles = std::move(roles);
+            user.roles_claim_present = true;
+        }
+    }
+    // §11.2 rule 11(d): the `scope` claim, kept verbatim for require_scope.
+    const auto scope_it = payload.find("scope");
+    if (scope_it != payload.end() && scope_it->is_string()) {
+        user.scope = scope_it->get<std::string>();
     }
     return user;
 }

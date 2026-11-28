@@ -20,6 +20,9 @@
 
 #include <cctype>
 #include <chrono>
+#include <condition_variable>
+#include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -27,7 +30,9 @@
 #include <vector>
 
 #include "assert.hpp"
+#include "axiam/authenticator.hpp"
 #include "axiam/client.hpp"
+#include "client_impl.hpp"
 #include "fake_transport.hpp"
 #include "test_key.hpp"
 
@@ -75,6 +80,16 @@ struct Replies {
     std::atomic<int> gate_arrived{0};
     int gate_expect = 0;
     std::mutex mtx;
+    // When set, answers every token request from the request itself, so a test can
+    // tell WHICH call each caller's outcome came from (concurrent calls reach the
+    // router in no fixed order).
+    std::function<std::pair<long, std::string>(const axiam::HttpRequest&)> token_by_request;
+    // Holds every token request on the transport until `wire_expect` of them are
+    // there at once (bounded), so a test can prove flights of different keys run
+    // concurrently rather than one after another.
+    std::atomic<int> wire_started{0};
+    int wire_expect = 0;
+    std::atomic<bool> wire_timed_out{false};
 };
 
 axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<Replies> r) {
@@ -113,6 +128,17 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
                 delay = r->token_delay;
                 expect = r->gate_expect;
             }
+            if (r->wire_expect > 0) {
+                r->wire_started.fetch_add(1, std::memory_order_acq_rel);
+                const auto limit = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+                while (r->wire_started.load(std::memory_order_acquire) < r->wire_expect) {
+                    if (std::chrono::steady_clock::now() >= limit) {
+                        r->wire_timed_out = true;
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
             if (expect > 0) {
                 // Bounded, so a genuine regression fails the assertion rather
                 // than hanging the suite until the job times out.
@@ -124,6 +150,10 @@ axiam::Transport routed(std::shared_ptr<axtest::FakeState> st, std::shared_ptr<R
             }
             if (delay.count() > 0) std::this_thread::sleep_for(delay);
             std::lock_guard<std::mutex> lock(r->mtx);
+            if (r->token_by_request) {
+                const auto answer = r->token_by_request(req);
+                return reply(answer.first, answer.second);
+            }
             if (r->token_script.empty()) return reply(200, "{}");
             const auto& answer = r->token_script[std::min(i, r->token_script.size() - 1)];
             return reply(answer.first, answer.second);
@@ -143,13 +173,13 @@ struct Fixture {
 };
 
 axiam::Client make_client(Fixture& f, const char* secret = kClientSecret,
-                          bool tenant_uuid = true) {
+                          bool tenant_uuid = true, const char* tenant_value = kTenantUuid) {
     auto builder = axiam::Client::builder()
                        .base_url("https://iam.example.com")
                        .tenant_slug("acme")
                        .oidc_client_id(kClientId)
                        .transport(routed(f.st, f.replies));
-    if (tenant_uuid) builder.tenant_id(kTenantUuid);
+    if (tenant_uuid) builder.tenant_id(tenant_value);
     if (secret != nullptr) builder.oidc_client_secret(secret);
     auto client = builder.build();
     auto sleeps = f.sleeps;
@@ -1358,8 +1388,8 @@ AXIAM_TEST("§9 rule 2 distinct refresh tokens do not contend, and a burst is no
     for (auto& t : threads) t.join();
     AXIAM_REQUIRE(f.replies->token_calls == 4);
 
-    // A coalesce, not a cache. The flight is unlinked before its outcome is
-    // published, so a caller arriving after it completed starts a fresh one —
+    // A coalesce, not a cache. The flight is vacated after its outcome is
+    // published; a caller arriving after the vacate starts a fresh one —
     // anything else would hand out a token whose refresh token has already been
     // spent, with no TTL and no invalidation.
     f.replies->token_delay = std::chrono::milliseconds(0);
@@ -1367,6 +1397,276 @@ AXIAM_TEST("§9 rule 2 distinct refresh tokens do not contend, and a burst is no
     client.oidc_refresh(axiam::Sensitive<std::string>("token-0"));
     client.oidc_refresh(axiam::Sensitive<std::string>("token-0"));
     AXIAM_REQUIRE(f.replies->token_calls == before + 2);
+}
+
+AXIAM_TEST("§9 rule 6a a same-token caller between publish and vacate joins, not re-presents") {
+    // CONTRACT §9 rule 6a / contract-1.6 test requirement: a caller landing after
+    // the outcome is published but before the slot is vacated MUST join that
+    // outcome. A second wire call would present a rotated (spent) refresh token,
+    // which from contract 1.65 is a replay that ends the session.
+    Fixture f;
+    f.replies->token_script = {
+        {200,
+         R"({"access_token":"first-access","token_type":"Bearer","expires_in":900,)"
+         R"("refresh_token":"rotated-refresh"})"},
+        {200,
+         R"({"access_token":"second-access","token_type":"Bearer","expires_in":900,)"
+         R"("refresh_token":"rotated-again"})"}};
+    auto client = make_client(f);
+    client.oidc_discover();
+
+    std::mutex m;
+    std::condition_variable cv;
+    bool window_open = false, release = false, pinned = false;
+    axiam::detail::oidc_refresh_published_hook() = [&] {
+        std::unique_lock<std::mutex> lk(m);
+        if (pinned) return;  // pin the leader only
+        pinned = true;
+        window_open = true;
+        cv.notify_all();
+        cv.wait_for(lk, std::chrono::seconds(10), [&] { return release; });
+    };
+
+    std::string leader_access;
+    std::thread leader([&] {
+        leader_access = axiam::detail::reveal(
+            client.oidc_refresh(axiam::Sensitive<std::string>("rot-token")).access_token);
+    });
+    // However the test ends (a failed REQUIRE included): clear the hook, release the
+    // window and join, so a failure is reported rather than std::terminate.
+    struct Cleanup {
+        std::function<void()> fn;
+        ~Cleanup() { fn(); }
+    } cleanup{[&] {
+        {
+            std::lock_guard<std::mutex> lk(m);
+            release = true;
+        }
+        cv.notify_all();
+        if (leader.joinable()) leader.join();
+        axiam::detail::oidc_refresh_published_hook() = nullptr;
+    }};
+    {
+        std::unique_lock<std::mutex> lk(m);
+        AXIAM_REQUIRE(cv.wait_for(lk, std::chrono::seconds(10), [&] { return window_open; }));
+    }
+    // The leader's outcome is published and its slot is not yet vacated.
+    std::string late_access, other_access;
+    try {
+        late_access = axiam::detail::reveal(
+            client.oidc_refresh(axiam::Sensitive<std::string>("rot-token")).access_token);
+    } catch (...) {
+    }
+    const std::size_t calls_same = f.replies->token_calls;
+    // A DIFFERENT token inside the same window never joins the published outcome: it
+    // gets its own wire call and its own result (contract 1.69, §9 rule 7).
+    try {
+        other_access = axiam::detail::reveal(
+            client.oidc_refresh(axiam::Sensitive<std::string>("other-token")).access_token);
+    } catch (...) {
+    }
+    const std::size_t calls_other = f.replies->token_calls;
+    cleanup.fn();
+    cleanup.fn = [] {};
+
+    AXIAM_REQUIRE(calls_same == 1);  // the same-token caller joined: no second wire call
+    AXIAM_REQUIRE(calls_other == 2);  // the different token made exactly one of its own
+    AXIAM_REQUIRE(f.replies->token_calls == 2);
+    AXIAM_REQUIRE(leader_access == "first-access");
+    AXIAM_REQUIRE(late_access == "first-access");
+    AXIAM_REQUIRE(other_access == "second-access");
+
+    // Rule 6d still holds once the slot is vacated: a later caller refreshes itself.
+    const auto later = client.oidc_refresh(axiam::Sensitive<std::string>("rot-token"));
+    AXIAM_REQUIRE(f.replies->token_calls == 3);
+    AXIAM_REQUIRE(axiam::detail::reveal(later.access_token) == "second-access");
+}
+
+AXIAM_TEST("§9 rule 6c a lagging attempt never vacates a newer leader's flight") {
+    using Flight = axiam::Client::Impl::OidcRefreshFlight;
+    std::map<std::string, std::shared_ptr<Flight>> flights;
+    auto lagging = std::make_shared<Flight>();
+    auto newer = std::make_shared<Flight>();
+    flights["k"] = newer;  // a new leader has since taken the key
+    flights["other"] = std::make_shared<Flight>();
+
+    axiam::detail::vacate_oidc_refresh_flight(flights, "k", lagging);
+    AXIAM_REQUIRE(flights.count("k") == 1);
+    AXIAM_REQUIRE(flights["k"] == newer);
+
+    // The owner of the entry does vacate it, and only it.
+    axiam::detail::vacate_oidc_refresh_flight(flights, "k", newer);
+    AXIAM_REQUIRE(flights.count("k") == 0);
+    AXIAM_REQUIRE(flights.count("other") == 1);
+}
+
+namespace {
+// The value of `name=` in a query string or form body, up to the next `&`.
+std::string field_of(const std::string& haystack, const std::string& name) {
+    const std::string needle = name + "=";
+    auto at = haystack.find(needle);
+    while (at != std::string::npos && at != 0 && haystack[at - 1] != '?' &&
+           haystack[at - 1] != '&') {
+        at = haystack.find(needle, at + 1);
+    }
+    if (at == std::string::npos) return {};
+    at += needle.size();
+    return haystack.substr(at, haystack.find('&', at) - at);
+}
+
+// Echoes the tenant and token a request carried, so each caller's outcome names its own call.
+std::pair<long, std::string> echo_tenant_and_token(const axiam::HttpRequest& req) {
+    return {200, R"({"access_token":"access-)" + field_of(req.url, "tenant_id") + "-" +
+                     field_of(req.body, "refresh_token") +
+                     R"(","token_type":"Bearer","expires_in":900})"};
+}
+
+const char* kTenantA = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const char* kTenantB = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+}  // namespace
+
+AXIAM_TEST("§9 rule 7 the same token for different tenants is two flights, each its own outcome") {
+    Fixture f;
+    f.replies->token_by_request = echo_tenant_and_token;
+    f.replies->token_delay = std::chrono::milliseconds(60);
+    auto client = make_client(f, kClientSecret, true, kTenantA);
+    client.oidc_discover();
+    f.replies->gate_expect = 2;
+
+    std::string a, b;
+    std::thread ta([&] {
+        f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
+        a = axiam::detail::reveal(client.oidc_refresh(axiam::Sensitive<std::string>("shared-rt"),
+                                                      std::nullopt, std::string(kTenantA))
+                                      .access_token);
+    });
+    std::thread tb([&] {
+        f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
+        b = axiam::detail::reveal(client.oidc_refresh(axiam::Sensitive<std::string>("shared-rt"),
+                                                      std::nullopt, std::string(kTenantB))
+                                      .access_token);
+    });
+    ta.join();
+    tb.join();
+
+    AXIAM_REQUIRE(f.replies->token_calls == 2);
+    AXIAM_REQUIRE(a == std::string("access-") + kTenantA + "-shared-rt");
+    AXIAM_REQUIRE(b == std::string("access-") + kTenantB + "-shared-rt");
+}
+
+AXIAM_TEST("§9 rule 7 the default tenant explicit, omitted or upper-case is one flight, one call") {
+    Fixture f;
+    f.replies->token_by_request = echo_tenant_and_token;
+    f.replies->token_delay = std::chrono::milliseconds(60);
+    auto client = make_client(f, kClientSecret, true, kTenantA);
+    client.oidc_discover();
+    f.replies->gate_expect = 4;
+    f.replies->wire_expect = 1;  // counts requests reaching the transport; releases at once
+
+    std::string upper = kTenantA;
+    for (char& ch : upper) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    AXIAM_REQUIRE(upper != std::string(kTenantA));
+
+    std::vector<std::string> got(4);
+    std::vector<std::thread> threads;
+    const std::vector<std::pair<std::optional<std::string>, std::optional<std::string>>> callers = {
+        {std::nullopt, upper},                            // the same tenant, upper case: LEADS
+        {std::nullopt, std::nullopt},                     // tenant omitted
+        {std::nullopt, std::string(kTenantA)},            // default passed explicitly
+        {std::string("openid"), std::string(kTenantA)}};  // another scope: not part of the key
+    const auto start = [&](std::size_t i) {
+        threads.emplace_back([&, i] {
+            f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
+            got[i] = axiam::detail::reveal(
+                client.oidc_refresh(axiam::Sensitive<std::string>("one-rt"), callers[i].first,
+                                    callers[i].second)
+                    .access_token);
+        });
+    };
+    // The upper-case caller is made the leader: start it first and wait until its
+    // request is on the wire, so the lower-case wire tenant is checked on every run.
+    start(0);
+    const auto limit = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (f.replies->wire_started.load(std::memory_order_acquire) < 1 &&
+           std::chrono::steady_clock::now() < limit) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    for (std::size_t i = 1; i < callers.size(); ++i) start(i);
+    for (auto& t : threads) t.join();
+
+    AXIAM_REQUIRE(f.replies->token_calls == 1);
+    // The one wire call, led by the upper-case caller, carried the canonical lower-case tenant.
+    for (const auto& g : got) AXIAM_REQUIRE(g == std::string("access-") + kTenantA + "-one-rt");
+}
+
+AXIAM_TEST("§9 rule 7 a different token during a live flight gets its own call") {
+    Fixture f;
+    f.replies->token_by_request = echo_tenant_and_token;
+    f.replies->token_delay = std::chrono::milliseconds(60);
+    auto client = make_client(f, kClientSecret, true, kTenantA);
+    client.oidc_discover();
+    f.replies->gate_expect = 3;
+
+    std::vector<std::string> got(3);
+    const char* tokens[] = {"rt-A", "rt-A", "rt-B"};
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 3; ++i) {
+        threads.emplace_back([&, i] {
+            f.replies->gate_arrived.fetch_add(1, std::memory_order_release);
+            got[i] = axiam::detail::reveal(
+                client.oidc_refresh(axiam::Sensitive<std::string>(tokens[i])).access_token);
+        });
+    }
+    for (auto& t : threads) t.join();
+
+    AXIAM_REQUIRE(f.replies->token_calls == 2);  // A's two callers share one call; B has its own
+    AXIAM_REQUIRE(got[0] == std::string("access-") + kTenantA + "-rt-A");
+    AXIAM_REQUIRE(got[1] == got[0]);
+    AXIAM_REQUIRE(got[2] == std::string("access-") + kTenantA + "-rt-B");
+}
+
+AXIAM_TEST("§9 rule 7 flights of different tokens run concurrently on the wire") {
+    // No lock is held across an oidc_refresh wire call, so a different key's call
+    // STARTS while another's is held on the transport. 20 distinct tokens are all
+    // held at once (the transport releases them only when all 20 are there); a
+    // serialising guard would leave the wait to time out and one call at a time.
+    Fixture f;
+    f.replies->token_by_request = echo_tenant_and_token;
+    auto client = make_client(f);
+    client.oidc_discover();
+    f.replies->wire_expect = 20;
+
+    std::vector<std::string> got(20);
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 20; ++i) {
+        threads.emplace_back([&, i] {
+            got[i] = axiam::detail::reveal(
+                client.oidc_refresh(axiam::Sensitive<std::string>("rt-" + std::to_string(i)))
+                    .access_token);
+        });
+    }
+    for (auto& t : threads) t.join();
+
+    AXIAM_REQUIRE(!f.replies->wire_timed_out.load());
+    AXIAM_REQUIRE(f.replies->token_calls == 20);
+    for (int i = 0; i < 20; ++i) {
+        AXIAM_REQUIRE(got[i] == std::string("access-") + kTenantUuid + "-rt-" + std::to_string(i));
+    }
+}
+
+AXIAM_TEST("§9 rule 7 an invalid tenant fails before any slot, discovery or token call") {
+    Fixture f;
+    auto client = make_client(f);
+    bool threw = false;
+    try {
+        client.oidc_refresh(axiam::Sensitive<std::string>("rt"), std::nullopt,
+                            std::string("not-a-uuid"));
+    } catch (const axiam::AuthError&) {
+        threw = true;
+    }
+    AXIAM_REQUIRE(threw);
+    AXIAM_REQUIRE(f.replies->token_calls == 0);
+    AXIAM_REQUIRE(f.st->requests.empty());
 }
 
 AXIAM_TEST("§9 rule 2 a failing flight shares its failure with every waiter") {
@@ -1576,5 +1876,133 @@ AXIAM_TEST("§12.7.3 rule 1 a bad signature is rejected through the same §12.4 
         // No second key-fetching path, so it fails the same way an ID token
         // would.
         AXIAM_REQUIRE(e.reason() == axiam::OidcValidationReason::kInvalidSignature);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Contract 1.69 (#880): the logout token carries its JWKS `kid`; the key is
+// selected by it, exactly as §12.4 rule 2 does for every other token.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A JWKS holding both keys, the one that SIGNS second: a verifier that takes the
+// first (or the only) key fails the server-shaped test below.
+std::string two_key_jwks(const axtest::TestKey& first, const axtest::TestKey& second) {
+    const auto member = [](const axtest::TestKey& k) {
+        return std::string("{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"kid\":\"") + k.kid +
+               "\",\"x\":\"" + axtest::b64url_encode(k.raw_public()) + "\"}";
+    };
+    return "{\"keys\":[" + member(first) + "," + member(second) + "]}";
+}
+
+// The claims the server puts in a logout token: iss, aud, iat, exp, jti, sid, sub, events.
+std::string server_logout_claims() { return logout_claims(); }
+
+// The header exactly as the server signs it from contract 1.69. The fixture adds nothing.
+std::string server_logout_header(const std::string& kid) {
+    return std::string("{\"alg\":\"EdDSA\",\"typ\":\"logout+jwt\",\"kid\":\"") + kid + "\"}";
+}
+
+}  // namespace
+
+AXIAM_TEST("§12.7.3 rule 1 (1.69): a server-shaped logout token verifies against a two-key JWKS") {
+    Fixture f;
+    axtest::TestKey rotated_out;
+    rotated_out.kid = "old-key";
+    axtest::TestKey signer;
+    signer.kid = "new-key";
+    f.replies->jwks_body = two_key_jwks(rotated_out, signer);
+    auto client = make_client(f);
+
+    const std::string token =
+        signer.make_jwt_with_header(server_logout_header(signer.kid), server_logout_claims());
+    const auto t = client.verify_logout_token(token);
+    AXIAM_REQUIRE(t.sid.value_or("") == "session-1");
+    AXIAM_REQUIRE(t.subject.value_or("") == "user-1");
+    AXIAM_REQUIRE(t.jwt_id.value_or("") == "jti-1");
+}
+
+AXIAM_TEST("§12.7.3 rule 1 (1.69): a kid-less logout token is refused as unknown_kid, even from a one-key JWKS") {
+    Fixture f;
+    axtest::TestKey key;  // the ONLY key of the set, and it did sign the token
+    f.replies->jwks_body = key.jwks_json();
+    auto client = make_client(f);
+
+    const std::string token = key.make_jwt_with_header(
+        R"({"alg":"EdDSA","typ":"logout+jwt"})", server_logout_claims());
+    try {
+        client.verify_logout_token(token);
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OidcValidationError& e) {
+        AXIAM_REQUIRE(e.reason() == axiam::OidcValidationReason::kUnknownKid);
+        AXIAM_REQUIRE(std::string(e.what()).find(token) == std::string::npos);
+    }
+}
+
+AXIAM_TEST("§12.7.3 rule 1 (1.69): an unknown kid on a logout token is refused as unknown_kid") {
+    Fixture f;
+    axtest::TestKey key;
+    f.replies->jwks_body = key.jwks_json();
+    auto client = make_client(f);
+
+    const std::string token =
+        key.make_jwt_with_header(server_logout_header("not-published"), server_logout_claims());
+    try {
+        client.verify_logout_token(token);
+        AXIAM_REQUIRE(false);
+    } catch (const axiam::OidcValidationError& e) {
+        AXIAM_REQUIRE(e.reason() == axiam::OidcValidationReason::kUnknownKid);
+    }
+}
+
+AXIAM_TEST("§10.1 rules 10 and 11 stay off the logout-token and ID-token paths") {
+    Fixture f;
+    axtest::TestKey key;
+    f.replies->jwks_body = key.jwks_json();
+    auto client = make_client(f);
+
+    // Logout token: `typ: logout+jwt` is not `at+jwt`, and the verifier still takes it.
+    const std::string logout =
+        key.make_jwt_with_header(server_logout_header(key.kid), server_logout_claims());
+    AXIAM_REQUIRE_NOTHROW(client.verify_logout_token(logout));
+
+    // ID token (`typ: JWT`), through the verifier the access-token guard shares.
+    auto st = std::make_shared<axtest::FakeState>();
+    axiam::JwksVerifier verifier(axtest::jwks_transport(st, key.jwks_json()),
+                                 "https://api.example.test");
+    const std::string id_claims = std::string("{\"iss\":\"") + kIssuer + "\",\"aud\":\"" +
+                                  kClientId + "\",\"sub\":\"user-1\",\"exp\":" +
+                                  std::to_string(now() + 300) + "}";
+    const std::string id_token = key.make_jwt_with_header(
+        std::string("{\"alg\":\"EdDSA\",\"typ\":\"JWT\",\"kid\":\"") + key.kid + "\"}", id_claims);
+    AXIAM_REQUIRE(verifier.verify_with_reason(id_token).ok);
+    AXIAM_REQUIRE(verifier.verify_with_reason(logout).ok);
+
+    // ...while the access-token entry point refuses both (rule 10, by header alone).
+    const auto id_as_access = verifier.verify_access_token_signature_unchecked(id_token);
+    AXIAM_REQUIRE_FALSE(id_as_access.ok);
+    AXIAM_REQUIRE(id_as_access.detail == axiam::JwtVerification::kDetailTypNotAccessToken);
+    const auto logout_as_access = verifier.verify_access_token_signature_unchecked(logout);
+    AXIAM_REQUIRE_FALSE(logout_as_access.ok);
+    AXIAM_REQUIRE(logout_as_access.detail == axiam::JwtVerification::kDetailTypNotAccessToken);
+
+    // Rule 11 (`purpose` claim) stays off these paths too: both tokens still verify
+    // with a `purpose` member in their claims...
+    const std::string logout_p = key.make_jwt_with_header(
+        server_logout_header(key.kid), logout_claims(R"(,"purpose":"x")"));
+    AXIAM_REQUIRE_NOTHROW(client.verify_logout_token(logout_p));
+    AXIAM_REQUIRE(verifier.verify_with_reason(logout_p).ok);
+    std::string id_claims_p = id_claims;
+    id_claims_p.insert(id_claims_p.size() - 1, R"(,"purpose":"x")");
+    const std::string id_token_p = key.make_jwt_with_header(
+        std::string("{\"alg\":\"EdDSA\",\"typ\":\"JWT\",\"kid\":\"") + key.kid + "\"}",
+        id_claims_p);
+    AXIAM_REQUIRE(verifier.verify_with_reason(id_token_p).ok);
+
+    // ...while the access-token guard refuses all of them.
+    axiam::TokenAuthenticator auth(verifier, "11111111-1111-1111-1111-111111111111");
+    for (const std::string* t : {&logout, &id_token, &logout_p, &id_token_p}) {
+        AXIAM_REQUIRE_FALSE(auth.try_authenticate(*t).has_value());
     }
 }

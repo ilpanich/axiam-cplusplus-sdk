@@ -12,7 +12,7 @@ checks, JWKS verification, and framework-agnostic route guards.
 
 **Platform documentation:** <https://ilpanich.github.io/axiam/> — getting started, the authorization model, the OAuth2/OIDC surface, and the operations guides. This README covers the SDK; the site covers the server it talks to.
 
-**This SDK conforms to CONTRACT.md §1–§7, §9–§13 (except §11.2 rule 11(b)'s malformed-`roles` refusal and present-versus-empty distinction, and 11(d)'s `require_scope`, not yet implemented), §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34, §36 and §37 at contract 1.68, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
+**This SDK conforms to CONTRACT.md §1–§7, §9–§13, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28, §28.12, §29, §30, §31, §32, §33, §34, §36 and §37 at contract 1.69, with §32.7 and §33.2 signed (including §6.1 mTLS and its §6.1 rules 6–10 `authenticate_device()` (token adoption, the certificate-bound `cnf` note, and the reachability gate), §5.2 rule 1's acting-tenant helper (`with_acting_tenant` / `acting_tenant`), §12.7 logout, the §11 rule 9 decision reason codes, the §23 OPAQUE login path — which binds `libaxiam_opaque_ffi` at run time, see below — §24's eight wire operations with §24.6a's JSON bridge, but not §24.6b's ceremony helper, which has no authenticator to link on these targets — §27.6.1's manifest additions (resource `metadata`, the two-shape role binding, `service_accounts`) at the flat-entity tier this SDK ships (see [Declarative manifests](#declarative-manifests-§27-6§27-7) — no `users`, no `scopes`, no role → permission grants) and §27.6.2's `network` namespace — and §28's REST surface: `serve_protected_resource_metadata` is not a function here, per §28.3's C++ carve-out, and §28.5 rule 8's gRPC/AMQP challenge form does not apply, since this SDK's guard covers neither transport). §1.1.1's `validate_token` / `introspect_token` and §10.3's sender-constrained gRPC reads are declined, per §1.1.1 rule 7: this SDK ships no gRPC transport at all (§8 is also out of scope, unchanged from before 1.51), so both are documented deferrals rather than a REST substitution.**
 
 Manifest pruning: not offered in any namespace (§27.10) — a manifest's `apply` never deletes, so a
 resource omitted from it is left alone, `network` included.
@@ -51,12 +51,14 @@ decode. `oidc_par` also pushes the `axiam_idp_hint` its begin URL carries when i
 unset (the argument wins when both are set; §26.2 rule 8). The shared library's ABI version was 5
 (`libaxiam_cpp.so.5`) from 1.2.2 to 1.3.x, and is 6 from 1.4.0; see the CHANGELOG.
 
-Contracts 1.67 and 1.68 (§34.11, §34.12) are the **1.4.0** release: it takes §10.1 rules 10–12 (N14, described under [Authenticating a request](#authenticating-a-request-§10) below),
-regenerates the §27 management surface (`AuditLogEntry.organization_id`, so the ABI is 6) and does not yet implement two
-parts of §11.2 rule 11: 11(b)'s `roles`-must-be-an-array-of-strings refusal with its present-versus-empty
-distinction (a MUST, outstanding) and 11(d)'s `require_scope` (a SHOULD, declined); `require_role` already reads only `roles`.
-A resource server relying on `require_role` must request the `roles` scope (SA-18) for the server to emit
-the claim.
+Contracts 1.67, 1.68 and 1.69 (§34.11, §34.12, §34.13) are the **1.4.0** release: it takes §10.1 rules 10–12 (N14, described under [Authenticating a request](#authenticating-a-request-§10) below),
+regenerates the §27 management surface (`AuditLogEntry.organization_id`, so the ABI is 6) and implements §11.2 rule 11 in full:
+`require_role` reads only a well-formed `roles` claim (a JSON array of strings; `["admin", 7]` is refused), `AxiamUser` keeps an
+absent claim distinct from `[]` (`roles_claim_present`), and `require_scope` reads only `scope` (see [Declarative helpers](#declarative-helpers-§11)).
+`AxiamUser` gained `roles_claim_present` and `scope`, which changes its layout; this is inside the ABI-6 bump, not a further one.
+`Client::verify_logout_token` selects the key by the token's `kid` (§12.7.3 rule 1, contract 1.69): a logout token with no `kid` is
+refused as `unknown_kid`, so a token from a server older than 1.69 (which signed it with none) is refused; §10.1 rules 10 and 11 stay off
+the logout-token and ID-token paths.
 
 Contract 1.64 (§34.8) is the **1.1.2** release and ports one rule: a `429 rate_limit_exceeded` on a
 device-code poll is waited out, not terminal (§14.2 rule 9) -- `device_login` waits `Retry-After` (a minimum,
@@ -420,7 +422,8 @@ poll once between them rather than once each.
 
 void handler(axiam::Client& client, const std::optional<axiam::AxiamUser>& user) {
     axiam::require_auth(user);                        // 401 if unauthenticated
-    axiam::require_role(user, {"editor", "admin"});   // local role check, 403
+    axiam::require_role(user, {"editor", "admin"});   // local check of the `roles` claim, 403
+    axiam::require_scope(user, {"orders:write"});     // local check of the `scope` claim, 403
     AXIAM_REQUIRE_ACCESS(client, user, "read", "resource-uuid");  // 403 if denied
     // ... proceed ...
 }
@@ -428,6 +431,28 @@ void handler(axiam::Client& client, const std::optional<axiam::AxiamUser>& user)
 
 `require_access` propagates `subject_id = user.user_id` (§11.2), fails closed on
 transport errors (§11.5), and never caches decisions (§11.6).
+
+**`require_role` and `require_scope` read different claims, and never each other's (§11.2 rule 11).**
+`require_role` matches a role name exactly (case-sensitive) against the access token's `roles`
+claim, never `scope`. A token with no `roles` claim, a `roles` claim that is not an array of strings
+(`["admin", 7]` and `["admin", null]` included, whole claim refused), or `[]` fails every call with
+403; `AxiamUser::roles_claim_present` tells absent or malformed (`false`: ask for the scope) from
+`[]` (`true` with an empty `roles`: the user holds none). `require_scope` splits the `scope` claim
+on single spaces and compares each entry whole, so `administrator` does not satisfy `admin`; no
+`scope` claim, or one that is not a string, is a 403. Both are local (no server round-trip) and
+coarser than `require_access`, which evaluates the engine live and stays the authoritative check;
+role names are tenant-defined.
+
+**The application must request the `roles` scope (rule 11(e), (f)).** Add `roles` to the scope
+passed to the authorization request (or to `login_client_credentials`), and have the administrator
+add `roles` to the client's registered scopes; this SDK never adds it itself, and a client not
+registered for it is refused `invalid_scope`. Without it the server issues no `roles` claim and every
+`require_role` is a 403. The claim is a sorted array of role **names** (roles assigned with no
+resource), a snapshot taken when the token is minted and recomputed on each refresh, so it is stale
+for at most one access-token lifetime (15 minutes by default); it never appears in an ID token, a
+UserInfo response, an RPT (§20), a console sign-in's session token (§5.1 `login`) or the token of an
+mTLS device login (`authenticate_device()`), where `require_role` fails closed; an OAuth2 client's own
+client-credentials token always carries `[]`, since a client holds no roles.
 
 ### Decision reason codes (§11 rule 9)
 

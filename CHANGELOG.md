@@ -6,9 +6,27 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-11-22
-
 ### Security
+
+- **JWKS cache review round (OI-40, axiam#883).** `JwksVerifier`'s `cache_ttl` is now
+  `std::optional<std::chrono::seconds>` (default unset; a source- but not ABI-compatible change to the constructor, which also gained a trailing `TelemetryHook` parameter): a configured TTL wins over an advertised
+  `max-age` (both clamped to 300 s), and a clamped configured TTL emits one `config_clamped`
+  event through the new optional `TelemetryHook` constructor parameter. The JWKS fetch is
+  single-flight and runs with the state lock released, so a verification with a usable held set
+  never waits for a slow fetch. A `304` counts only for a conditional request, every refresh
+  (successful or not) holds off the next TTL-driven one for 60 s (`max-age=0` is no longer one
+  fetch per verification), and a cooldown deadline more than 60 s ahead (clock stepped back)
+  counts as expired.
+- **JWKS cache: bounded stale-if-error (CONTRACT.md §12.4 rule 2, contract 1.69, D-10;
+  axiam#883).** `JwksVerifier` measures cache age from the last *successful* fetch (a `200`
+  with at least one usable key, or a `304` to the conditional `If-None-Match` request). A
+  failed refresh (transport error, other status, non-JWKS body, or an empty key set) no longer
+  replaces or empties the held keys and never moves the anchor; held keys verify until exactly
+  TTL + 300 s after the anchor, after which every token is refused until a fetch succeeds. An
+  unknown-`kid` refresh that fails refuses that token, keeps the held set and counts toward the
+  re-fetch window. The TTL is clamped to at most 300 s (constructor argument or
+  `Cache-Control: max-age`). Previously an empty `{"keys":[]}` answer replaced the set and held
+  keys had no upper bound. A `keys` array with no JWK object (`[{}]`) is not a JWKS document and is a failed refresh too; the failure window also applies to a cold cache; an ETag with a control character or over 256 bytes is never echoed; a clock moving backwards makes a refresh due. New `kJwksMaxTtlSeconds` / `kJwksMaxStaleSeconds` constants.
 
 - **C4 — a hostile token header or JWKS member can no longer throw a vendored
   exception.** `JwksVerifier::verify_with_reason` (and so `verify_signature_only_unchecked`,
@@ -27,12 +45,39 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
   the ID-token and logout-token paths do not apply rules 10–12. A refusal under rule 10 or
   12 now reports `token typ is not at+jwt` / `token has no kid` (new
   `JwtVerification::detail`) instead of a signature error.
-- Test fix: the N14 "own diagnosable message" regression test tampered only the base64url padding bits of
-  the signature's last character, so it passed a bad token through about 25% of runs; it now flips a
-  significant character. No library change.
+- **§11.2 rule 11 in full (contract 1.68; CPL-R1-6).** `require_role` now refuses a `roles`
+  claim that is not a JSON array of strings (`["admin", 7]`, `["admin", null]`, a string, an
+  object, `null`): `TokenAuthenticator` keeps no partial list from it. `AxiamUser` gained
+  `roles_claim_present`, so an absent or malformed claim (`false`) stays distinct from `[]`
+  (`true`, empty `roles`), and `scope`, the token's `scope` claim. New `require_scope` (rule 11(d))
+  splits `scope` on single spaces and compares whole entries (`administrator` does not satisfy
+  `admin`); `has_scope` is its predicate. Rules 11(e) and 11(f) are documented on `require_role` and in the
+  README: the claim's shape and lifetime, and that the application must request the `roles` scope. The README no longer carves §11.2 rule 11
+  out of its conformance statement. A hand-built `AxiamUser{id, tenant, {roles}}` keeps working
+  and counts as having a `roles` claim.
+- **Contract 1.69 (axiam#880): the logout-token `kid`.** `Client::verify_logout_token` already
+  selected the key by `kid` and refused a token without one (`unknown_kid`); this release pins it
+  with a server-shaped test (header exactly `alg`, `typ: logout+jwt`, `kid`; a two-key JWKS whose
+  signing key is not first), a kid-less and an unknown-`kid` refusal, and a test that §10.1 rules
+  10 and 11 stay off the logout-token and ID-token paths. A logout token from a server older than
+  1.69 carries no `kid` and is refused. README conformance statement moved to 1.69; `CONTRACT.md`
+  re-vendored at 1.69.
 - OPAQUE: `opaque::start_registration`, `start_login` and both `finish` calls reject a
   password with an embedded NUL (`std::invalid_argument`) instead of silently truncating it
   at the C ABI.
+- **`oidc_refresh` publishes its outcome before vacating its single-flight slot (CONTRACT.md §9
+  rule 6a; #93).** The flight used to be erased before the result was set, so a caller
+  presenting the same refresh token in that gap started a second wire call: a replay of a
+  rotated token, which from contract 1.65 ends the session. The slot is now vacated after
+  publication, identity-checked (rule 6c) so a lagging attempt never erases a newer leader's
+  entry; a caller arriving after the slot is vacated still refreshes for itself (rule 6d).
+- **`oidc_refresh` single-flight keyed on tenant and token (CONTRACT.md §9 rule 7; #94).** The
+  key was a digest of the refresh token alone, so the same token for a different tenant joined
+  another tenant's flight and took its outcome. It is now a SHA-256 digest of the resolved
+  tenant UUID (explicit argument or the client's default, resolved once before the lookup and
+  canonicalised to lower case, the same value then sent on the wire) and the token; the
+  default tenant passed explicitly, omitted or in upper case is still one flight and one wire
+  call, and `scope` is not part of the key.
 
 ### Changed
 
@@ -45,14 +90,16 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project follow
     member without a string `kid` is skipped on every path.
   - A password containing a NUL byte now fails fast instead of authenticating as its
     truncated prefix; re-enrol users whose passwords were set that way.
-- Re-vendored `CONTRACT.md` (1.68), `openapi.json`, `management-registry.json`
+- Re-vendored `CONTRACT.md` (1.69), `openapi.json`, `management-registry.json`
   from `ilpanich/axiam` (`opaque-test-vectors.json` was already identical); regenerated the §27 management surface.
 
 ### Binary compatibility
 
 - **`AXIAM_SOVERSION` is now 6 (`libaxiam_cpp.so.6`).** `AuditLogEntry` gained
-  `organization_id` in the middle of the struct and `JwtVerification` gained `detail`, so
-  both change size and layout. Rebuild anything compiled against 1.3.x or earlier; code that
+  `organization_id` in the middle of the struct, `JwtVerification` gained `detail` and
+  `AxiamUser` gained `roles_claim_present` and `scope`, so all three change size and layout.
+  1.4.0 is unreleased, so the §11.2 rule 11 change to `AxiamUser` does not bump the SOVERSION
+  again: it stays 6. Rebuild anything compiled against 1.3.x or earlier; code that
   aggregate-initialises `AuditLogEntry` by position must now name the new member.
 
 ## [1.3.1] - 2026-11-11
